@@ -9,56 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network, String or System.
+It depends on StormByte Base, StormByte String, StormByte System and StormByte Logger. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks).
-
-From 2.0.0, original Buffer sources are dual-licensed: GNU Lesser General Public License v3.0 or later, or a commercial license from the copyright holder. That change does not cover other StormByte modules or third-party material under `thirdparty/` (including bundled StormByte-Logger, StormByte-System, StormByte-String and the rest of the StormByte suite they vendor).
 
 If you landed here from a release link and have not read the tree:
 
 - What this module is, how to build it, and short examples: [README.md](https://github.com/StormBytePP/StormByte-Buffer/blob/master/README.md)
-- License: dual license LGPL-3.0-or-later or commercial, [LICENSE](https://github.com/StormBytePP/StormByte-Buffer/blob/master/LICENSE)
+- License: GNU Lesser General Public License version 3 or later, [LICENSE](https://github.com/StormBytePP/StormByte-Buffer/blob/master/LICENSE)
 
 ## [Unreleased]
 
 ### Added
 
-- `BufferedReader::Telemetry` snapshot (`Telemetry()`): delivered bytes, cache hits (ahead / back), misses, origin pulls, resident cache and peak, cap, logical vs origin seeks, full and partial seek elisions, try-again / saturated / evicted counts, and wait min / max / total.
-- Page-resident cache on `BufferedReader`: consumed ranges stay in the map until `MaxMemory` and garbage collection evict the spans farthest from `Tell`. Sequential re-reads and backward seeks inside resident pages do not pull the origin again.
-- Delayed seek on `BufferedReader`: `Seek` moves only the logical cursor (`Tell`). `OriginSeek` runs later, and only when a read or peek must pull a hole the map does not cover. Prefetch is gated while `Tell` and the device cursor differ; it resumes when they meet again.
-- Seek-elision counters on the reader: a logical seek that stays inside resident pages for the whole epoch counts as a full elision; a logical seek that starts in cache and later needs `OriginSeek` counts as a partial elision. Epochs close on the next `Seek` or on `Close`.
-- `BufferedWriter::Telemetry` snapshot (`Telemetry()`): accepted / behind / direct bytes, origin pushes, materialized length, high-water mark, cache hits (ahead / back), misses, dirty bytes and peak, cap, logical vs origin seeks, full and partial seek elisions, try-again / saturated / evicted counts, and wait min / max / total.
-- Page map on `BufferedWriter` when `MaxMemory > 0`: writes stay dirty until `MaxMemory`, `Flush` or `Close`. Overlapping and abutting spans coalesce. Garbage collection materializes the farthest-past dirty page first, then future pages. A zero `MaxMemory` stores no pages (ring-only or direct).
-- Delayed seek on `BufferedWriter`: `Seek` updates `Tell` only. `OriginSeek` runs when a page is materialized (GC, `Flush`, `Close`) or when the ring must align before a drain. A logical seek that never needs the origin in that epoch is a full elision; one that later materializes is a partial elision. Epochs close on the next `Seek` or on `Close`.
-- Writer `MaxMemory` on the public base and on `BufferedFileWriter` (`(path, write_chunk, max_memory, back_pressure, max_wait)`). Path-only Setup keeps `MaxMemory` at 1 MiB. Explicit ring-only constructors leave `MaxMemory` at 0.
-- Durable progress pair on the writer: `Materialized` is the highest origin offset known to hold data (holes included after a flush past them). `HighWater` is the highest logical cursor since `Open` / `Truncate`. After `Flush` or `Close`, `Materialized == HighWater`. `Accepted / HighWater` is not durable; `Materialized / HighWater` is.
-
 ### Changed
 
-- **License:** original Buffer sources are dual-licensed LGPL-3.0-or-later or commercial. Third-party trees under `thirdparty/` keep their own licenses. Neither license grants patent rights.
-- **Breaking:** public byte-length APIs use `StormByte::Size` instead of `std::size_t`. That covers occupancy, available bytes, `Read` / `Peek` / `Extract` / `Write` counts, `Tell`, `Dirty`, `Size` when it is a file or buffer length, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied`, Bridge high-water when it is a byte cap, and the matching test helpers. Implicit construction and mixed comparison / arithmetic with integer literals are part of the `Size` contract in Base.
-- Quantities that are not a byte length stay `std::size_t` (or `std::ptrdiff_t` for signed offsets): Hopper / Sink item counts, `BackPressure` as a chunk count, HexDump column count, seek-elision and try-again / saturated / evicted counters, and device rate fields until they become a byte length.
-- **Dependency:** Buffer now requires [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer (`Device`, `File::Temporary`). The library PUBLIC-links System (and String). Path-only `BufferedFileReader` / `BufferedFileWriter` take `ReadAhead` / `WriteChunk` from `CreateDevice()` + `Device::Window`. A derived File overrides `CreateDevice` and returns `unique_ptr<Device>` (no slicing). Failed probe leaves the chunk/prefetch at zero. Path-only writer `BackPressure` stays 4. Private Buffer device-throughput probe is gone.
-- **Breaking:** `StormByte::Buffer::Data` replaces `DataType` (`std::vector<std::byte>`). Byte payloads that cross a DLL boundary on Windows are no longer a CRT-owned `std::vector`. `Data` is a contiguous, vector-like container with a private `Storage` PIMPL so allocate and free stay in Buffer’s translation unit. Public names follow `std::vector` in lowercase (`size`, `data`, `span`, `begin`/`end`, `insert`, `push_back`, `reserve`, …), lengths are `StormByte::Size`, and construction is pointer+`Size`, `span`, initializer list or a range (no iterator-pair constructor). `using DataType` is gone: `Read` / `Peek` / `Extract` / `*UntilEoF`, `Write`, External, Bridge, Pipeline, `LockFreeRing` and IO now take or return `Data`. Do not pass `std::vector<std::byte>` or `std::string` across the Buffer DLL; text from the module (`HexDump`) is `StormByte::String::String`.
-- **Breaking:** seekable `BufferedReader::Seek` no longer calls `OriginSeek` on every request. A cache-covered jump updates `Tell` only. The origin moves when a later `Read` / `Peek` misses. `Tell` stays the public cursor.
-- **Breaking:** `BufferedWriter` is seekable. `Seek` is the base implementation (logical cursor). Leaves supply `OriginSeek`. Seek is not guaranteed O(1): a jump that is still dirty in the page map does not touch the device; an eviction or `Flush` of a non-local island does. Random writes far from `Tell` need a larger `MaxMemory` or they become origin seeks.
-- Writer I/O is lazy up to `MaxMemory`. `Flush` and `Close` force every dirty page and the ring onto the origin. Sparse gaps past the previous durable end become zeros on the device when that range is materialized.
-- `BufferedReader` wait samples include the time spent serving a read or peek. Prefetch bytes are not delivered and do not increment `Delivered`, hits, or misses.
-- `BufferedWriter` wait samples include the time spent accepting a write (page insert or ring push). Origin drain on the worker is not a wait sample of that `Write`.
+### Fixed
 
 ### Removed
 
-- Private Buffer device classification / `WindowFromBps` / `device_throughput` sources. Classification lives in System `Device`.
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/2.0.0...HEAD
+
+## [2.0.0] - 2026-09-27
+
+### Added
+
+- `StormByte::Buffer::Data`. Public contiguous byte container with the `std::vector<std::byte>` contract used across the module (constructors, iterators, algorithms, insert/erase). Range constructors stay. Tests cover the vector-shaped API.
+- `BufferedReader` page cache. Consumed bytes can stay in RAM up to `MaxMemory`. CollectGarbage evicts farthest from `Tell`. Readahead and the page map work together; a later `Seek` into a live page is served from cache.
+- Reader logical seek. `Seek` updates `Tell` immediately. If the target is already cached, the origin is not moved. When the next `Read` runs off the cached range, one real `OriginSeek` resumes prefetch. Documented on the public reader: `Tell` never lies.
+- `BufferedWriter` `MaxMemory` and a dirty page map. Writes are lazy until `MaxMemory`, `Flush` or `Close`. Typical case is a nearby backward correction plus continue-at-Tell. Far-future islands are supported while RAM lasts; eviction prefers the oldest dirty page behind the origin cursor (a real write, possibly with a real seek).
+- Writer logical seek. Same idea as the reader: `Seek` is logical. A patch that lands on a dirty page does not touch the device. Materializing a page (evict / flush / close) is when the origin moves.
+- `BufferedReader::Telemetry` / `BufferedWriter::Telemetry` and `Telemetry() const`. Snapshot of delivered/accepted bytes, cache hits (ahead/back), misses, dirty/cached occupancy and peak, cap, origin vs logical seeks, seeks saved full/partial, try-again, saturated, evicted, and wait samples (min/max/total). Prefetch is not counted as delivered. Writer `Materialized` is bytes that reached the origin; after `Close`, `Accepted == Materialized` on a clean session.
+- `BufferedFileWriter` constructors that forward `MaxMemory` to the base.
+
+### Changed
+
+- Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
+- Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
+- Writer contract: lazy write up to `MaxMemory`. More random access needs more `MaxMemory` or islands get evicted (a real write + seek).
+- `LockFreeRing::FrontSpan` returns a snapshot copied under the wait mutex so a concurrent `Grow` cannot invalidate the pointer the drain worker is pushing.
+- Origin I/O on the writer (`OriginSeek` / `OriginPush` / `OriginFlush` / `OriginOpen` / `OriginClose` / `OriginTruncate`) is serialized against the drain worker. `Flush` waits until the ring is empty **and** the worker has published the origin cursor (`!m_drain_run`).
+- Dual license layout: `LICENSE` is the short header text; `COPYING.LGPLv3` is the LGPL text.
+- README documents reader/writer page cache, logical seek, telemetry and `MaxMemory`.
+
+### Fixed
+
+- Writer drain vs `Grow`: `FrontSpan` no longer aliases `m_storage` while the producer reallocates (Mac `patev-ring-only` corruption).
+- Writer `Flush` returning before `m_origin_pos` was stored, which let the next `EnsureOrigin` land a patch on the wrong offset.
+- Concurrent `FILE*` / `ofstream` use from the writer thread and the drain worker.
+- Origin cursor after `OriginFlush` treated as untrusted until the next `EnsureOrigin` (Darwin). Sequential drain after that first realign does not seek again.
+- Doxygen: broken `\ref` on the public reader header; private storage types not listed as public API.
 
 ### Tests
 
-- Buffer tests rewritten to the current suite format (section banners, alphabetical names in body and `main`, local `BytesToText` instead of removed String helpers). Scratch files use `StormByte::System::File::Temporary` instead of Base `TempFileName`.
-- Tests ported from `DataType` to `Data` (`size()` is `StormByte::Size`; `HexDump` is converted with `static_cast<std::string>`).
-- `BufferedFileReaderTests`: repeating hex fixture (0-9a-f), `Tell` checked before and after every reliability `Read`, delayed-seek coverage (in-page, catch-up, relative, cold miss, disjoint-span partial elision, fixed-offset stress), and `Telemetry()` dumps. Asserts on bytes, `Tell`, and `Delivered == HitAhead + HitBack + Miss`. Full / partial elision counters are printed; partial elision is asserted on the disjoint-span case.
-- `BufferedFileWriterTests`: hex fixture, delayed-seek patches, 1 MiB island and past-EOF holes, eviction that keeps the pattern, telemetry dumps, and stress loops over direct / ring-only / small pages / large pages / pages+ring (multi-page evict, patch after evict, 8 MiB hole, double flush, ring seek without flush, close after evict, second-session append). Asserts on slurp bytes, `Tell`, `Dirty == 0` after `Close`, and `Materialized == HighWater` after `Flush` / `Close`. Hit / elision counters are printed; they are not asserted on the ring-only path.
+- `DataTests`. Vector-shaped coverage including algorithms and iterators.
+- `BufferedFileReaderTests`. Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints (no asserts on racy counters except identities such as delivered vs hit+miss where stable).
+- `BufferedFileWriterTests`. Close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs, first-mismatch dump on the patch-evict stress. Telemetry prints on the seek and pressure paths.
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
+[2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0
 
 ## [1.4.0] - 2026-09-23
 
