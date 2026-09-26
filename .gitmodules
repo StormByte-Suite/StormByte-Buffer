@@ -8,6 +8,3 @@
 [submodule "StormByte Suite - System"]
 	path = thirdparty/StormByte/system/src
 	url = https://github.com/StormBytePP/StormByte-System.git
-[submodule "StormByte Suite - String"]
-	path = thirdparty/StormByte/string/src
-	url = https://github.com/StormBytePP/StormByte-String.git
