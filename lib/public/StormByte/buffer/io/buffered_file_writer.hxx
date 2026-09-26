@@ -128,7 +128,7 @@ namespace StormByte {
 					 * @ref MaxMemory stays 0.
 					 */
 					BufferedFileWriter(std::filesystem::path path,
-						StormByte::Size write_chunk, std::size_t back_pressure,
+						StormByte::ByteSize write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -140,7 +140,7 @@ namespace StormByte {
 					 * @param max_wait Initial @ref MaxWait.
 					 */
 					BufferedFileWriter(std::filesystem::path path,
-						StormByte::Size write_chunk, StormByte::Size max_memory,
+						StormByte::ByteSize write_chunk, StormByte::ByteSize max_memory,
 						std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
@@ -187,7 +187,7 @@ namespace StormByte {
 					 * @brief On-disk size or the write cursor, whichever is larger.
 					 * @return Byte length.
 					 */
-					virtual StormByte::Size Size() const noexcept;
+					virtual StormByte::ByteSize Size() const noexcept;
 
 				protected:
 					/**
@@ -248,14 +248,14 @@ namespace StormByte {
 					 * @param absolute Byte offset from the start of the file.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginSeek(StormByte::Size absolute);
+					virtual Result OriginSeek(StormByte::ByteSize absolute);
 
 					/**
 					 * @brief Whether the volume looks able to accept @p n more bytes.
 					 * @param n Candidate write.
 					 * @return false when the base writer refuses or free space is short.
 					 */
-					virtual bool WillWrite(StormByte::Size n) const override;
+					virtual bool WillWrite(StormByte::ByteSize n) const override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.

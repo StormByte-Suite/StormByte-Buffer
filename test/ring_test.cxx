@@ -52,7 +52,7 @@
 #include <thread>
 #include <vector>
 
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::ReadOnly;
 using StormByte::Buffer::ReadWrite;
@@ -60,7 +60,7 @@ using StormByte::Buffer::Ring;
 using StormByte::Buffer::WriteOnly;
 
 namespace {
-	std::string BytesToText(const Data& data) {
+	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -78,13 +78,13 @@ int test_ring_basic_write_read() {
 	const std::string msg = "Hello, Ring!";
 	ASSERT_TRUE(fn, ring.Write(msg));
 	ring.Close();
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{msg.size()});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{msg.size()});
 	ASSERT_FALSE(fn, ring.Empty());
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{msg.size()});
-	Data data;
-	ASSERT_TRUE(fn, ring.Read(StormByte::Size{msg.size()}, data));
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{msg.size()});
+	BinaryData data;
+	ASSERT_TRUE(fn, ring.Read(StormByte::ByteSize{msg.size()}, data));
 	ASSERT_EQUAL(fn, BytesToText(data), msg);
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -95,10 +95,10 @@ int test_ring_clear() {
 	ASSERT_FALSE(fn, ring.Empty());
 	ring.Clear();
 	ASSERT_TRUE(fn, ring.Empty());
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{0});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{0});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	ASSERT_TRUE(fn, ring.Write("New data"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{8});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{8});
 	RETURN_TEST(fn, 0);
 }
 
@@ -107,11 +107,11 @@ int test_ring_clean_after_seek() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
 	ring.Seek(3, Position::Absolute);
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{5});
 	ring.Clean();
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
-	Data data;
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{5});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{5});
+	BinaryData data;
 	ASSERT_TRUE(fn, ring.Read(0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("DEFGH"));
 	RETURN_TEST(fn, 0);
@@ -120,11 +120,11 @@ int test_ring_clean_after_seek() {
 int test_ring_close_mechanism() {
 	const std::string fn = "test_ring_close_mechanism";
 	Ring ring;
-	ASSERT_TRUE(fn, ring.Write("Data"));
+	ASSERT_TRUE(fn, ring.Write("BinaryData"));
 	ring.Close();
 	ASSERT_FALSE(fn, ring.Write("More"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{4});
-	Data d;
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{4});
+	BinaryData d;
 	(void)ring.Extract(0, d);
 	ASSERT_TRUE(fn, ring.EoF());
 	RETURN_TEST(fn, 0);
@@ -135,8 +135,8 @@ int test_ring_drop() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("0123456789"));
 	ASSERT_TRUE(fn, ring.Drop(4));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
-	Data data;
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{6});
+	BinaryData data;
 	ASSERT_TRUE(fn, ring.Read(0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("456789"));
 	RETURN_TEST(fn, 0);
@@ -146,7 +146,7 @@ int test_ring_empty_read_failure() {
 	const std::string fn = "test_ring_empty_read_failure";
 	Ring ring;
 	ring.Close();
-	Data data;
+	BinaryData data;
 	ASSERT_FALSE(fn, ring.Read(0, data));
 	ASSERT_FALSE(fn, ring.Extract(0, data));
 	ASSERT_TRUE(fn, ring.EoF());
@@ -157,27 +157,27 @@ int test_ring_extract_destructive() {
 	const std::string fn = "test_ring_extract_destructive";
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{8});
-	Data first, rest;
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{8});
+	BinaryData first, rest;
 	ASSERT_TRUE(fn, ring.Extract(3, first));
 	ASSERT_EQUAL(fn, BytesToText(first), std::string("ABC"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{5});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{5});
 	ASSERT_TRUE(fn, ring.Extract(0, rest));
 	ASSERT_EQUAL(fn, BytesToText(rest), std::string("DEFGH"));
 	ASSERT_TRUE(fn, ring.Empty());
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
 int test_ring_move_semantics() {
 	const std::string fn = "test_ring_move_semantics";
 	Ring r1;
-	ASSERT_TRUE(fn, r1.Write("Data"));
+	ASSERT_TRUE(fn, r1.Write("BinaryData"));
 	ASSERT_TRUE(fn, r1.Write("More"));
 	Ring r2 = std::move(r1);
-	ASSERT_EQUAL(fn, r2.Size(), StormByte::Size{8});
-	Data data;
+	ASSERT_EQUAL(fn, r2.Size(), StormByte::ByteSize{8});
+	BinaryData data;
 	ASSERT_TRUE(fn, r2.Read(0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("DataMore"));
 	RETURN_TEST(fn, 0);
@@ -190,7 +190,7 @@ int test_ring_multiple_writes() {
 	ASSERT_TRUE(fn, ring.Write("Second"));
 	ASSERT_TRUE(fn, ring.Write("Third"));
 	ring.Close();
-	Data all;
+	BinaryData all;
 	ASSERT_TRUE(fn, ring.Read(0, all));
 	ASSERT_EQUAL(fn, BytesToText(all), std::string("FirstSecondThird"));
 	RETURN_TEST(fn, 0);
@@ -201,18 +201,18 @@ int test_ring_peek_does_not_consume() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
 	ring.Close();
-	Data p1, p2, r1, r2;
+	BinaryData p1, p2, r1, r2;
 	ASSERT_TRUE(fn, ring.Peek(4, p1));
 	ASSERT_EQUAL(fn, BytesToText(p1), std::string("ABCD"));
 	ASSERT_TRUE(fn, ring.Peek(4, p2));
 	ASSERT_EQUAL(fn, BytesToText(p2), std::string("ABCD"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{8});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{8});
 	ASSERT_TRUE(fn, ring.Read(4, r1));
 	ASSERT_EQUAL(fn, BytesToText(r1), std::string("ABCD"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{4});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{4});
 	ASSERT_TRUE(fn, ring.Read(4, r2));
 	ASSERT_EQUAL(fn, BytesToText(r2), std::string("EFGH"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -221,7 +221,7 @@ int test_ring_seek_operations() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("0123456789"));
 	ring.Close();
-	Data from5, fromStart, from7;
+	BinaryData from5, fromStart, from7;
 	ASSERT_TRUE(fn, ring.Read(5, from5));
 	ASSERT_EQUAL(fn, BytesToText(from5), std::string("01234"));
 	ring.Seek(-5, Position::Relative);
@@ -241,12 +241,12 @@ int test_ring_extract_then_seek() {
 	const std::string fn = "test_ring_extract_then_seek";
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("ABCDEFGHIJ"));
-	Data part;
+	BinaryData part;
 	ASSERT_TRUE(fn, ring.Extract(4, part));
 	ASSERT_EQUAL(fn, BytesToText(part), std::string("ABCD"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{6});
 	ring.Seek(2, Position::Absolute);
-	Data mid;
+	BinaryData mid;
 	ASSERT_TRUE(fn, ring.Read(3, mid));
 	ASSERT_EQUAL(fn, BytesToText(mid), std::string("GHI"));
 	RETURN_TEST(fn, 0);
@@ -262,7 +262,7 @@ int test_ring_extract_until_eof_waits_for_producer() {
 		(void)ring.Write("World");
 		ring.Close();
 	});
-	Data all;
+	BinaryData all;
 	ring.ExtractUntilEoF(all);
 	producer.join();
 	ASSERT_EQUAL(fn, BytesToText(all), std::string("HelloWorld"));
@@ -275,9 +275,9 @@ int test_ring_extract_zero_returns_all() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("TestData"));
 	ring.Close();
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, ring.Extract(0, data));
-	ASSERT_EQUAL(fn, data.size(), StormByte::Size{8});
+	ASSERT_EQUAL(fn, data.size(), StormByte::ByteSize{8});
 	ASSERT_TRUE(fn, ring.Empty());
 	RETURN_TEST(fn, 0);
 }
@@ -287,17 +287,17 @@ int test_ring_partial_extract_leaves_valid_position() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("0123456789"));
 	ring.Seek(3, Position::Absolute);
-	Data mid;
+	BinaryData mid;
 	ASSERT_TRUE(fn, ring.Extract(4, mid));
 	ASSERT_EQUAL(fn, BytesToText(mid), std::string("3456"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{3});
-	Data rest;
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{6});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{3});
+	BinaryData rest;
 	ASSERT_TRUE(fn, ring.Extract(0, rest));
-	ASSERT_EQUAL(fn, rest.size(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, rest.size(), StormByte::ByteSize{3});
 	ASSERT_EQUAL(fn, BytesToText(rest), std::string("789"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{3});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{3});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	ring.Clean();
 	ASSERT_TRUE(fn, ring.Empty());
 	RETURN_TEST(fn, 0);
@@ -307,7 +307,7 @@ int test_ring_read_zero_on_closed_empty_fails() {
 	const std::string fn = "test_ring_read_zero_on_closed_empty_fails";
 	Ring ring;
 	ring.Close();
-	Data data;
+	BinaryData data;
 	ASSERT_FALSE(fn, ring.Read(0, data));
 	ASSERT_FALSE(fn, ring.Extract(0, data));
 	RETURN_TEST(fn, 0);
@@ -319,7 +319,7 @@ int test_ring_read_zero_on_open_empty_waits_until_close() {
 	std::atomic<bool> finished{false};
 	bool read_ok = true;
 	std::thread consumer([&] {
-		Data data;
+		BinaryData data;
 		read_ok = ring.Read(0, data);
 		finished = true;
 	});
@@ -352,7 +352,7 @@ int test_ring_alternating_small_large() {
 		ring.Close();
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		total = static_cast<std::size_t>(all.size());
 	});
@@ -365,23 +365,23 @@ int test_ring_alternating_small_large() {
 int test_ring_available_bytes_consistency() {
 	const std::string fn = "test_ring_available_bytes_consistency";
 	Ring ring;
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	ASSERT_TRUE(fn, ring.Write("TEST DATA"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{9});
-	Data r1;
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{9});
+	BinaryData r1;
 	ASSERT_TRUE(fn, ring.Read(4, r1));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{5});
 	ring.Seek(0, Position::Absolute);
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{9});
-	Data e1;
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{9});
+	BinaryData e1;
 	ASSERT_TRUE(fn, ring.Extract(3, e1));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{6});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{6});
 	ASSERT_TRUE(fn, ring.Write("MORE"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{10});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{10});
 	ring.Seek(0, Position::Absolute);
-	Data all;
+	BinaryData all;
 	ASSERT_TRUE(fn, ring.Read(0, all));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -395,7 +395,7 @@ int test_ring_burst_then_drain() {
 		ring.Close();
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		total = static_cast<std::size_t>(all.size());
 	});
@@ -414,7 +414,7 @@ int test_ring_clear_while_producing() {
 	ASSERT_TRUE(fn, ring.Empty());
 	ASSERT_TRUE(fn, ring.Write("AfterClear"));
 	ring.Close();
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, ring.Extract(0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("AfterClear"));
 	RETURN_TEST(fn, 0);
@@ -425,14 +425,14 @@ int test_ring_interleaved_read_extract() {
 	Ring ring;
 	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
 	ring.Close();
-	Data r1, e1;
+	BinaryData r1, e1;
 	ASSERT_TRUE(fn, ring.Read(5, r1));
 	ASSERT_EQUAL(fn, BytesToText(r1), std::string("ABCDE"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{3});
 	ASSERT_TRUE(fn, ring.Extract(3, e1));
 	ASSERT_EQUAL(fn, BytesToText(e1), std::string("FGH"));
-	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{5});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{0});
 	ASSERT_FALSE(fn, ring.Empty());
 	ring.Clean();
 	ASSERT_TRUE(fn, ring.Empty());
@@ -445,11 +445,11 @@ int test_ring_partial_read_on_closed() {
 	const std::string msg(30, 'Z');
 	ASSERT_TRUE(fn, ring.Write(msg));
 	ring.Close();
-	Data data;
+	BinaryData data;
 	ASSERT_FALSE(fn, ring.Read(50, data));
-	Data rem;
+	BinaryData rem;
 	ASSERT_TRUE(fn, ring.Read(0, rem));
-	ASSERT_EQUAL(fn, rem.size(), StormByte::Size{30});
+	ASSERT_EQUAL(fn, rem.size(), StormByte::ByteSize{30});
 	ASSERT_TRUE(fn, ring.EoF());
 	RETURN_TEST(fn, 0);
 }
@@ -459,15 +459,15 @@ int test_ring_polymorphic_interface_abi() {
 	std::unique_ptr<ReadWrite> ring = std::make_unique<Ring>();
 	ReadOnly& reader = *ring;
 	WriteOnly& writer = *ring;
-	Data data {std::byte{'A'}, std::byte{'B'}};
+	BinaryData data {std::byte{'A'}, std::byte{'B'}};
 	ASSERT_TRUE(fn, writer.Write(0, std::move(data)));
 	ASSERT_TRUE(fn, writer.IsWritable());
-	ASSERT_EQUAL(fn, reader.AvailableBytes(), StormByte::Size{2});
+	ASSERT_EQUAL(fn, reader.Available(), StormByte::ByteSize{2});
 	ASSERT_FALSE(fn, reader.Empty());
 	ASSERT_TRUE(fn, reader.IsReadable());
-	Data peek;
+	BinaryData peek;
 	ASSERT_TRUE(fn, reader.Peek(1, peek));
-	Data read;
+	BinaryData read;
 	ASSERT_TRUE(fn, reader.Read(1, read));
 	reader.Seek(0, Position::Absolute);
 	ASSERT_TRUE(fn, reader.Drop(1));
@@ -475,7 +475,7 @@ int test_ring_polymorphic_interface_abi() {
 	reader.Clear();
 	writer.Close();
 	ASSERT_TRUE(fn, reader.EoF());
-	Data until_eof;
+	BinaryData until_eof;
 	reader.ReadUntilEoF(until_eof);
 	reader.ExtractUntilEoF(until_eof);
 	ring.reset();
@@ -494,7 +494,7 @@ int test_ring_stress_rapid_small_writes() {
 		ring.Close();
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		read = static_cast<std::size_t>(all.size());
 	});
@@ -520,7 +520,7 @@ int test_ring_very_large_transfer() {
 		ring.Close();
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		received = static_cast<std::size_t>(all.size());
 	});
@@ -541,7 +541,7 @@ int test_ring_blocking_read_waits_for_data() {
 	std::string result;
 	std::thread consumer([&] {
 		started = true;
-		Data data;
+		BinaryData data;
 		if (ring.Read(10, data))
 			result = BytesToText(data);
 		finished = true;
@@ -566,11 +566,11 @@ int test_ring_close_unblocks_waiter() {
 	std::atomic<bool> completed{false};
 	std::string result;
 	std::thread consumer([&] {
-		Data data;
+		BinaryData data;
 		if (ring.Read(100, data))
 			result = BytesToText(data);
-		else if (ring.AvailableBytes() > 0) {
-			Data rem;
+		else if (ring.Available() > 0) {
+			BinaryData rem;
 			if (ring.Read(0, rem))
 				result = BytesToText(rem);
 		}
@@ -606,7 +606,7 @@ int test_ring_multiple_writers_single_reader() {
 		ring.Close();
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		collected = BytesToText(all);
 	});
@@ -633,10 +633,10 @@ int test_ring_peek_blocking() {
 		(void)ring.Write("0123456789");
 		ring.Close();
 	});
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, ring.Peek(10, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("0123456789"));
-	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{10});
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{10});
 	writer.join();
 	RETURN_TEST(fn, 0);
 }
@@ -647,7 +647,7 @@ int test_ring_set_error_unblocks_and_fails() {
 	std::atomic<bool> completed{false};
 	bool read_ok = true;
 	std::thread consumer([&] {
-		Data data;
+		BinaryData data;
 		read_ok = ring.Read(50, data);
 		completed = true;
 	});
@@ -674,7 +674,7 @@ int test_ring_single_writer_multiple_readers() {
 	});
 	auto reader_fn = [&](std::atomic<std::size_t>& counter) {
 		while (!ring.EoF()) {
-			Data part;
+			BinaryData part;
 			if (ring.Extract(5, part) && !part.empty())
 				counter += static_cast<std::size_t>(part.size());
 			else if (ring.EoF())
@@ -682,7 +682,7 @@ int test_ring_single_writer_multiple_readers() {
 			else
 				std::this_thread::yield();
 		}
-		Data rem;
+		BinaryData rem;
 		if (ring.Extract(0, rem) && !rem.empty())
 			counter += static_cast<std::size_t>(rem.size());
 	};
@@ -711,7 +711,7 @@ int test_ring_single_writer_single_reader() {
 		writer_done = true;
 	});
 	std::thread reader([&] {
-		Data all;
+		BinaryData all;
 		ring.ExtractUntilEoF(all);
 		collected = BytesToText(all);
 	});

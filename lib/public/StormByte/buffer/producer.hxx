@@ -185,7 +185,7 @@ namespace StormByte {
 				 * @brief Bytes stored in the shared Ring right now.
 				 * @return Size in bytes. 0 if empty.
 				 */
-				StormByte::Size Size() const noexcept override;
+				StormByte::ByteSize Size() const noexcept override;
 
 				/**
 				 * @}
@@ -197,36 +197,36 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Append bytes from a @ref StormByte::Buffer::Data (copy).
+				 * @brief Append bytes from a @ref StormByte::BinaryData (copy).
 				 * @param count Bytes to write.
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, const Data& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref StormByte::Buffer::Data (copy).
+				 * @brief Append an entire @ref StormByte::BinaryData (copy).
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				inline bool Write(const Data& data) noexcept {
+				inline bool Write(const BinaryData& data) noexcept {
 					return Write(data.size(), data);
 				}
 
 				/**
-				 * @brief Append bytes from a @ref StormByte::Buffer::Data (move).
+				 * @brief Append bytes from a @ref StormByte::BinaryData (move).
 				 * @param count Bytes to write.
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, Data&& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref StormByte::Buffer::Data (move).
+				 * @brief Append an entire @ref StormByte::BinaryData (move).
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				inline bool Write(Data&& data) noexcept {
+				inline bool Write(BinaryData&& data) noexcept {
 					return Write(data.size(), std::move(data));
 				}
 
@@ -236,7 +236,7 @@ namespace StormByte {
 				 * @param data Source buffer.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, const ReadOnly& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, const ReadOnly& data) noexcept override;
 
 				/**
 				 * @brief Append bytes from a @ref ReadOnly (extract).
@@ -244,7 +244,7 @@ namespace StormByte {
 				 * @param data Source buffer.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, ReadOnly&& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept override;
 
 				/**
 				 * @brief Bring @ref WriteOnly convenience Write overloads into scope.

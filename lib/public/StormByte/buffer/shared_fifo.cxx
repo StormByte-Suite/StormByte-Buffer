@@ -64,12 +64,12 @@ bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
 	return static_cast<const FIFO&>(*this) == static_cast<const FIFO&>(other);
 }
 
-StormByte::Size SharedFIFO::AvailableBytes() const noexcept {
+StormByte::ByteSize SharedFIFO::Available() const noexcept {
 	std::scoped_lock lock(m_mutex);
-	return FIFO::AvailableBytes();
+	return FIFO::Available();
 }
 
-const class Data& SharedFIFO::Data() const noexcept {
+const StormByte::BinaryData& SharedFIFO::Data() const noexcept {
 	return m_buffer;
 }
 
@@ -106,11 +106,11 @@ void SharedFIFO::Close() noexcept {
 	m_cv.notify_all();
 }
 
-bool SharedFIFO::Drop(const StormByte::Size& count) noexcept {
+bool SharedFIFO::Drop(const StormByte::ByteSize& count) noexcept {
 	bool result;
 	{
 		std::unique_lock lock(m_mutex);
-		if (count != StormByte::Size{0} && count > FIFO::AvailableBytes())
+		if (count != StormByte::ByteSize{0} && count > FIFO::Available())
 			Wait(count, lock);
 		result = FIFO::Drop(count);
 	}
@@ -134,8 +134,8 @@ bool SharedFIFO::HasError() const noexcept {
 	return !FIFO::IsReadable();
 }
 
-StormByte::String::String SharedFIFO::HexDump(const StormByte::Size& columns,
-								const StormByte::Size& byte_limit) const noexcept {
+StormByte::String::String SharedFIFO::HexDump(const StormByte::ByteSize& columns,
+								const StormByte::ByteSize& byte_limit) const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return FIFO::HexDump(columns, byte_limit);
 }
@@ -154,7 +154,7 @@ void SharedFIFO::SetError() noexcept {
 	m_cv.notify_all();
 }
 
-StormByte::Size SharedFIFO::Size() const noexcept {
+StormByte::ByteSize SharedFIFO::Size() const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return FIFO::Size();
 }
@@ -163,30 +163,30 @@ std::ostringstream SharedFIFO::HexDumpHeader() const noexcept {
 	return FIFO::HexDumpHeader();
 }
 
-bool SharedFIFO::ReadInternal(const StormByte::Size& count, class Data& outBuffer,
+bool SharedFIFO::ReadInternal(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer,
 							const Operation& flag) noexcept {
 	std::unique_lock lock(m_mutex);
-	const StormByte::Size avail = AvailableBytesInternal();
-	if (m_error || (m_closed && avail == StormByte::Size{0}))
+	const StormByte::ByteSize avail = AvailableInternal();
+	if (m_error || (m_closed && avail == StormByte::ByteSize{0}))
 		return false;
-	const StormByte::Size real_count = (count == StormByte::Size{0}) ? avail : count;
+	const StormByte::ByteSize real_count = (count == StormByte::ByteSize{0}) ? avail : count;
 	if (real_count > avail && !m_closed && !m_error) {
 		Wait(real_count, lock);
-		const StormByte::Size avail2 = AvailableBytesInternal();
-		if (m_error || (m_closed && avail2 == StormByte::Size{0}))
+		const StormByte::ByteSize avail2 = AvailableInternal();
+		if (m_error || (m_closed && avail2 == StormByte::ByteSize{0}))
 			return false;
 	}
 
 	return FIFO::ReadInternal(count, outBuffer, flag);
 }
 
-bool SharedFIFO::ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer,
+bool SharedFIFO::ReadInternal(const StormByte::ByteSize& count, WriteOnly& outBuffer,
 							const Operation& flag) noexcept {
 	std::unique_lock lock(m_mutex);
-	StormByte::Size avail = FIFO::AvailableBytes();
+	StormByte::ByteSize avail = FIFO::Available();
 	if (FIFO::EoF())
 		return false;
-	StormByte::Size real_count = (count == StormByte::Size{0}) ? avail : count;
+	StormByte::ByteSize real_count = (count == StormByte::ByteSize{0}) ? avail : count;
 	if (real_count > avail && FIFO::IsWritable()) {
 		Wait(real_count, lock);
 		if (FIFO::EoF())
@@ -196,17 +196,17 @@ bool SharedFIFO::ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer
 	return FIFO::ReadInternal(count, outBuffer, flag);
 }
 
-void SharedFIFO::Wait(const StormByte::Size& n, std::unique_lock<std::mutex>& lock) const {
-	if (n == StormByte::Size{0})
+void SharedFIFO::Wait(const StormByte::ByteSize& n, std::unique_lock<std::mutex>& lock) const {
+	if (n == StormByte::ByteSize{0})
 		return;
 	m_cv.wait(lock, [&] {
 		if (m_error || m_closed)
 			return true;
-		return AvailableBytesInternal() >= n;
+		return AvailableInternal() >= n;
 	});
 }
 
-bool SharedFIFO::WriteInternal(const StormByte::Size& count, const class Data& src) noexcept {
+bool SharedFIFO::WriteInternal(const StormByte::ByteSize& count, const StormByte::BinaryData& src) noexcept {
 	bool result;
 	{
 		std::scoped_lock lock(m_mutex);
@@ -218,7 +218,7 @@ bool SharedFIFO::WriteInternal(const StormByte::Size& count, const class Data& s
 	return result;
 }
 
-bool SharedFIFO::WriteInternal(const StormByte::Size& count, class Data&& src) noexcept {
+bool SharedFIFO::WriteInternal(const StormByte::ByteSize& count, StormByte::BinaryData&& src) noexcept {
 	bool result;
 	{
 		std::scoped_lock lock(m_mutex);

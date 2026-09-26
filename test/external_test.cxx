@@ -50,7 +50,7 @@
 #include <string>
 
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalReader;
@@ -60,7 +60,7 @@ using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
 
 namespace {
-	std::string BytesToText(const Data& data) {
+	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -69,7 +69,7 @@ namespace {
 
 	class DefaultExternalReader final : public ExternalReader {
 		public:
-			StormByte::Size AvailableBytes() const noexcept override {
+			StormByte::ByteSize Available() const noexcept override {
 				return 0;
 			}
 
@@ -85,22 +85,22 @@ namespace {
 				return true;
 			}
 
-			bool Read(const StormByte::Size&, Data&) const noexcept override {
+			bool Read(const StormByte::ByteSize&, BinaryData&) const noexcept override {
 				return false;
 			}
 
-			bool Extract(const StormByte::Size&, Data&) noexcept override {
+			bool Extract(const StormByte::ByteSize&, BinaryData&) noexcept override {
 				return false;
 			}
 
-			bool Peek(const StormByte::Size&, Data&) const noexcept override {
+			bool Peek(const StormByte::ByteSize&, BinaryData&) const noexcept override {
 				return false;
 			}
 
-			void ReadUntilEoF(Data&) const noexcept override {
+			void ReadUntilEoF(BinaryData&) const noexcept override {
 			}
 
-			void ExtractUntilEoF(Data&) noexcept override {
+			void ExtractUntilEoF(BinaryData&) noexcept override {
 			}
 
 			PointerType Clone() const noexcept override {
@@ -120,23 +120,23 @@ namespace {
 				return m_target.IsWritable();
 			}
 
-			StormByte::Size Occupied() const noexcept override {
+			StormByte::ByteSize Occupied() const noexcept override {
 				return m_target.Size();
 			}
 
-			bool Write(const Data& data) noexcept override {
+			bool Write(const BinaryData& data) noexcept override {
 				return m_target.Write(0, data);
 			}
 
-			bool Write(Data&& data) noexcept override {
+			bool Write(BinaryData&& data) noexcept override {
 				return m_target.Write(0, std::move(data));
 			}
 
-			bool Write(const StormByte::Size& count, const Data& data) noexcept override {
+			bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept override {
 				return m_target.Write(count, data);
 			}
 
-			bool Write(const StormByte::Size& count, Data&& data) noexcept override {
+			bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept override {
 				return m_target.Write(count, std::move(data));
 			}
 
@@ -171,7 +171,7 @@ int test_occupied_empty_is_zero() {
 	const std::string fn = "test_occupied_empty_is_zero";
 	FIFO target;
 	ExternalBufferWriter adapter(target);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, adapter.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, adapter.Occupied());
 	ASSERT_EQUAL(fn, target.Size(), adapter.Occupied());
 	RETURN_TEST(fn, 0);
 }
@@ -181,9 +181,9 @@ int test_occupied_leaf_matches_store() {
 	FIFO target;
 	CountingWriter leaf(target);
 	ExternalWriter& writer = leaf;
-	ASSERT_EQUAL(fn, StormByte::Size{0}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, writer.Occupied());
 	ASSERT_TRUE(fn, writer.Write("ABC"));
-	ASSERT_EQUAL(fn, StormByte::Size{3}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, writer.Occupied());
 	ASSERT_EQUAL(fn, target.Size(), writer.Occupied());
 	RETURN_TEST(fn, 0);
 }
@@ -193,10 +193,10 @@ int test_occupied_producer() {
 	Producer producer;
 	ExternalBufferWriter adapter(producer);
 	ExternalWriter& writer = adapter;
-	ASSERT_EQUAL(fn, StormByte::Size{0}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, writer.Occupied());
 	ASSERT_EQUAL(fn, producer.Size(), writer.Occupied());
 	ASSERT_TRUE(fn, writer.Write("XYZ"));
-	ASSERT_EQUAL(fn, StormByte::Size{3}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, writer.Occupied());
 	ASSERT_EQUAL(fn, producer.Size(), writer.Occupied());
 	RETURN_TEST(fn, 0);
 }
@@ -209,7 +209,7 @@ int test_occupied_survives_close() {
 	ASSERT_TRUE(fn, writer.Write("KEEP"));
 	adapter.Close();
 	ASSERT_FALSE(fn, adapter.IsWritable());
-	ASSERT_EQUAL(fn, StormByte::Size{4}, adapter.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, adapter.Occupied());
 	ASSERT_EQUAL(fn, target.Size(), adapter.Occupied());
 	RETURN_TEST(fn, 0);
 }
@@ -220,10 +220,10 @@ int test_occupied_tracks_fifo_size() {
 	ExternalBufferWriter adapter(target);
 	ExternalWriter& writer = adapter;
 	ASSERT_TRUE(fn, writer.Write("HELLO"));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, writer.Occupied());
 	ASSERT_EQUAL(fn, target.Size(), writer.Occupied());
 	ASSERT_TRUE(fn, writer.Write("!!"));
-	ASSERT_EQUAL(fn, StormByte::Size{7}, writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{7}, writer.Occupied());
 	ASSERT_EQUAL(fn, target.Size(), writer.Occupied());
 	RETURN_TEST(fn, 0);
 }
@@ -244,7 +244,7 @@ int test_owned_writer_clone_shares_ring() {
 	auto clone = adapter->Clone();
 	ASSERT_TRUE(fn, static_cast<bool>(clone));
 	ASSERT_TRUE(fn, clone->Write("CLON"));
-	Data got;
+	BinaryData got;
 	ASSERT_TRUE(fn, reader->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("CLON"), BytesToText(got));
 	clone->Close();
@@ -263,8 +263,8 @@ int test_reader_owns_consumer_after_source_dies() {
 		adapter.emplace(origin.Consumer());
 	}
 	ASSERT_TRUE(fn, writer->Write("KEEP"));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, adapter->AvailableBytes());
-	Data got;
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, adapter->Available());
+	BinaryData got;
 	ASSERT_TRUE(fn, adapter->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("KEEP"), BytesToText(got));
 	writer->Close();
@@ -283,8 +283,8 @@ int test_writer_owns_producer_after_source_dies() {
 	}
 	ASSERT_TRUE(fn, adapter->IsWritable());
 	ASSERT_TRUE(fn, adapter->Write("LIVE"));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, adapter->Occupied());
-	Data got;
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, adapter->Occupied());
+	BinaryData got;
 	ASSERT_TRUE(fn, reader->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("LIVE"), BytesToText(got));
 	adapter->Close();
@@ -299,7 +299,7 @@ int test_writer_owns_temporary_producer() {
 	auto reader = origin.Consumer();
 	ExternalBufferWriter adapter(origin);
 	ASSERT_TRUE(fn, adapter.Write("TIP"));
-	Data got;
+	BinaryData got;
 	ASSERT_TRUE(fn, reader.Extract(3, got));
 	ASSERT_EQUAL(fn, std::string("TIP"), BytesToText(got));
 	adapter.Close();
@@ -318,22 +318,22 @@ int test_external_buffer_reader_polymorphic_abi() {
 	ASSERT_TRUE(fn, source.Write("AB"));
 	ExternalBufferReader adapter(source);
 	ExternalReader& reader = adapter;
-	ASSERT_EQUAL(fn, StormByte::Size{2}, reader.AvailableBytes());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, reader.Available());
 	ASSERT_FALSE(fn, reader.Empty());
 	ASSERT_FALSE(fn, reader.EoF());
 	ASSERT_TRUE(fn, reader.IsReadable());
-	Data peek;
+	BinaryData peek;
 	ASSERT_TRUE(fn, reader.Peek(1, peek));
-	Data read;
+	BinaryData read;
 	ASSERT_TRUE(fn, reader.Read(1, read));
 	reader.Seek(0, Position::Absolute);
-	Data extracted;
+	BinaryData extracted;
 	ASSERT_TRUE(fn, reader.Extract(1, extracted));
 	reader.Clean();
 	source.Close();
-	Data remaining;
+	BinaryData remaining;
 	reader.ReadUntilEoF(remaining);
-	Data none;
+	BinaryData none;
 	reader.ExtractUntilEoF(none);
 	auto clone = reader.Clone();
 	ASSERT_TRUE(fn, static_cast<bool>(clone));
@@ -360,13 +360,13 @@ int test_external_buffer_writer_polymorphic_abi() {
 	FIFO target;
 	ExternalBufferWriter adapter(target);
 	ExternalWriter& writer = adapter;
-	ASSERT_EQUAL(fn, StormByte::Size{0}, writer.Occupied());
-	Data copy {std::byte{'A'}};
-	Data moved {std::byte{'B'}};
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, writer.Occupied());
+	BinaryData copy {std::byte{'A'}};
+	BinaryData moved {std::byte{'B'}};
 	ASSERT_TRUE(fn, writer.Write(copy));
 	ASSERT_TRUE(fn, writer.Write(std::move(moved)));
 	ASSERT_TRUE(fn, writer.Write(1, copy));
-	Data counted_move {std::byte{'C'}};
+	BinaryData counted_move {std::byte{'C'}};
 	ASSERT_TRUE(fn, writer.Write(1, std::move(counted_move)));
 	ASSERT_TRUE(fn, writer.IsWritable());
 	ASSERT_EQUAL(fn, target.Size(), writer.Occupied());

@@ -51,7 +51,7 @@
 #include <thread>
 #include <vector>
 
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::ReadOnly;
@@ -60,7 +60,7 @@ using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::WriteOnly;
 
 namespace {
-	std::string BytesToText(const Data& data) {
+	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -75,17 +75,17 @@ namespace {
 int test_shared_fifo_available_bytes_basic() {
 	const std::string fn = "test_shared_fifo_available_bytes_basic";
 	SharedFIFO fifo;
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{0});
 	(void)fifo.Write("HELLO WORLD");
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{11});
-	Data r1;
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{11});
+	BinaryData r1;
 	(void)fifo.Read(5, r1);
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{6});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{6});
 	fifo.Seek(2, Position::Absolute);
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{9});
-	Data e1;
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{9});
+	BinaryData e1;
 	(void)fifo.Extract(3, e1);
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{6});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{6});
 	RETURN_TEST(fn, 0);
 }
 
@@ -104,8 +104,8 @@ int test_shared_fifo_available_bytes_concurrent() {
 	});
 	std::thread reader([&] {
 		while (!done.load() || !fifo.Empty()) {
-			if (fifo.AvailableBytes() > 0) {
-				Data data;
+			if (fifo.Available() > 0) {
+				BinaryData data;
 				(void)fifo.Extract(0, data);
 				available_checks.fetch_add(1);
 			}
@@ -116,7 +116,7 @@ int test_shared_fifo_available_bytes_concurrent() {
 	reader.join();
 	ASSERT_TRUE(fn, available_checks.load() > 0);
 	ASSERT_TRUE(fn, fifo.Empty());
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -133,7 +133,7 @@ int test_shared_fifo_blocking_read_insufficient_not_closed() {
 	std::atomic<bool> read_finished{false};
 	std::thread reader([&] {
 		read_started.store(true);
-		Data out;
+		BinaryData out;
 		const auto result = fifo.Read(10, out);
 		read_finished.store(true);
 		read_got_error.store(!result);
@@ -152,11 +152,11 @@ int test_shared_fifo_close_suppresses_writes() {
 	const std::string fn = "test_shared_fifo_close_suppresses_writes";
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("ABC"));
-	ASSERT_EQUAL(fn, fifo.Size(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, fifo.Size(), StormByte::ByteSize{3});
 	fifo.Close();
 	(void)fifo.Write(std::string("DEF"));
-	ASSERT_EQUAL(fn, fifo.Size(), StormByte::Size{3});
-	Data out;
+	ASSERT_EQUAL(fn, fifo.Size(), StormByte::ByteSize{3});
+	BinaryData out;
 	ASSERT_TRUE(fn, fifo.Extract(0, out));
 	ASSERT_EQUAL(fn, BytesToText(out), std::string("ABC"));
 	RETURN_TEST(fn, 0);
@@ -167,8 +167,8 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
 	SharedFIFO fifo;
 	fifo.Close();
 	ASSERT_FALSE(fn, fifo.IsWritable());
-	ASSERT_EQUAL(fn, fifo.Size(), StormByte::Size{0});
-	Data out;
+	ASSERT_EQUAL(fn, fifo.Size(), StormByte::ByteSize{0});
+	BinaryData out;
 	ASSERT_FALSE(fn, fifo.Extract(10, out));
 	RETURN_TEST(fn, 0);
 }
@@ -178,10 +178,10 @@ int test_shared_fifo_extract_insufficient_closed_returns_available() {
 	SharedFIFO fifo;
 	(void)fifo.Write("HELLO");
 	fifo.Close();
-	Data out;
+	BinaryData out;
 	ASSERT_FALSE(fn, fifo.Extract(100, out));
-	ASSERT_EQUAL(fn, fifo.Size(), StormByte::Size{5});
-	Data all;
+	ASSERT_EQUAL(fn, fifo.Size(), StormByte::ByteSize{5});
+	BinaryData all;
 	ASSERT_TRUE(fn, fifo.Read(0, all));
 	ASSERT_EQUAL(fn, BytesToText(all), std::string("HELLO"));
 	RETURN_TEST(fn, 0);
@@ -192,8 +192,8 @@ int test_shared_fifo_read_closed_no_data_nonblocking() {
 	SharedFIFO fifo;
 	fifo.Close();
 	ASSERT_FALSE(fn, fifo.IsWritable());
-	ASSERT_EQUAL(fn, fifo.Size(), StormByte::Size{0});
-	Data out;
+	ASSERT_EQUAL(fn, fifo.Size(), StormByte::ByteSize{0});
+	BinaryData out;
 	ASSERT_FALSE(fn, fifo.Read(10, out));
 	RETURN_TEST(fn, 0);
 }
@@ -203,9 +203,9 @@ int test_shared_fifo_read_insufficient_closed_returns_available() {
 	SharedFIFO fifo;
 	(void)fifo.Write("ABC");
 	fifo.Close();
-	Data out;
+	BinaryData out;
 	ASSERT_FALSE(fn, fifo.Read(10, out));
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{3});
 	RETURN_TEST(fn, 0);
 }
 
@@ -268,7 +268,7 @@ int test_hexdump2() {
 int test_hexdump3() {
 	const std::string fn = "test_shared_hexdump_mixed";
 	SharedFIFO sf;
-	Data v;
+	BinaryData v;
 	v.push_back(std::byte{0x41});
 	v.push_back(std::byte{0x00});
 	v.push_back(std::byte{0x1F});
@@ -299,10 +299,10 @@ int test_shared_fifo_peek_all_available() {
 	const std::string fn = "test_shared_fifo_peek_all_available";
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("WORLD"));
-	Data peek_all;
+	BinaryData peek_all;
 	ASSERT_TRUE(fn, fifo.Peek(0, peek_all));
 	ASSERT_EQUAL(fn, BytesToText(peek_all), std::string("WORLD"));
-	Data read_all;
+	BinaryData read_all;
 	ASSERT_TRUE(fn, fifo.Read(0, read_all));
 	ASSERT_EQUAL(fn, BytesToText(read_all), std::string("WORLD"));
 	RETURN_TEST(fn, 0);
@@ -312,13 +312,13 @@ int test_shared_fifo_peek_basic() {
 	const std::string fn = "test_shared_fifo_peek_basic";
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("HELLO"));
-	Data peek1;
+	BinaryData peek1;
 	ASSERT_TRUE(fn, fifo.Peek(3, peek1));
 	ASSERT_EQUAL(fn, BytesToText(peek1), std::string("HEL"));
-	Data peek2;
+	BinaryData peek2;
 	ASSERT_TRUE(fn, fifo.Peek(3, peek2));
 	ASSERT_EQUAL(fn, BytesToText(peek2), std::string("HEL"));
-	Data read1;
+	BinaryData read1;
 	ASSERT_TRUE(fn, fifo.Read(3, read1));
 	ASSERT_EQUAL(fn, BytesToText(read1), std::string("HEL"));
 	RETURN_TEST(fn, 0);
@@ -328,10 +328,10 @@ int test_shared_fifo_peek_concurrent() {
 	const std::string fn = "test_shared_fifo_peek_concurrent";
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("DATA"));
-	Data peek;
+	BinaryData peek;
 	ASSERT_TRUE(fn, fifo.Peek(4, peek));
 	ASSERT_EQUAL(fn, BytesToText(peek), std::string("DATA"));
-	Data read;
+	BinaryData read;
 	ASSERT_TRUE(fn, fifo.Read(4, read));
 	ASSERT_EQUAL(fn, BytesToText(read), std::string("DATA"));
 	RETURN_TEST(fn, 0);
@@ -342,8 +342,8 @@ int test_shared_fifo_skip_basic() {
 	SharedFIFO sf;
 	(void)sf.Write(std::string("ABCDEFG"));
 	(void)sf.Drop(3);
-	ASSERT_EQUAL(fn, sf.Size(), StormByte::Size{4});
-	Data out;
+	ASSERT_EQUAL(fn, sf.Size(), StormByte::ByteSize{4});
+	BinaryData out;
 	ASSERT_TRUE(fn, sf.Extract(0, out));
 	ASSERT_EQUAL(fn, BytesToText(out), std::string("DEFG"));
 	RETURN_TEST(fn, 0);
@@ -353,11 +353,11 @@ int test_shared_fifo_skip_with_readpos() {
 	const std::string fn = "test_shared_fifo_skip_with_readpos";
 	SharedFIFO sf;
 	(void)sf.Write(std::string("0123456789"));
-	Data r;
+	BinaryData r;
 	ASSERT_TRUE(fn, sf.Read(3, r));
 	(void)sf.Drop(4);
-	ASSERT_EQUAL(fn, sf.Size(), StormByte::Size{3});
-	Data out;
+	ASSERT_EQUAL(fn, sf.Size(), StormByte::ByteSize{3});
+	BinaryData out;
 	ASSERT_TRUE(fn, sf.Extract(0, out));
 	ASSERT_EQUAL(fn, BytesToText(out), std::string("789"));
 	RETURN_TEST(fn, 0);
@@ -384,7 +384,7 @@ int test_shared_fifo_concurrent_seek_and_read() {
 		seeker_done.store(true);
 	});
 	std::thread reader([&] {
-		Data r1, r2;
+		BinaryData r1, r2;
 		if (!fifo.Read(2, r1)) {
 			reader_failed.store(true);
 			return;
@@ -422,7 +422,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	std::atomic<bool> reader_failed{false};
 	std::atomic<bool> first_read_done{false};
 	std::thread reader([&] {
-		Data before, after;
+		BinaryData before, after;
 		if (!fifo.Read(3, before)) {
 			reader_failed.store(true);
 			return;
@@ -439,7 +439,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	std::thread extractor([&] {
 		while (!first_read_done.load())
 			std::this_thread::sleep_for(std::chrono::microseconds(100));
-		Data e;
+		BinaryData e;
 		(void)fifo.Extract(2, e);
 	});
 	reader.join();
@@ -457,7 +457,7 @@ int test_shared_fifo_extract_blocking_and_close() {
 	std::atomic<bool> saw_writable{false};
 	std::size_t extracted_size = 1234;
 	std::thread t([&] {
-		Data out;
+		BinaryData out;
 		const auto res = fifo.Extract(1, out);
 		woke.store(true);
 		saw_writable.store(fifo.IsWritable());
@@ -486,10 +486,10 @@ int test_shared_fifo_growth_under_contention() {
 	std::size_t consumed = 0;
 	std::thread consumer([&] {
 		while (true) {
-			Data part;
+			BinaryData part;
 			if (!fifo.Extract(128, part)) {
-				if (fifo.AvailableBytes() > 0) {
-					Data rem;
+				if (fifo.Available() > 0) {
+					BinaryData rem;
 					if (fifo.Extract(0, rem) && !rem.empty())
 						consumed += static_cast<std::size_t>(rem.size());
 				}
@@ -527,7 +527,7 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
 	std::string collected;
 	std::thread consumer([&] {
 		while (true) {
-			Data part;
+			BinaryData part;
 			const auto res = fifo.Extract(1, part);
 			if (!res || (part.empty() && fifo.EoF()))
 				break;
@@ -564,7 +564,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 	std::thread consumer1([&] {
 		std::size_t local = 0;
 		while (true) {
-			Data part;
+			BinaryData part;
 			const auto res = fifo.Extract(1, part);
 			if (!res || (part.empty() && fifo.EoF()))
 				break;
@@ -575,7 +575,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 	std::thread consumer2([&] {
 		std::size_t local = 0;
 		while (true) {
-			Data part;
+			BinaryData part;
 			const auto res = fifo.Extract(1, part);
 			if (!res || (part.empty() && fifo.EoF()))
 				break;
@@ -605,10 +605,10 @@ int test_shared_fifo_producer_consumer_blocking() {
 	std::string collected;
 	std::thread consumer([&] {
 		while (true) {
-			Data part;
+			BinaryData part;
 			if (!fifo.Read(3, part)) {
-				if (fifo.AvailableBytes() > 0) {
-					Data rem;
+				if (fifo.Available() > 0) {
+					BinaryData rem;
 					if (fifo.Read(0, rem) && !rem.empty())
 						collected.append(BytesToText(rem));
 				}
@@ -635,14 +635,14 @@ int test_shared_fifo_multiple_spans_eof() {
 	const std::string fn = "test_shared_fifo_multiple_spans_eof";
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGHIJ"));
-	Data s1, s2, s3;
+	BinaryData s1, s2, s3;
 	ASSERT_TRUE(fn, fifo.Read(4, s1));
-	ASSERT_EQUAL(fn, s1.size(), StormByte::Size{4});
+	ASSERT_EQUAL(fn, s1.size(), StormByte::ByteSize{4});
 	ASSERT_TRUE(fn, fifo.Read(3, s2));
-	ASSERT_EQUAL(fn, s2.size(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, s2.size(), StormByte::ByteSize{3});
 	ASSERT_TRUE(fn, fifo.Read(3, s3));
-	ASSERT_EQUAL(fn, s3.size(), StormByte::Size{3});
-	ASSERT_EQUAL(fn, fifo.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, s3.size(), StormByte::ByteSize{3});
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{0});
 	ASSERT_FALSE(fn, fifo.EoF());
 	fifo.Close();
 	ASSERT_TRUE(fn, fifo.EoF());
@@ -654,15 +654,15 @@ int test_shared_fifo_polymorphic_interface_abi() {
 	std::unique_ptr<ReadWrite> fifo = std::make_unique<SharedFIFO>();
 	ReadOnly& reader = *fifo;
 	WriteOnly& writer = *fifo;
-	Data data {std::byte{'A'}, std::byte{'B'}};
+	BinaryData data {std::byte{'A'}, std::byte{'B'}};
 	ASSERT_TRUE(fn, writer.Write(0, std::move(data)));
 	ASSERT_TRUE(fn, writer.IsWritable());
-	ASSERT_EQUAL(fn, reader.AvailableBytes(), StormByte::Size{2});
+	ASSERT_EQUAL(fn, reader.Available(), StormByte::ByteSize{2});
 	ASSERT_FALSE(fn, reader.Empty());
 	ASSERT_TRUE(fn, reader.IsReadable());
-	Data peek;
+	BinaryData peek;
 	ASSERT_TRUE(fn, reader.Peek(1, peek));
-	Data read;
+	BinaryData read;
 	ASSERT_TRUE(fn, reader.Read(1, read));
 	reader.Seek(0, Position::Absolute);
 	ASSERT_TRUE(fn, reader.Drop(1));
@@ -670,7 +670,7 @@ int test_shared_fifo_polymorphic_interface_abi() {
 	writer.SetError();
 	ASSERT_TRUE(fn, reader.EoF());
 	reader.Clear();
-	Data until_eof;
+	BinaryData until_eof;
 	reader.ReadUntilEoF(until_eof);
 	reader.ExtractUntilEoF(until_eof);
 	fifo.reset();
@@ -681,15 +681,15 @@ int test_shared_fifo_wrap_boundary_blocking() {
 	const std::string fn = "test_shared_fifo_wrap_boundary_blocking";
 	SharedFIFO fifo;
 	(void)fifo.Write("ABCDE");
-	Data r1;
+	BinaryData r1;
 	ASSERT_TRUE(fn, fifo.Read(3, r1));
 	ASSERT_EQUAL(fn, BytesToText(r1), std::string("ABC"));
-	Data e1;
+	BinaryData e1;
 	ASSERT_TRUE(fn, fifo.Extract(2, e1));
 	ASSERT_EQUAL(fn, BytesToText(e1), std::string("DE"));
 	(void)fifo.Write("12");
 	fifo.Seek(0, Position::Absolute);
-	Data all;
+	BinaryData all;
 	ASSERT_TRUE(fn, fifo.Read(0, all));
 	ASSERT_EQUAL(fn, BytesToText(all).size(), static_cast<std::size_t>(5));
 	RETURN_TEST(fn, 0);
@@ -699,9 +699,9 @@ int test_shared_fifo_write_span_basic() {
 	const std::string fn = "test_shared_fifo_write_span_basic";
 	SharedFIFO fifo;
 	const char* msg = "SFPAN";
-	Data vec(reinterpret_cast<const std::byte*>(msg), StormByte::Size{5});
+	BinaryData vec(reinterpret_cast<const std::byte*>(msg), StormByte::ByteSize{5});
 	ASSERT_TRUE(fn, fifo.Write(vec));
-	Data read;
+	BinaryData read;
 	ASSERT_TRUE(fn, fifo.Read(5, read));
 	ASSERT_EQUAL(fn, BytesToText(read), std::string("SFPAN"));
 	RETURN_TEST(fn, 0);
@@ -713,13 +713,13 @@ int test_shared_fifo_write_whole_fifo() {
 	FIFO src;
 	(void)src.Write(std::string("ONE"));
 	ASSERT_TRUE(fn, shared.Write(src));
-	Data all;
+	BinaryData all;
 	ASSERT_TRUE(fn, shared.Extract(0, all));
 	ASSERT_EQUAL(fn, BytesToText(all), std::string("ONE"));
 	FIFO src2;
 	(void)src2.Write(std::string("TWO"));
 	ASSERT_TRUE(fn, shared.Write(std::move(src2)));
-	Data all2;
+	BinaryData all2;
 	ASSERT_TRUE(fn, shared.Extract(0, all2));
 	ASSERT_EQUAL(fn, BytesToText(all2), std::string("TWO"));
 	RETURN_TEST(fn, 0);

@@ -216,7 +216,7 @@ namespace StormByte {
 					 * @struct Telemetry
 					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
 					 *
-					 * Byte fields are @ref StormByte::Size. Event counts are
+					 * Byte fields are @ref StormByte::ByteSize. Event counts are
 					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
 					 * Accumulators start at construction and do not reset on
 					 * Close / Rewind / Open / Truncate.
@@ -236,22 +236,22 @@ namespace StormByte {
 						/**
 						 * @brief Octets accepted by a successful @ref Write.
 						 */
-						StormByte::Size Accepted {};
+						StormByte::ByteSize Accepted {};
 
 						/**
 						 * @brief Of @ref Accepted, octets that did not hit the origin on the caller thread.
 						 */
-						StormByte::Size Behind {};
+						StormByte::ByteSize Behind {};
 
 						/**
 						 * @brief Of @ref Accepted, octets pushed on the caller thread.
 						 */
-						StormByte::Size Direct {};
+						StormByte::ByteSize Direct {};
 
 						/**
 						 * @brief Octets pushed through @ref OriginPush since construction.
 						 */
-						StormByte::Size Origin {};
+						StormByte::ByteSize Origin {};
 
 						/**
 						 * @brief Durable origin length now. Not an accumulator.
@@ -260,7 +260,7 @@ namespace StormByte {
 						 * inflate this. After Flush / Close of a sequential
 						 * session it equals HighWater.
 						 */
-						StormByte::Size Materialized {};
+						StormByte::ByteSize Materialized {};
 
 						/**
 						 * @brief Maximum logical @ref Tell since Open / Truncate.
@@ -268,39 +268,39 @@ namespace StormByte {
 						 * Durable progress is Materialized / HighWater when
 						 * HighWater > 0. Do not divide by Tell.
 						 */
-						StormByte::Size HighWater {};
+						StormByte::ByteSize HighWater {};
 
 						/**
 						 * @brief Writes that landed in a resident page at or after the previous high-water.
 						 */
-						StormByte::Size HitAhead {};
+						StormByte::ByteSize HitAhead {};
 
 						/**
 						 * @brief Writes that landed in a resident page behind the high-water.
 						 */
-						StormByte::Size HitBack {};
+						StormByte::ByteSize HitBack {};
 
 						/**
 						 * @brief Writes that created or extended a page (origin hole).
 						 */
-						StormByte::Size Miss {};
+						StormByte::ByteSize Miss {};
 
 						/**
 						 * @brief Octets not yet on the origin (page map plus drain pipe).
 						 */
-						StormByte::Size Dirty {};
+						StormByte::ByteSize Dirty {};
 
 						/**
 						 * @brief Maximum @ref Dirty since construction.
 						 */
-						StormByte::Size DirtyPeak {};
+						StormByte::ByteSize DirtyPeak {};
 
 						/**
 						 * @brief Ring cap in bytes at this snapshot, or 0 if the ring is off.
 						 *
 						 * Not @ref MaxMemory.
 						 */
-						StormByte::Size Cap {};
+						StormByte::ByteSize Cap {};
 
 						/**
 						 * @brief Logical @ref Seek calls (Tell only).
@@ -505,13 +505,13 @@ namespace StormByte {
 					 * @brief Logical write offset.
 					 * @return Cursor published to the caller. Includes unflushed pages.
 					 */
-					virtual StormByte::Size Tell() const noexcept;
+					virtual StormByte::ByteSize Tell() const noexcept;
 
 					/**
 					 * @brief Bytes not yet on the origin.
 					 * @return Page map plus drain pipe. 0 after a successful Flush.
 					 */
-					virtual StormByte::Size Dirty() const noexcept;
+					virtual StormByte::ByteSize Dirty() const noexcept;
 
 					/**
 					 * @brief Logical sink length in bytes.
@@ -521,7 +521,7 @@ namespace StormByte {
 					 * max(filesystem size, Tell). A remote leaf overrides
 					 * this.
 					 */
-					virtual StormByte::Size Size() const noexcept;
+					virtual StormByte::ByteSize Size() const noexcept;
 
 					/**
 					 * @brief Move the write cursor.
@@ -565,7 +565,7 @@ namespace StormByte {
 					 * @brief Configured origin push unit.
 					 * @return Bytes. 0 disables the ring (with BackPressure 0).
 					 */
-					virtual StormByte::Size WriteChunk() const noexcept;
+					virtual StormByte::ByteSize WriteChunk() const noexcept;
 
 					/**
 					 * @brief Set origin push unit. Takes effect immediately.
@@ -575,7 +575,7 @@ namespace StormByte {
 					 * dirty bytes drains the ring through @ref Flush / the worker
 					 * before the setter returns. Not deferred to the next Write.
 					 */
-					virtual void WriteChunk(StormByte::Size bytes);
+					virtual void WriteChunk(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured dirty cap in WriteChunk units.
@@ -598,7 +598,7 @@ namespace StormByte {
 					 *
 					 * Independent of @ref WriteChunk / @ref BackPressure.
 					 */
-					virtual StormByte::Size MaxMemory() const noexcept;
+					virtual StormByte::ByteSize MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set the dirty-page budget. Takes effect immediately.
@@ -607,7 +607,7 @@ namespace StormByte {
 					 * Does not Flush. Does not resize the ring. A value below
 					 * current dirty pages trips GC and may block.
 					 */
-					virtual void MaxMemory(StormByte::Size bytes);
+					virtual void MaxMemory(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Wait cap for OriginPush.
@@ -635,9 +635,9 @@ namespace StormByte {
 					 * @param max_wait Initial @ref MaxWait.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 */
-					explicit BufferedWriter(StormByte::Size write_chunk = 0, std::size_t back_pressure = 0,
+					explicit BufferedWriter(StormByte::ByteSize write_chunk = 0, std::size_t back_pressure = 0,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0},
-						StormByte::Size max_memory = 0);
+						StormByte::ByteSize max_memory = 0);
 
 					/**
 					 * @brief Publish session state from a leaf hook.
@@ -649,7 +649,7 @@ namespace StormByte {
 					 * @brief Publish the logical write offset from a leaf @ref Seek.
 					 * @param offset New @ref Tell.
 					 */
-					void SetTell(StormByte::Size offset) noexcept;
+					void SetTell(StormByte::ByteSize offset) noexcept;
 
 					/**
 					 * @brief Leaf policy hook. Called from @ref Open before the origin.
@@ -668,7 +668,7 @@ namespace StormByte {
 					 * still reject the later @c Write. Override to tighten
 					 * (disk space, socket window). Used by @c Backend::Bridge.
 					 */
-					virtual bool WillWrite(StormByte::Size n) const;
+					virtual bool WillWrite(StormByte::ByteSize n) const;
 
 					/**
 					 * @name Origin hooks
@@ -718,7 +718,7 @@ namespace StormByte {
 					 * Default fails. File and remote leaves override this.
 					 * Public @ref Seek does not call this; GC / Flush / Close do.
 					 */
-					virtual Result OriginSeek(StormByte::Size absolute);
+					virtual Result OriginSeek(StormByte::ByteSize absolute);
 
 					/**
 					 * @}

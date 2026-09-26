@@ -57,7 +57,7 @@ std::size_t LockFreeRing::RoundUpPow2(std::size_t v) noexcept {
 	return ++v;
 }
 
-LockFreeRing::LockFreeRing(StormByte::Size initial_capacity) {
+LockFreeRing::LockFreeRing(StormByte::ByteSize initial_capacity) {
 	m_capacity = RoundUpPow2(static_cast<std::size_t>(initial_capacity));
 	m_mask     = m_capacity - 1;
 	m_storage.resize(m_capacity);
@@ -101,10 +101,10 @@ LockFreeRing& LockFreeRing::operator=(LockFreeRing&& other) noexcept {
 	return *this;
 }
 
-StormByte::Size LockFreeRing::AvailableBytes() const noexcept {
+StormByte::ByteSize LockFreeRing::Available() const noexcept {
 	const std::size_t t = m_tail.load(std::memory_order_acquire);
 	const std::size_t l = m_logical.load(std::memory_order_relaxed);
-	return StormByte::Size{t - l};
+	return StormByte::ByteSize{t - l};
 }
 
 bool LockFreeRing::Empty() const noexcept {
@@ -114,7 +114,7 @@ bool LockFreeRing::Empty() const noexcept {
 bool LockFreeRing::EoF() const noexcept {
 	if (m_error.load(std::memory_order_acquire)) return true;
 	if (!m_closed.load(std::memory_order_acquire)) return false;
-	return AvailableBytes() == StormByte::Size{0};
+	return Available() == StormByte::ByteSize{0};
 }
 
 bool LockFreeRing::HasError() const noexcept {
@@ -130,20 +130,20 @@ bool LockFreeRing::IsWritable() const noexcept {
 		!m_error.load(std::memory_order_acquire);
 }
 
-StormByte::Size LockFreeRing::Size() const noexcept {
+StormByte::ByteSize LockFreeRing::Size() const noexcept {
 	const std::size_t h = m_head.load(std::memory_order_acquire);
 	const std::size_t t = m_tail.load(std::memory_order_acquire);
-	return StormByte::Size{t - h};
+	return StormByte::ByteSize{t - h};
 }
 
-const class Data& LockFreeRing::Data() const noexcept {
+const StormByte::BinaryData& LockFreeRing::Data() const noexcept {
 	std::lock_guard lock(m_wait_mtx);
 	const std::size_t h = m_head.load(std::memory_order_relaxed);
 	const std::size_t t = m_tail.load(std::memory_order_relaxed);
 	const std::size_t sz = t - h;
 	const std::size_t mask = m_mask;
 	m_data_cache.clear();
-	m_data_cache.reserve(StormByte::Size{sz});
+	m_data_cache.reserve(StormByte::ByteSize{sz});
 	for (std::size_t i = 0; i < sz; ++i)
 		m_data_cache.push_back(m_storage[(h + i) & mask]);
 	return m_data_cache;
@@ -190,9 +190,9 @@ void LockFreeRing::SetError() noexcept {
 	m_cv.notify_all();
 }
 
-bool LockFreeRing::Drop(const StormByte::Size& count) noexcept {
-	if (count == StormByte::Size{0}) return true;
-	const StormByte::Size avail = AvailableBytes();
+bool LockFreeRing::Drop(const StormByte::ByteSize& count) noexcept {
+	if (count == StormByte::ByteSize{0}) return true;
+	const StormByte::ByteSize avail = Available();
 	if (count > avail) return false;
 	m_logical.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
 	m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
@@ -200,12 +200,12 @@ bool LockFreeRing::Drop(const StormByte::Size& count) noexcept {
 	return true;
 }
 
-bool LockFreeRing::Consume(const StormByte::Size n) noexcept {
-	if (n == StormByte::Size{0})
+bool LockFreeRing::Consume(const StormByte::ByteSize n) noexcept {
+	if (n == StormByte::ByteSize{0})
 		return true;
 	if (m_error.load(std::memory_order_acquire))
 		return false;
-	const StormByte::Size avail = AvailableBytes();
+	const StormByte::ByteSize avail = Available();
 	if (n > avail)
 		return false;
 	const std::size_t next = m_logical.load(std::memory_order_relaxed) + static_cast<std::size_t>(n);
@@ -248,51 +248,51 @@ void LockFreeRing::Grow() noexcept {
 	m_tail.store(sz, std::memory_order_release);
 }
 
-bool LockFreeRing::WaitFor(StormByte::Size n) const {
-	if (n == StormByte::Size{0}) return true;
+bool LockFreeRing::WaitFor(StormByte::ByteSize n) const {
+	if (n == StormByte::ByteSize{0}) return true;
 	std::unique_lock lock(m_wait_mtx);
 	m_cv.wait(lock, [&] {
 		if (m_error.load(std::memory_order_acquire) ||
 			m_closed.load(std::memory_order_acquire))
 			return true;
-		return AvailableBytes() >= n;
+		return Available() >= n;
 	});
 	if (m_error.load(std::memory_order_acquire))
 		return false;
-	return AvailableBytes() >= n;
+	return Available() >= n;
 }
 
-bool LockFreeRing::ReadInternal(StormByte::Size count, class Data& out, Operation op) noexcept {
+bool LockFreeRing::ReadInternal(StormByte::ByteSize count, StormByte::BinaryData& out, Operation op) noexcept {
 	if (m_error.load(std::memory_order_acquire))
 		return false;
-	StormByte::Size avail = AvailableBytes();
-	if (count == StormByte::Size{0}) {
-		if (avail == StormByte::Size{0}) {
+	StormByte::ByteSize avail = Available();
+	if (count == StormByte::ByteSize{0}) {
+		if (avail == StormByte::ByteSize{0}) {
 			if (m_closed.load(std::memory_order_acquire))
 				return false;
-			if (!WaitFor(StormByte::Size{1}))
+			if (!WaitFor(StormByte::ByteSize{1}))
 				return false;
-			avail = AvailableBytes();
-			if (avail == StormByte::Size{0})
+			avail = Available();
+			if (avail == StormByte::ByteSize{0})
 				return false;
 		}
 
 		count = avail;
 	}
 
-	if (avail == StormByte::Size{0} && m_closed.load(std::memory_order_acquire))
+	if (avail == StormByte::ByteSize{0} && m_closed.load(std::memory_order_acquire))
 		return false;
-	const StormByte::Size want = count;
+	const StormByte::ByteSize want = count;
 	if (want > avail) {
 		if (!WaitFor(want))
 			return false;
-		avail = AvailableBytes();
+		avail = Available();
 		if (want > avail)
 			return false;
 	}
 
 	std::lock_guard lock(m_wait_mtx);
-	avail = AvailableBytes();
+	avail = Available();
 	if (m_error.load(std::memory_order_acquire))
 		return false;
 	if (want > avail)
@@ -300,7 +300,7 @@ bool LockFreeRing::ReadInternal(StormByte::Size count, class Data& out, Operatio
 	const std::size_t logical = m_logical.load(std::memory_order_relaxed);
 	const std::size_t mask    = m_mask;
 	const std::size_t want_n  = static_cast<std::size_t>(want);
-	out.reserve(out.size() + StormByte::Size{want_n});
+	out.reserve(out.size() + StormByte::ByteSize{want_n});
 	for (std::size_t i = 0; i < want_n; ++i)
 		out.push_back(m_storage[(logical + i) & mask]);
 	if (op == Operation::Read || op == Operation::Extract) {
@@ -313,37 +313,37 @@ bool LockFreeRing::ReadInternal(StormByte::Size count, class Data& out, Operatio
 	return true;
 }
 
-bool LockFreeRing::Peek(const StormByte::Size& count, class Data& out) const noexcept {
+bool LockFreeRing::Peek(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
 	return const_cast<LockFreeRing*>(this)->ReadInternal(count, out, Operation::Peek);
 }
 
-bool LockFreeRing::Peek(const StormByte::Size& count, WriteOnly& out) const noexcept {
-	class Data tmp;
+bool LockFreeRing::Peek(const StormByte::ByteSize& count, WriteOnly& out) const noexcept {
+	StormByte::BinaryData tmp;
 	if (!Peek(count, tmp)) return false;
 	return out.Write(std::move(tmp));
 }
 
-bool LockFreeRing::Read(const StormByte::Size& count, class Data& out) const noexcept {
+bool LockFreeRing::Read(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
 	return const_cast<LockFreeRing*>(this)->ReadInternal(count, out, Operation::Read);
 }
 
-bool LockFreeRing::Read(const StormByte::Size& count, WriteOnly& out) const noexcept {
-	class Data tmp;
+bool LockFreeRing::Read(const StormByte::ByteSize& count, WriteOnly& out) const noexcept {
+	StormByte::BinaryData tmp;
 	if (!Read(count, tmp)) return false;
 	return out.Write(std::move(tmp));
 }
 
-bool LockFreeRing::Extract(const StormByte::Size& count, class Data& out) noexcept {
+bool LockFreeRing::Extract(const StormByte::ByteSize& count, StormByte::BinaryData& out) noexcept {
 	return ReadInternal(count, out, Operation::Extract);
 }
 
-bool LockFreeRing::Extract(const StormByte::Size& count, WriteOnly& out) noexcept {
-	class Data tmp;
+bool LockFreeRing::Extract(const StormByte::ByteSize& count, WriteOnly& out) noexcept {
+	StormByte::BinaryData tmp;
 	if (!Extract(count, tmp)) return false;
 	return out.Write(std::move(tmp));
 }
 
-void LockFreeRing::ReadUntilEoF(class Data& out) const noexcept {
+void LockFreeRing::ReadUntilEoF(StormByte::BinaryData& out) const noexcept {
 	auto* self = const_cast<LockFreeRing*>(this);
 	while (true) {
 		if (self->m_error.load(std::memory_order_acquire))
@@ -354,17 +354,17 @@ void LockFreeRing::ReadUntilEoF(class Data& out) const noexcept {
 				if (self->m_error.load(std::memory_order_acquire) ||
 					self->m_closed.load(std::memory_order_acquire))
 					return true;
-				return self->AvailableBytes() > StormByte::Size{0};
+				return self->Available() > StormByte::ByteSize{0};
 			});
 		}
 
 		if (self->m_error.load(std::memory_order_acquire))
 			return;
-		if (self->AvailableBytes() == StormByte::Size{0} &&
+		if (self->Available() == StormByte::ByteSize{0} &&
 			self->m_closed.load(std::memory_order_acquire))
 			return;
-		class Data chunk;
-		if (!self->Read(StormByte::Size{0}, chunk) || chunk.empty()) {
+		StormByte::BinaryData chunk;
+		if (!self->Read(StormByte::ByteSize{0}, chunk) || chunk.empty()) {
 			if (self->EoF())
 				return;
 			continue;
@@ -375,12 +375,12 @@ void LockFreeRing::ReadUntilEoF(class Data& out) const noexcept {
 }
 
 void LockFreeRing::ReadUntilEoF(WriteOnly& out) const noexcept {
-	class Data tmp;
+	StormByte::BinaryData tmp;
 	ReadUntilEoF(tmp);
 	if (!tmp.empty()) (void)out.Write(std::move(tmp));
 }
 
-void LockFreeRing::ExtractUntilEoF(class Data& out) noexcept {
+void LockFreeRing::ExtractUntilEoF(StormByte::BinaryData& out) noexcept {
 	while (true) {
 		if (m_error.load(std::memory_order_acquire))
 			return;
@@ -390,17 +390,17 @@ void LockFreeRing::ExtractUntilEoF(class Data& out) noexcept {
 				if (m_error.load(std::memory_order_acquire) ||
 					m_closed.load(std::memory_order_acquire))
 					return true;
-				return AvailableBytes() > StormByte::Size{0};
+				return Available() > StormByte::ByteSize{0};
 			});
 		}
 
 		if (m_error.load(std::memory_order_acquire))
 			return;
-		if (AvailableBytes() == StormByte::Size{0} &&
+		if (Available() == StormByte::ByteSize{0} &&
 			m_closed.load(std::memory_order_acquire))
 			return;
-		class Data chunk;
-		if (!Extract(StormByte::Size{0}, chunk) || chunk.empty()) {
+		StormByte::BinaryData chunk;
+		if (!Extract(StormByte::ByteSize{0}, chunk) || chunk.empty()) {
 			if (EoF())
 				return;
 			continue;
@@ -413,16 +413,16 @@ void LockFreeRing::ExtractUntilEoF(class Data& out) noexcept {
 }
 
 void LockFreeRing::ExtractUntilEoF(WriteOnly& out) noexcept {
-	class Data tmp;
+	StormByte::BinaryData tmp;
 	ExtractUntilEoF(tmp);
 	if (!tmp.empty()) (void)out.Write(std::move(tmp));
 }
 
-bool LockFreeRing::WriteInternal(StormByte::Size count, const std::byte* src) noexcept {
+bool LockFreeRing::WriteInternal(StormByte::ByteSize count, const std::byte* src) noexcept {
 	if (m_closed.load(std::memory_order_acquire) ||
 		m_error.load(std::memory_order_acquire))
 		return false;
-	if (count == StormByte::Size{0} || src == nullptr)
+	if (count == StormByte::ByteSize{0} || src == nullptr)
 		return true;
 
 	const std::size_t n = static_cast<std::size_t>(count);
@@ -441,37 +441,37 @@ bool LockFreeRing::WriteInternal(StormByte::Size count, const std::byte* src) no
 	return true;
 }
 
-bool LockFreeRing::Write(const StormByte::Size& count, const class Data& data) noexcept {
-	const std::size_t n = (count == StormByte::Size{0})
+bool LockFreeRing::Write(const StormByte::ByteSize& count, const StormByte::BinaryData& data) noexcept {
+	const std::size_t n = (count == StormByte::ByteSize{0})
 		? static_cast<std::size_t>(data.size())
 		: std::min(static_cast<std::size_t>(count), static_cast<std::size_t>(data.size()));
-	return WriteInternal(StormByte::Size{n}, data.data());
+	return WriteInternal(StormByte::ByteSize{n}, data.data());
 }
 
-bool LockFreeRing::Write(const StormByte::Size& count, class Data&& data) noexcept {
-	const std::size_t n = (count == StormByte::Size{0})
+bool LockFreeRing::Write(const StormByte::ByteSize& count, StormByte::BinaryData&& data) noexcept {
+	const std::size_t n = (count == StormByte::ByteSize{0})
 		? static_cast<std::size_t>(data.size())
 		: std::min(static_cast<std::size_t>(count), static_cast<std::size_t>(data.size()));
-	bool ok = WriteInternal(StormByte::Size{n}, data.data());
-	if (ok && StormByte::Size{n} == data.size())
+	bool ok = WriteInternal(StormByte::ByteSize{n}, data.data());
+	if (ok && StormByte::ByteSize{n} == data.size())
 		data.clear();
 	return ok;
 }
 
-bool LockFreeRing::Write(const StormByte::Size& count, const ReadOnly& data) noexcept {
-	class Data tmp;
+bool LockFreeRing::Write(const StormByte::ByteSize& count, const ReadOnly& data) noexcept {
+	StormByte::BinaryData tmp;
 	if (!data.Read(count, tmp)) return false;
-	return Write(StormByte::Size{0}, std::move(tmp));
+	return Write(StormByte::ByteSize{0}, std::move(tmp));
 }
 
-bool LockFreeRing::Write(const StormByte::Size& count, ReadOnly&& data) noexcept {
-	class Data tmp;
+bool LockFreeRing::Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept {
+	StormByte::BinaryData tmp;
 	if (!data.Extract(count, tmp)) return false;
-	return Write(StormByte::Size{0}, std::move(tmp));
+	return Write(StormByte::ByteSize{0}, std::move(tmp));
 }
 
 bool LockFreeRing::Write(const std::span<const std::byte> src) noexcept {
 	if (src.empty())
 		return true;
-	return WriteInternal(StormByte::Size{src.size()}, src.data());
+	return WriteInternal(StormByte::ByteSize{src.size()}, src.data());
 }

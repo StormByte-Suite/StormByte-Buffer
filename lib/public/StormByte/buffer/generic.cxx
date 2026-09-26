@@ -52,22 +52,22 @@ WriteOnly::~WriteOnly() noexcept = default;
 ReadWrite::~ReadWrite() noexcept = default;
 
 namespace StormByte::Buffer {
-	template Data STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<Data>(const Data&) noexcept;
-	template Data STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<Data>(Data&&) noexcept;
-	template Data STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
-	template Data STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
-	template Data STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<std::byte>>(std::span<std::byte>&&) noexcept;
+	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<BinaryData>(const BinaryData&) noexcept;
+	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<BinaryData>(BinaryData&&) noexcept;
+	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
+	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
+	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<std::span<std::byte>>(std::span<std::byte>&&) noexcept;
 
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data>(const Data&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data>(Data&&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data>(const StormByte::Size&, const Data&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data>(const StormByte::Size&, Data&&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData>(const BinaryData&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData>(BinaryData&&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData>(const StormByte::ByteSize&, const BinaryData&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData>(const StormByte::ByteSize&, BinaryData&&) noexcept;
 	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<const std::byte>>(const StormByte::Size&, const std::span<const std::byte>&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<const std::byte>>(const StormByte::ByteSize&, const std::span<const std::byte>&) noexcept;
 	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<std::byte>>(const StormByte::Size&, const std::span<std::byte>&) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data::const_iterator, Data::const_iterator>(Data::const_iterator, Data::const_iterator) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data::iterator, Data::iterator>(Data::iterator, Data::iterator) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data::const_iterator, Data::const_iterator>(const StormByte::Size&, Data::const_iterator, Data::const_iterator) noexcept;
-	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<Data::iterator, Data::iterator>(const StormByte::Size&, Data::iterator, Data::iterator) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<std::span<std::byte>>(const StormByte::ByteSize&, const std::span<std::byte>&) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData::const_iterator, BinaryData::const_iterator>(BinaryData::const_iterator, BinaryData::const_iterator) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData::iterator, BinaryData::iterator>(BinaryData::iterator, BinaryData::iterator) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData::const_iterator, BinaryData::const_iterator>(const StormByte::ByteSize&, BinaryData::const_iterator, BinaryData::const_iterator) noexcept;
+	template bool STORMBYTE_BUFFER_INSTANTIATE WriteOnly::Write<BinaryData::iterator, BinaryData::iterator>(const StormByte::ByteSize&, BinaryData::iterator, BinaryData::iterator) noexcept;
 }

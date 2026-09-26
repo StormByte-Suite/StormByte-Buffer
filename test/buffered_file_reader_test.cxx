@@ -54,7 +54,7 @@
 #include <thread>
 #include <vector>
 
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileReader;
@@ -72,14 +72,14 @@ namespace {
 	}
 
 	std::string Text(FIFO& fifo) {
-		Data data;
+		BinaryData data;
 		static_cast<void>(fifo.Peek(0, data));
 		return std::string(reinterpret_cast<const char*>(data.data()),
 			static_cast<std::size_t>(data.size()));
 	}
 
-	Data Bytes(FIFO& fifo) {
-		Data data;
+	BinaryData Bytes(FIFO& fifo) {
+		BinaryData data;
 		static_cast<void>(fifo.Peek(0, data));
 		return data;
 	}
@@ -114,7 +114,7 @@ namespace {
 	}
 
 	int CheckTell(const std::string& fn, const BufferedFileReader& in, const std::size_t expect) {
-		ASSERT_EQUAL(fn, StormByte::Size{expect}, in.Tell());
+		ASSERT_EQUAL(fn, StormByte::ByteSize{expect}, in.Tell());
 		return 0;
 	}
 
@@ -123,10 +123,10 @@ namespace {
 		if (CheckTell(fn, in, from) != 0)
 			return 1;
 		FIFO dest;
-		const auto got = in.Read(StormByte::Size{n}, dest);
+		const auto got = in.Read(StormByte::ByteSize{n}, dest);
 		if (got.status != Status::Ok && got.status != Status::End)
 			return 1;
-		ASSERT_EQUAL(fn, StormByte::Size{n}, got.count);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{n}, got.count);
 		if (CheckTell(fn, in, from + n) != 0)
 			return 1;
 		const auto bytes = Bytes(dest);
@@ -182,7 +182,7 @@ int test_lines_are_octets() {
 	const auto read = in.Read(18, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
 	ASSERT_EQUAL(fn, std::string("line1\nline2\nline3\n"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{18}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{18}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -193,7 +193,7 @@ int test_no_nl_and_nul() {
 	FIFO t;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(text.Read(17, t).status));
 	ASSERT_EQUAL(fn, std::string("no newline at end"), Text(t));
-	ASSERT_EQUAL(fn, StormByte::Size{17}, text.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{17}, text.Tell());
 	BufferedFileReader raw(File("with_nuls.bin"));
 	ASSERT_TRUE(fn, raw.Open());
 	FIFO n;
@@ -216,7 +216,7 @@ int test_pattern_256() {
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(256), static_cast<std::size_t>(bytes.size()));
 	for (std::size_t i = 0; i < 256; ++i)
 		ASSERT_EQUAL(fn, static_cast<std::byte>(i), bytes[i]);
-	ASSERT_EQUAL(fn, StormByte::Size{256}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{256}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -230,14 +230,14 @@ int test_move_transfers_session() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, first).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	BufferedFileReader moved(std::move(in));
 	ASSERT_TRUE(fn, moved.IsOpen());
-	ASSERT_EQUAL(fn, StormByte::Size{2}, moved.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, moved.Tell());
 	FIFO rest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(moved.Read(3, rest).status));
 	ASSERT_EQUAL(fn, std::string("CDE"), Text(rest));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, moved.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, moved.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -249,8 +249,8 @@ int test_explicit_readahead_survives_setup() {
 	const std::string fn = "test_explicit_readahead_survives_setup";
 	BufferedFileReader in(File("ahead.bin"), 25, 1024);
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_EQUAL(fn, StormByte::Size{25}, in.ReadAhead());
-	ASSERT_EQUAL(fn, StormByte::Size{1024}, in.MaxMemory());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{25}, in.ReadAhead());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1024}, in.MaxMemory());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, dest).status));
 	ASSERT_EQUAL(fn, std::string("01234"), Text(dest));
@@ -261,8 +261,8 @@ int test_explicit_zero_survives_open() {
 	const std::string fn = "test_explicit_zero_survives_open";
 	BufferedFileReader in(File("five.bin"), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.ReadAhead());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.MaxMemory());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.ReadAhead());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.MaxMemory());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
@@ -288,7 +288,7 @@ int test_block_4k_chunked() {
 	const std::string fn = "test_block_4k_chunked";
 	BufferedFileReader in(File("block_4k.bin"), 512, 2048);
 	ASSERT_TRUE(fn, in.Open());
-	StormByte::Size total{0};
+	StormByte::ByteSize total{0};
 	while (!in.EoF()) {
 		FIFO dest;
 		const auto read = in.Read(1000, dest);
@@ -299,7 +299,7 @@ int test_block_4k_chunked() {
 		if (read.status == Status::End)
 			break;
 	}
-	ASSERT_EQUAL(fn, StormByte::Size{4096}, total);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4096}, total);
 	RETURN_TEST(fn, 0);
 }
 
@@ -312,7 +312,7 @@ int test_max_memory_zero_span_reads() {
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(got.status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"),
 		std::string(reinterpret_cast<const char*>(raw.data()), 5));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -323,16 +323,16 @@ int test_max_memory_zero_still_reads() {
 	FIFO dest;
 	const auto read = in.Read(256, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
-	ASSERT_EQUAL(fn, StormByte::Size{256}, read.count);
-	ASSERT_EQUAL(fn, StormByte::Size{256}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{256}, read.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{256}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
 int test_readahead_knobs() {
 	const std::string fn = "test_readahead_knobs";
 	BufferedFileReader in(File("ahead.bin"), 25, 1024);
-	ASSERT_EQUAL(fn, StormByte::Size{25}, in.ReadAhead());
-	ASSERT_EQUAL(fn, StormByte::Size{1024}, in.MaxMemory());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{25}, in.ReadAhead());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1024}, in.MaxMemory());
 	RETURN_TEST(fn, 0);
 }
 
@@ -346,14 +346,14 @@ int test_empty_file() {
 	ASSERT_TRUE(fn, in.Open());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, *size);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, *size);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO dest("KEEP");
 	const auto read = in.Read(1, dest);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(read.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, read.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, read.count);
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_TRUE(fn, in.EoF());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	RETURN_TEST(fn, 0);
@@ -370,15 +370,15 @@ int test_open_five_read_exact() {
 	ASSERT_TRUE(fn, in.IsSized());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
-	ASSERT_EQUAL(fn, StormByte::Size{5}, *size);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, *size);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_EQUAL(fn, File("five.bin"), in.Path());
 	FIFO dest;
 	const auto read = in.Read(5, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, read.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, read.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -390,11 +390,11 @@ int test_peek_does_not_consume() {
 	const auto peeked = in.Peek(3, peek);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(peeked.status));
 	ASSERT_EQUAL(fn, std::string("ABC"), Text(peek));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(3, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABC"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -407,11 +407,11 @@ int test_peek_span_does_not_consume() {
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(peeked.status));
 	ASSERT_EQUAL(fn, std::string("ABC"),
 		std::string(reinterpret_cast<const char*>(raw.data()), 3));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(3, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABC"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -433,9 +433,9 @@ int test_read_past_end_is_short() {
 	FIFO dest;
 	const auto read = in.Read(100, dest);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(read.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, read.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, read.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	ASSERT_TRUE(fn, in.EoF());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
@@ -449,9 +449,9 @@ int test_read_span_before_open_leaves_dest() {
 	Fill(raw, std::byte{0x5A});
 	const auto got = in.Read(std::span<std::byte>(raw));
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(got.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, got.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, got.count);
 	ASSERT_EQUAL(fn, static_cast<unsigned>(0x5A), static_cast<unsigned>(raw[0]));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -461,12 +461,12 @@ int test_read_span_empty_ok() {
 	ASSERT_TRUE(fn, in.Open());
 	const auto got = in.Read(std::span<std::byte>{});
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(got.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, got.count);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, got.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, dest).status));
 	ASSERT_EQUAL(fn, std::string("AB"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -478,10 +478,10 @@ int test_read_span_exact() {
 	Fill(raw, std::byte{0x5A});
 	const auto got = in.Read(std::span<std::byte>(raw));
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(got.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, got.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, got.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"),
 		std::string(reinterpret_cast<const char*>(raw.data()), raw.size()));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -493,11 +493,11 @@ int test_read_span_short_leaves_tail() {
 	Fill(raw, std::byte{0x5A});
 	const auto got = in.Read(std::span<std::byte>(raw));
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(got.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, got.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, got.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"),
 		std::string(reinterpret_cast<const char*>(raw.data()), 5));
 	ASSERT_EQUAL(fn, static_cast<unsigned>(0x5A), static_cast<unsigned>(raw[5]));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -508,12 +508,12 @@ int test_read_zero_serves_window() {
 	FIFO empty;
 	const auto first = in.Read(0, empty);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(first.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, first.count);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, first.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO chunk;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, chunk).status));
 	ASSERT_EQUAL(fn, std::string("AB"), Text(chunk));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -524,13 +524,13 @@ int test_second_read_after_end() {
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(1, dest).status));
 	ASSERT_EQUAL(fn, std::string("A"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1}, in.Tell());
 	FIFO again("KEEP");
 	const auto end = in.Read(1, again);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(end.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, end.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, end.count);
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(again));
-	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1}, in.Tell());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	RETURN_TEST(fn, 0);
 }
@@ -541,11 +541,11 @@ int test_sequential_splits() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO a, b;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(3, a).status));
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, b).status));
 	ASSERT_EQUAL(fn, std::string("ABC"), Text(a));
 	ASSERT_EQUAL(fn, std::string("DE"), Text(b));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -560,16 +560,16 @@ int test_peek_window_survives_seek() {
 	FIFO window;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(10, window).status));
 	ASSERT_EQUAL(fn, std::string("0123456789"), Text(window));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(4, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	FIFO mid;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(4, mid).status));
 	ASSERT_EQUAL(fn, std::string("4567"), Text(mid));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	FIFO again;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(6, again).status));
@@ -577,7 +577,7 @@ int test_peek_window_survives_seek() {
 	FIFO consumed;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(6, consumed).status));
 	ASSERT_EQUAL(fn, std::string("012345"), Text(consumed));
-	ASSERT_EQUAL(fn, StormByte::Size{6}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -587,16 +587,16 @@ int test_seek_absolute_and_relative() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(4, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, dest).status));
 	ASSERT_EQUAL(fn, std::string("45"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{6}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(-2, Position::Relative).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	FIFO again;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(3, again).status));
 	ASSERT_EQUAL(fn, std::string("456"), Text(again));
-	ASSERT_EQUAL(fn, StormByte::Size{7}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{7}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -613,7 +613,7 @@ int test_seek_end_via_size() {
 	FIFO dest("KEEP");
 	const auto end = in.Read(1, dest);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(end.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, end.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, end.count);
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(dest));
 	ASSERT_EQUAL(fn, *size, in.Tell());
 	ASSERT_TRUE(fn, in.EoF());
@@ -624,7 +624,7 @@ int test_seek_end_via_size() {
 	ASSERT_TRUE(fn, static_cast<bool>(in));
 	FIFO tail;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, tail).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, tail.AvailableBytes());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, tail.Available());
 	ASSERT_EQUAL(fn, *size, in.Tell());
 	RETURN_TEST(fn, 0);
 }
@@ -635,15 +635,15 @@ int test_seek_hits_readahead_then_realigns() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, first).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(6, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{6}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	FIFO mid;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(4, mid).status));
 	ASSERT_EQUAL(fn, std::string("6789"), Text(mid));
-	ASSERT_EQUAL(fn, StormByte::Size{10}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{10}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -652,7 +652,7 @@ int test_seek_negative_absolute_fails() {
 	BufferedFileReader in(File("seek.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-1, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -668,7 +668,7 @@ int test_seek_past_size_then_read() {
 	FIFO dest("KEEP");
 	const auto got = in.Read(4, dest);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(got.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, got.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, got.count);
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(dest));
 	ASSERT_EQUAL(fn, *size + 8, in.Tell());
 	RETURN_TEST(fn, 0);
@@ -679,7 +679,7 @@ int test_seek_relative_before_zero_fails() {
 	BufferedFileReader in(File("seek.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-1, Position::Relative).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -687,7 +687,7 @@ int test_seek_without_open_fails() {
 	const std::string fn = "test_seek_without_open_fails";
 	BufferedFileReader in(File("seek.bin"));
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -698,13 +698,13 @@ int test_seek_zero_after_end_clears_eof() {
 	FIFO first;
 	const auto drain = in.Read(16, first);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(drain.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, drain.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, drain.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(first));
 	ASSERT_TRUE(fn, in.EoF());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	ASSERT_TRUE(fn, static_cast<bool>(in));
 	ASSERT_TRUE(fn, in.IsReadable());
@@ -712,7 +712,7 @@ int test_seek_zero_after_end_clears_eof() {
 	FIFO second;
 	const auto again = in.Read(16, second);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(again.status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, again.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, again.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(second));
 	ASSERT_TRUE(fn, in.EoF());
 	RETURN_TEST(fn, 0);
@@ -726,12 +726,12 @@ int test_seek_zero_after_end_twice() {
 		FIFO dest;
 		const auto got = in.Read(8, dest);
 		ASSERT_EQUAL(fn, ToString(Status::End), ToString(got.status));
-		ASSERT_EQUAL(fn, StormByte::Size{5}, got.count);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{5}, got.count);
 		ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
 		ASSERT_TRUE(fn, in.EoF());
 		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
 		ASSERT_FALSE(fn, in.EoF());
-		ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	}
 	FIFO last;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, last).status));
@@ -744,7 +744,7 @@ int test_seek_zero_on_fresh_open() {
 	BufferedFileReader in(File("five.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	ASSERT_TRUE(fn, static_cast<bool>(in));
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
@@ -760,15 +760,15 @@ int test_seek_zero_rereads() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(4, first).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	ASSERT_TRUE(fn, static_cast<bool>(in));
 	FIFO again;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(4, again).status));
 	ASSERT_EQUAL(fn, Text(first), Text(again));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1071,7 +1071,7 @@ int test_close_then_reopen() {
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
 	ASSERT_TRUE(fn, static_cast<bool>(in));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO again;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, again).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(again));
@@ -1085,8 +1085,8 @@ int test_ctor_unavailable_bool_false() {
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	ASSERT_FALSE(fn, in.IsOpen());
 	ASSERT_FALSE(fn, in.IsReadable());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.ReadAhead());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.ReadAhead());
 	ASSERT_EQUAL(fn, File("five.bin"), in.Path());
 	RETURN_TEST(fn, 0);
 }
@@ -1131,9 +1131,9 @@ int test_read_before_open_leaves_dest() {
 	FIFO dest("KEEP");
 	const auto read = in.Read(1, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(read.status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, read.count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, read.count);
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1143,14 +1143,14 @@ int test_rewind_rereads() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, first).status));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	ASSERT_TRUE(fn, in.Rewind());
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	FIFO second;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, second).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(second));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1171,15 +1171,15 @@ int test_tell_after_span_read_and_seek_zero() {
 	BufferedFileReader in(File("five.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 3> raw {};
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Read(std::span<std::byte>(raw)).count);
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Read(std::span<std::byte>(raw)).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_FALSE(fn, in.EoF());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1193,12 +1193,12 @@ int test_tell_at_size_and_past_size() {
 		ToString(in.Seek(static_cast<std::ptrdiff_t>(*size), Position::Absolute).status));
 	ASSERT_EQUAL(fn, *size, in.Tell());
 	FIFO dest("KEEP");
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Read(3, dest).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Read(3, dest).count);
 	ASSERT_EQUAL(fn, *size, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok),
 		ToString(in.Seek(static_cast<std::ptrdiff_t>(*size + 6), Position::Absolute).status));
 	ASSERT_EQUAL(fn, *size + 6, in.Tell());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Read(1, dest).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Read(1, dest).count);
 	ASSERT_EQUAL(fn, *size + 6, in.Tell());
 	RETURN_TEST(fn, 0);
 }
@@ -1208,13 +1208,13 @@ int test_tell_matches_seek_and_failed_seek_stays() {
 	BufferedFileReader in(File("seek.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(7, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{7}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{7}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(-3, Position::Relative).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-10, Position::Relative).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-1, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1222,22 +1222,22 @@ int test_tell_max_memory_zero_seek_read() {
 	const std::string fn = "test_tell_max_memory_zero_seek_read";
 	BufferedFileReader in(File("seek.bin"), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(4, Position::Absolute).status));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, in.Tell());
 	FIFO dest;
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Read(2, dest).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Read(2, dest).count);
 	ASSERT_EQUAL(fn, std::string("45"), Text(dest));
-	ASSERT_EQUAL(fn, StormByte::Size{6}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
 int test_tell_open_is_zero() {
 	const std::string fn = "test_tell_open_is_zero";
 	BufferedFileReader in(File("five.bin"));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1246,12 +1246,12 @@ int test_tell_tracks_each_read() {
 	BufferedFileReader in(File("five.bin"));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO a, b, c;
-	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Read(1, a).count);
-	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Tell());
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Read(2, b).count);
-	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Read(2, c).count);
-	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1}, in.Read(1, a).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Read(2, b).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Read(2, c).count);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1261,15 +1261,15 @@ int test_tell_unchanged_on_peek_and_empty_span() {
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, dest).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	FIFO peek;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(2, peek).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	std::array<std::byte, 2> raw {};
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(std::span<std::byte>(raw)).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(std::span<std::byte>{}).status));
-	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1282,9 +1282,9 @@ int test_telemetry_ctor_is_zero() {
 	BufferedFileReader in(File("five.bin"), 0, 0);
 	DumpTelemetry("ctor", in);
 	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, StormByte::Size{0}, t.Delivered);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, t.HitAhead + t.HitBack);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, t.Miss);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.Delivered);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.HitAhead + t.HitBack);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.Miss);
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), t.SeekLogical);
 	RETURN_TEST(fn, 0);
 }

@@ -42,6 +42,7 @@
 #pragma once
 
 #include <StormByte/buffer/hopper.hxx>
+#include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
 #include <condition_variable>
@@ -82,7 +83,7 @@ namespace StormByte::Buffer {
 			 *
 			 * Given the count of active buckets, returns an index in range [0, count).
 			 */
-			using Select = std::function<std::size_t(std::size_t)>;
+			using Select = std::function<StormByte::Size(StormByte::Size)>;
 
 			/**
 			 * @name Lifecycle
@@ -258,7 +259,7 @@ namespace StormByte::Buffer {
 			 * @brief Number of hoppers wired on this Sink.
 			 * @return @ref Keys size.
 			 */
-			std::size_t Buckets() const noexcept;
+			StormByte::Size Buckets() const noexcept;
 
 			/**
 			 * @brief Whether hopper @p key exists on this Sink.
@@ -272,21 +273,21 @@ namespace StormByte::Buffer {
 			 * @param key Bucket key identifier.
 			 * @return Hopper capacity, or 0 if key bucket does not exist.
 			 */
-			std::size_t Capacity(int key) const noexcept;
+			StormByte::Size Capacity(int key) const noexcept;
 
 			/**
 			 * @brief Sets capacity ceiling of bucket key.
 			 * @param key Bucket key identifier.
 			 * @param capacity Maximum items allowed (0 = unbounded).
 			 */
-			void Capacity(int key, std::size_t capacity) noexcept;
+			void Capacity(int key, StormByte::Size capacity) noexcept;
 
 			/**
 			 * @brief Gets pending item count in bucket key.
 			 * @param key Bucket key identifier.
 			 * @return Item count, or 0 if key bucket does not exist.
 			 */
-			std::size_t Size(int key) const noexcept;
+			StormByte::Size Size(int key) const noexcept;
 
 			/**
 			 * @brief Checks if bucket key is full.

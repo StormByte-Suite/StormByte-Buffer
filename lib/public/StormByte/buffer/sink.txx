@@ -214,9 +214,9 @@ namespace StormByte::Buffer {
 			 * @brief Number of wired hoppers.
 			 * @return Bucket count.
 			 */
-			std::size_t Buckets() const noexcept {
+			StormByte::Size Buckets() const noexcept {
 				std::lock_guard<std::mutex> lock(m_mutex);
-				return m_buckets.size();
+				return StormByte::Size{m_buckets.size()};
 			}
 
 			/**
@@ -233,10 +233,10 @@ namespace StormByte::Buffer {
 			 * @param key Bucket key.
 			 * @return Capacity value.
 			 */
-			std::size_t Capacity(int key) const noexcept {
+			StormByte::Size Capacity(int key) const noexcept {
 				const auto hopper = Bucket(key);
 				if (!hopper)
-					return 0;
+					return StormByte::Size{0};
 				return hopper->Capacity();
 			}
 
@@ -245,7 +245,7 @@ namespace StormByte::Buffer {
 			 * @param key Bucket key.
 			 * @param capacity New capacity.
 			 */
-			void Capacity(int key, std::size_t capacity) noexcept {
+			void Capacity(int key, StormByte::Size capacity) noexcept {
 				std::lock_guard<std::mutex> lock(m_mutex);
 				auto found = m_buckets.find(key);
 				if (found != m_buckets.end() && found->second)
@@ -257,10 +257,10 @@ namespace StormByte::Buffer {
 			 * @param key Bucket key.
 			 * @return Item count.
 			 */
-			std::size_t Size(int key) const noexcept {
+			StormByte::Size Size(int key) const noexcept {
 				const auto hopper = Bucket(key);
 				if (!hopper)
-					return 0;
+					return StormByte::Size{0};
 				return hopper->Size();
 			}
 
@@ -354,7 +354,7 @@ namespace StormByte::Buffer {
 				const std::size_t count = hoppers.size();
 				std::size_t start = 0;
 				if (select)
-					start = select(count) % count;
+					start = static_cast<std::size_t>(select(StormByte::Size{count})) % count;
 				else
 					start = m_rr.fetch_add(1, std::memory_order_relaxed) % count;
 
@@ -567,7 +567,7 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
-	std::size_t Sink<T>::Buckets() const noexcept {
+	StormByte::Size Sink<T>::Buckets() const noexcept {
 		return m_io->Buckets();
 	}
 
@@ -577,17 +577,17 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
-	std::size_t Sink<T>::Capacity(int key) const noexcept {
+	StormByte::Size Sink<T>::Capacity(int key) const noexcept {
 		return m_io->Capacity(key);
 	}
 
 	template<Type::MoveConstructible T>
-	void Sink<T>::Capacity(int key, std::size_t capacity) noexcept {
+	void Sink<T>::Capacity(int key, StormByte::Size capacity) noexcept {
 		m_io->Capacity(key, capacity);
 	}
 
 	template<Type::MoveConstructible T>
-	std::size_t Sink<T>::Size(int key) const noexcept {
+	StormByte::Size Sink<T>::Size(int key) const noexcept {
 		return m_io->Size(key);
 	}
 

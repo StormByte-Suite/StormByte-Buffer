@@ -41,6 +41,7 @@
 
 #pragma once
 
+#include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
 #include <concepts>
@@ -88,7 +89,7 @@ namespace StormByte::Buffer {
 			 * @brief Constructs an empty Hopper with a capacity ceiling.
 			 * @param capacity Maximum number of items allowed (0 = unbounded).
 			 */
-			explicit Hopper(std::size_t capacity) noexcept;
+			explicit Hopper(StormByte::Size capacity) noexcept;
 
 			/**
 			 * @brief Copy constructor is deleted (Hopper is non-copyable).
@@ -128,7 +129,7 @@ namespace StormByte::Buffer {
 			 * @brief Gets the current capacity ceiling.
 			 * @return Maximum items, or 0 if unbounded.
 			 */
-			std::size_t Capacity() const noexcept;
+			StormByte::Size Capacity() const noexcept;
 
 			/**
 			 * @brief Sets a new capacity ceiling.
@@ -137,13 +138,13 @@ namespace StormByte::Buffer {
 			 * Lowering capacity does not drop queued items; subsequent Push calls wait
 			 * until Size falls below the new ceiling.
 			 */
-			void Capacity(std::size_t capacity) noexcept;
+			void Capacity(StormByte::Size capacity) noexcept;
 
 			/**
 			 * @brief Gets the number of items currently waiting in the bucket.
 			 * @return Item count.
 			 */
-			std::size_t Size() const noexcept;
+			StormByte::Size Size() const noexcept;
 
 			/**
 			 * @brief Checks whether a bounded bucket cannot accept another Push without waiting.

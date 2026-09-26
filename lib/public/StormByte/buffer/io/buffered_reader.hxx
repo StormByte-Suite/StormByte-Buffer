@@ -90,7 +90,7 @@ namespace StormByte {
 			 * @c Rewind.
 			 *
 			 * @par Binary only
-			 * Octets only (@ref StormByte::Buffer::Data / @ref FIFO / @c std::span<std::byte>). No text mode.
+			 * Octets only (@ref StormByte::BinaryData / @ref FIFO / @c std::span<std::byte>). No text mode.
 			 *
 			 * @par Session
 			 * Construction leaves @ref State::Unavailable. A successful
@@ -195,7 +195,7 @@ namespace StormByte {
 					 * @struct Telemetry
 					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
 					 *
-					 * Byte fields are @ref StormByte::Size. Event counts are
+					 * Byte fields are @ref StormByte::ByteSize. Event counts are
 					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
 					 * Accumulators start at construction and do not reset on
 					 * Close / Rewind / Open. Prefetch is not @ref Delivered.
@@ -217,44 +217,44 @@ namespace StormByte {
 						/**
 						 * @brief Octets @ref Read delivered to the caller.
 						 */
-						StormByte::Size Delivered {};
+						StormByte::ByteSize Delivered {};
 
 						/**
 						 * @brief Of @ref Delivered, cache octets never consumed before
 						 *        (read-ahead / first touch of that offset).
 						 */
-						StormByte::Size HitAhead {};
+						StormByte::ByteSize HitAhead {};
 
 						/**
 						 * @brief Of @ref Delivered, cache octets at an offset already
 						 *        passed by @ref Tell (page-cache replay after Seek).
 						 */
-						StormByte::Size HitBack {};
+						StormByte::ByteSize HitBack {};
 
 						/**
 						 * @brief Of @ref Delivered, octets pulled from the origin in that Read.
 						 */
-						StormByte::Size Miss {};
+						StormByte::ByteSize Miss {};
 
 						/**
 						 * @brief Octets transferred by @ref OriginPull this session.
 						 */
-						StormByte::Size Origin {};
+						StormByte::ByteSize Origin {};
 
 						/**
 						 * @brief Resident cache octets now.
 						 */
-						StormByte::Size Cached {};
+						StormByte::ByteSize Cached {};
 
 						/**
 						 * @brief Maximum @ref Cached since construction.
 						 */
-						StormByte::Size CachedPeak {};
+						StormByte::ByteSize CachedPeak {};
 
 						/**
 						 * @brief @ref MaxMemory at this snapshot.
 						 */
-						StormByte::Size Cap {};
+						StormByte::ByteSize Cap {};
 
 						/**
 						 * @brief Successful public @ref Seek calls.
@@ -430,7 +430,7 @@ namespace StormByte {
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
-					virtual Result Read(StormByte::Size n, FIFO& dest) const final;
+					virtual Result Read(StormByte::ByteSize n, FIFO& dest) const final;
 
 					/**
 					 * @brief Read into @p dest, consuming cache / origin.
@@ -449,7 +449,7 @@ namespace StormByte {
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
-					virtual Result Peek(StormByte::Size n, FIFO& dest) const final;
+					virtual Result Peek(StormByte::ByteSize n, FIFO& dest) const final;
 
 					/**
 					 * @brief Copy into @p dest without consuming cache.
@@ -494,7 +494,7 @@ namespace StormByte {
 					 * @brief Logical read offset in the stream.
 					 * @return Bytes from the origin start (0 after Open / Rewind).
 					 */
-					virtual StormByte::Size Tell() const noexcept final;
+					virtual StormByte::ByteSize Tell() const noexcept final;
 
 					/**
 					 * @brief Whether this instance can reposition the origin.
@@ -521,7 +521,7 @@ namespace StormByte {
 					 * @brief Origin length in bytes when known.
 					 * @return Length, or empty if @ref IsSized is false.
 					 */
-					virtual std::optional<StormByte::Size> Size() const noexcept final;
+					virtual std::optional<StormByte::ByteSize> Size() const noexcept final;
 
 					/**
 					 * @}
@@ -551,7 +551,7 @@ namespace StormByte {
 					 * @brief Configured prefetch length in bytes.
 					 * @return Current ReadAhead. 0 disables prefetch.
 					 */
-					virtual StormByte::Size ReadAhead() const noexcept;
+					virtual StormByte::ByteSize ReadAhead() const noexcept;
 
 					/**
 					 * @brief Set prefetch length. Takes effect immediately.
@@ -561,13 +561,13 @@ namespace StormByte {
 					 * returning. Does not pull from the origin. Still waits
 					 * for the worker.
 					 */
-					virtual void ReadAhead(StormByte::Size bytes);
+					virtual void ReadAhead(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured cache memory cap in bytes.
 					 * @return Current cap. 0 means no cache and no prefetch.
 					 */
-					virtual StormByte::Size MaxMemory() const noexcept;
+					virtual StormByte::ByteSize MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set cache memory cap. Takes effect immediately.
@@ -576,7 +576,7 @@ namespace StormByte {
 					 * Cancels prefetch and evicts farthest spans before
 					 * returning. Waits for the worker; not an origin pull.
 					 */
-					virtual void MaxMemory(StormByte::Size bytes);
+					virtual void MaxMemory(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured read wait limit.
@@ -604,7 +604,7 @@ namespace StormByte {
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 					 */
-					explicit BufferedReader(StormByte::Size read_ahead = 0, StormByte::Size max_memory = 0,
+					explicit BufferedReader(StormByte::ByteSize read_ahead = 0, StormByte::ByteSize max_memory = 0,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -651,7 +651,7 @@ namespace StormByte {
 					 * On @ref IO::Status::Error call @ref SetState with
 					 * @ref State::Fault or @ref State::Unavailable.
 					 */
-					virtual Result OriginPull(StormByte::Size n, FIFO& dest) = 0;
+					virtual Result OriginPull(StormByte::ByteSize n, FIFO& dest) = 0;
 
 					/**
 					 * @brief Whether the device can seek.
@@ -680,7 +680,7 @@ namespace StormByte {
 					 * @brief Device length in bytes.
 					 * @return Length, or empty when unknown.
 					 */
-					virtual std::optional<StormByte::Size> OriginSize() const noexcept = 0;
+					virtual std::optional<StormByte::ByteSize> OriginSize() const noexcept = 0;
 
 					/**
 					 * @}

@@ -116,7 +116,7 @@ namespace StormByte {
 					 * @param max_memory Cache cap. 0 stores no cache.
 					 */
 					BufferedFileReader(std::filesystem::path path,
-						StormByte::Size read_ahead, StormByte::Size max_memory);
+						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory);
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -194,7 +194,7 @@ namespace StormByte {
 					 * @param dest Base-owned FIFO.
 					 * @return Ok, End, Error or Failed.
 					 */
-					Result OriginPull(StormByte::Size n, FIFO& dest) override;
+					Result OriginPull(StormByte::ByteSize n, FIFO& dest) override;
 
 					/**
 					 * @brief Files are seekable.
@@ -220,12 +220,12 @@ namespace StormByte {
 					 * @brief Cached file size.
 					 * @return Size in bytes, or empty if not open.
 					 */
-					std::optional<StormByte::Size> OriginSize() const noexcept override;
+					std::optional<StormByte::ByteSize> OriginSize() const noexcept override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.
 					std::ifstream m_file;					///< Binary input stream.
-					std::optional<StormByte::Size> m_size;	///< Size after OriginOpen.
+					std::optional<StormByte::ByteSize> m_size;	///< Size after OriginOpen.
 					mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
 					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};

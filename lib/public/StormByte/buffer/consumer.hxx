@@ -173,20 +173,20 @@ namespace StormByte {
 				 * @brief Number of bytes available for reading from the current position.
 				 * @return Available byte count.
 				 */
-				StormByte::Size AvailableBytes() const noexcept override;
+				StormByte::ByteSize Available() const noexcept override;
 
 				/**
 				 * @brief Access a snapshot of the underlying data (implementation-defined).
-				 * @return Constant reference to the Ring’s @ref StormByte::Buffer::Data view.
+				 * @return Constant reference to the Ring’s @ref StormByte::BinaryData view.
 				 * @warning Not intended for concurrent mutation; prefer Read / Extract.
 				 */
-				const class Data& Data() const noexcept override;
+				const StormByte::BinaryData& BinaryData() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring holds no stored bytes.
 				 * @return @c true if empty.
 				 * @note With a non-zero read position, @ref Empty() may still be @c false
-				 *       even when @ref AvailableBytes() is zero.
+				 *       even when @ref Available() is zero.
 				 */
 				bool Empty() const noexcept override;
 
@@ -224,7 +224,7 @@ namespace StormByte {
 				 * @brief Total number of bytes stored in the shared Ring.
 				 * @return Size in bytes.
 				 */
-				StormByte::Size Size() const noexcept override;
+				StormByte::ByteSize Size() const noexcept override;
 
 				/**
 				 * @brief Writer on the same Ring.
@@ -267,7 +267,7 @@ namespace StormByte {
 				 * @param count Number of bytes to drop.
 				 * @return @c true on success, @c false if fewer bytes were available.
 				 */
-				bool Drop(const StormByte::Size& count) noexcept override;
+				bool Drop(const StormByte::ByteSize& count) noexcept override;
 
 				/**
 				 * @brief Move the logical read position for non-destructive reads.
@@ -284,12 +284,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Extract bytes into a @ref StormByte::Buffer::Data (consumes data from the Ring).
+				 * @brief Extract bytes into a @ref StormByte::BinaryData (consumes data from the Ring).
 				 * @param count Number of bytes to extract; 0 extracts all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Extract(const StormByte::Size& count, class Data& out) noexcept override;
+				bool Extract(const StormByte::ByteSize& count, StormByte::BinaryData& out) noexcept override;
 
 				/**
 				 * @brief Extract bytes into a @ref WriteOnly store.
@@ -297,13 +297,13 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Extract(const StormByte::Size& count, WriteOnly& out) noexcept override;
+				bool Extract(const StormByte::ByteSize& count, WriteOnly& out) noexcept override;
 
 				/**
-				 * @brief Extract until EoF into a @ref StormByte::Buffer::Data.
+				 * @brief Extract until EoF into a @ref StormByte::BinaryData.
 				 * @param out Destination.
 				 */
-				void ExtractUntilEoF(class Data& out) noexcept override;
+				void ExtractUntilEoF(StormByte::BinaryData& out) noexcept override;
 
 				/**
 				 * @brief Extract until EoF into a @ref WriteOnly store.
@@ -319,12 +319,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Read bytes into a @ref StormByte::Buffer::Data. Advances the cursor.
+				 * @brief Read bytes into a @ref StormByte::BinaryData. Advances the cursor.
 				 * @param count Number of bytes to read; 0 reads all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Read(const StormByte::Size& count, class Data& out) const noexcept override;
+				bool Read(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Read bytes into a @ref WriteOnly store. Advances the cursor.
@@ -332,13 +332,13 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Read(const StormByte::Size& count, WriteOnly& out) const noexcept override;
+				bool Read(const StormByte::ByteSize& count, WriteOnly& out) const noexcept override;
 
 				/**
-				 * @brief Read until EoF into a @ref StormByte::Buffer::Data.
+				 * @brief Read until EoF into a @ref StormByte::BinaryData.
 				 * @param out Destination.
 				 */
-				void ReadUntilEoF(class Data& out) const noexcept override;
+				void ReadUntilEoF(StormByte::BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Read until EoF into a @ref WriteOnly store.
@@ -354,12 +354,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Peek bytes into a @ref StormByte::Buffer::Data. Does not advance the cursor.
+				 * @brief Peek bytes into a @ref StormByte::BinaryData. Does not advance the cursor.
 				 * @param count Number of bytes to peek; 0 peeks all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Peek(const StormByte::Size& count, class Data& out) const noexcept override;
+				bool Peek(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Peek bytes into a @ref WriteOnly store. Does not advance the cursor.
@@ -367,7 +367,7 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Peek(const StormByte::Size& count, WriteOnly& out) const noexcept override;
+				bool Peek(const StormByte::ByteSize& count, WriteOnly& out) const noexcept override;
 
 				/** @} */
 

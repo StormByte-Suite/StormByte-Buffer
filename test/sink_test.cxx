@@ -113,7 +113,7 @@ int test_sink_concurrent_wire_and_eof() {
 	const int last_key = max_key.load(std::memory_order_acquire);
 	for (int k = 100; k <= last_key + 10; ++k) {
 		producer.Push(k, 9999);
-		ASSERT_EQUAL("test_sink_concurrent_wire_and_eof size after push post eof", static_cast<std::size_t>(0), consumer.Size(k));
+		ASSERT_EQUAL("test_sink_concurrent_wire_and_eof size after push post eof", StormByte::Size{0}, consumer.Size(k));
 	}
 
 	RETURN_TEST("test_sink_concurrent_wire_and_eof", 0);
@@ -187,8 +187,8 @@ int test_sink_default_constructor() {
 	ASSERT_FALSE("test_sink_default_constructor eof", sink.EoF());
 	ASSERT_FALSE("test_sink_default_constructor ready", sink.Ready());
 	ASSERT_FALSE("test_sink_default_constructor draining", sink.Draining());
-	ASSERT_EQUAL("test_sink_default_constructor missing key capacity", static_cast<std::size_t>(0), sink.Capacity(42));
-	ASSERT_EQUAL("test_sink_default_constructor missing key size", static_cast<std::size_t>(0), sink.Size(42));
+	ASSERT_EQUAL("test_sink_default_constructor missing key capacity", StormByte::Size{0}, sink.Capacity(42));
+	ASSERT_EQUAL("test_sink_default_constructor missing key size", StormByte::Size{0}, sink.Size(42));
 	ASSERT_FALSE("test_sink_default_constructor missing key full", sink.Full(42));
 
 	RETURN_TEST("test_sink_default_constructor", 0);
@@ -209,13 +209,13 @@ int test_sink_drain_mode() {
 	ASSERT_TRUE("test_sink_drain_mode draining", producer.Draining());
 
 	producer.Push(100, 9999);
-	ASSERT_EQUAL("test_sink_drain_mode size 0 for un-bound key", static_cast<std::size_t>(0), producer.Size(100));
+	ASSERT_EQUAL("test_sink_drain_mode size 0 for un-bound key", StormByte::Size{0}, producer.Size(100));
 
 	Sink<int> consumer;
 	producer.To(100) >> consumer;
 
 	producer.Push(100, 8888);
-	ASSERT_EQUAL("test_sink_drain_mode size 1 for bound key", static_cast<std::size_t>(1), consumer.Size(100));
+	ASSERT_EQUAL("test_sink_drain_mode size 1 for bound key", StormByte::Size{1}, consumer.Size(100));
 	ASSERT_EQUAL("test_sink_drain_mode pop value", 8888, consumer.Pop());
 
 	RETURN_TEST("test_sink_drain_mode", 0);
@@ -269,7 +269,7 @@ int test_sink_non_nullable_smart_pointer() {
 	producer.To(1) >> consumer;
 	producer.Push(1, NonNullableSmartPointer(789));
 
-	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer size", static_cast<std::size_t>(1), consumer.Size(1));
+	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer size", StormByte::Size{1}, consumer.Size(1));
 	auto popped = consumer.Pop();
 	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer value", 789, *popped);
 	ASSERT_FALSE("test_sink_non_nullable_smart_pointer ready", consumer.Ready());
@@ -291,8 +291,8 @@ int test_sink_pop_custom_select() {
 	producer.Push(1, 111);
 	producer.Push(2, 222);
 
-	auto select_second = [](std::size_t count) -> std::size_t {
-		return count > 1 ? 1 : 0;
+	auto select_second = [](StormByte::Size count) -> StormByte::Size {
+		return count > 1 ? StormByte::Size{1} : StormByte::Size{0};
 	};
 
 	int val = consumer.Pop(select_second);
@@ -378,7 +378,7 @@ int test_sink_unnotify_before_cv_dies() {
 	consumer->Notify(*wake);
 	producer.Push(0, 42);
 	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies queued",
-		static_cast<std::size_t>(1), consumer->Size(0));
+		StormByte::Size{1}, consumer->Size(0));
 	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies pop", 42, consumer->Pop());
 
 	consumer->Eof();
@@ -412,8 +412,8 @@ int test_sink_pop_key() {
 	producer.Push(2, 222);
 
 	ASSERT_EQUAL("test_sink_pop_key first 1", 111, consumer.Pop(1));
-	ASSERT_EQUAL("test_sink_pop_key size 1 left", static_cast<std::size_t>(1), consumer.Size(1));
-	ASSERT_EQUAL("test_sink_pop_key size 2 untouched", static_cast<std::size_t>(1), consumer.Size(2));
+	ASSERT_EQUAL("test_sink_pop_key size 1 left", StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL("test_sink_pop_key size 2 untouched", StormByte::Size{1}, consumer.Size(2));
 	ASSERT_EQUAL("test_sink_pop_key key 2", 222, consumer.Pop(2));
 	ASSERT_EQUAL("test_sink_pop_key dry 2", 0, consumer.Pop(2));
 	ASSERT_EQUAL("test_sink_pop_key second 1", 112, consumer.Pop(1));
@@ -433,7 +433,7 @@ int test_sink_pop_key() {
  */
 int test_sink_query_unwired() {
 	Sink<int> sink;
-	ASSERT_EQUAL("test_sink_query_unwired buckets", static_cast<std::size_t>(0), sink.Buckets());
+	ASSERT_EQUAL("test_sink_query_unwired buckets", StormByte::Size{0}, sink.Buckets());
 	ASSERT_TRUE("test_sink_query_unwired keys empty", sink.Keys().empty());
 	ASSERT_FALSE("test_sink_query_unwired contains", sink.Contains(42));
 	ASSERT_TRUE("test_sink_query_unwired empty missing", sink.Empty(42));
@@ -454,7 +454,7 @@ int test_sink_query_wired() {
 	producer.To(10) >> consumer;
 	producer.To(20) >> consumer;
 
-	ASSERT_EQUAL("test_sink_query_wired buckets", static_cast<std::size_t>(2), consumer.Buckets());
+	ASSERT_EQUAL("test_sink_query_wired buckets", StormByte::Size{2}, consumer.Buckets());
 	ASSERT_TRUE("test_sink_query_wired contains 10", consumer.Contains(10));
 	ASSERT_TRUE("test_sink_query_wired contains 20", consumer.Contains(20));
 	ASSERT_FALSE("test_sink_query_wired contains 30", consumer.Contains(30));
@@ -472,7 +472,7 @@ int test_sink_query_wired() {
 	ASSERT_TRUE("test_sink_query_wired ready 10", consumer.Ready(10));
 	ASSERT_TRUE("test_sink_query_wired empty 20", consumer.Empty(20));
 	ASSERT_FALSE("test_sink_query_wired ready 20", consumer.Ready(20));
-	ASSERT_EQUAL("test_sink_query_wired size 10", static_cast<std::size_t>(1), consumer.Size(10));
+	ASSERT_EQUAL("test_sink_query_wired size 10", StormByte::Size{1}, consumer.Size(10));
 
 	producer.Eof();
 	ASSERT_TRUE("test_sink_query_wired eof 10", consumer.EoF(10));
@@ -501,12 +501,12 @@ int test_sink_extra_writer_eof() {
 
 	src.Push(0, 1);
 	extra.Push(0, 2);
-	ASSERT_EQUAL("test_sink_extra_writer_eof queued", static_cast<std::size_t>(2), dest.Size(0));
+	ASSERT_EQUAL("test_sink_extra_writer_eof queued", StormByte::Size{2}, dest.Size(0));
 
 	src.Eof();
 	ASSERT_FALSE("test_sink_extra_writer_eof dest open after first writer", dest.EoF());
 	extra.Push(0, 3);
-	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", static_cast<std::size_t>(3), dest.Size(0));
+	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", StormByte::Size{3}, dest.Size(0));
 
 	ASSERT_EQUAL("test_sink_extra_writer_eof pop 1", 1, dest.Pop());
 	ASSERT_EQUAL("test_sink_extra_writer_eof pop 2", 2, dest.Pop());
@@ -567,12 +567,12 @@ int test_sink_stream_operators() {
 	consumer << producer.To(2);
 	producer.Push(1, 10);
 	producer.Push(2, 20);
-	ASSERT_EQUAL("test_sink_stream_operators size 1", static_cast<std::size_t>(1), consumer.Size(1));
-	ASSERT_EQUAL("test_sink_stream_operators size 2", static_cast<std::size_t>(1), consumer.Size(2));
+	ASSERT_EQUAL("test_sink_stream_operators size 1", StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL("test_sink_stream_operators size 2", StormByte::Size{1}, consumer.Size(2));
 
 	producer.To(1) >> extra;
 	extra.Push(1, 11);
-	ASSERT_EQUAL("test_sink_stream_operators co-writer queued", static_cast<std::size_t>(2), consumer.Size(1));
+	ASSERT_EQUAL("test_sink_stream_operators co-writer queued", StormByte::Size{2}, consumer.Size(1));
 
 	producer.Eof();
 	ASSERT_FALSE("test_sink_stream_operators open while extra writer", consumer.EoF());
@@ -594,7 +594,7 @@ int test_sink_stream_operators() {
 	left.Push(3, 30);
 	Sink<int> all;
 	all << left;
-	ASSERT_EQUAL("test_sink_stream_operators bind-all size", static_cast<std::size_t>(1), all.Size(3));
+	ASSERT_EQUAL("test_sink_stream_operators bind-all size", StormByte::Size{1}, all.Size(3));
 	ASSERT_EQUAL("test_sink_stream_operators bind-all pop", 30, all.Pop());
 
 	RETURN_TEST("test_sink_stream_operators", 0);
@@ -634,8 +634,8 @@ int test_sink_wire_all_hoppers() {
 	producer.Push(1, 100);
 	producer.Push(2, 200);
 
-	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 1", static_cast<std::size_t>(1), consumer.Size(1));
-	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 2", static_cast<std::size_t>(1), consumer.Size(2));
+	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 1", StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 2", StormByte::Size{1}, consumer.Size(2));
 
 	int val1 = consumer.Pop();
 	int val2 = consumer.Pop();
@@ -657,13 +657,13 @@ int test_sink_wire_and_push_pop() {
 	producer.To(20) >> consumer;
 
 	producer.Capacity(10, 5);
-	ASSERT_EQUAL("test_sink_wire_and_push_pop capacity key 10", static_cast<std::size_t>(5), producer.Capacity(10));
+	ASSERT_EQUAL("test_sink_wire_and_push_pop capacity key 10", StormByte::Size{5}, producer.Capacity(10));
 
 	producer.Push(10, std::make_shared<std::string>("String-10"));
 	producer.Push(20, std::make_shared<std::string>("String-20"));
 
-	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 10", static_cast<std::size_t>(1), consumer.Size(10));
-	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 20", static_cast<std::size_t>(1), consumer.Size(20));
+	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 10", StormByte::Size{1}, consumer.Size(10));
+	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 20", StormByte::Size{1}, consumer.Size(20));
 	ASSERT_TRUE("test_sink_wire_and_push_pop consumer ready", consumer.Ready());
 
 	auto item1 = consumer.Pop();

@@ -51,8 +51,8 @@ namespace StormByte::Buffer {
 			 * @brief Constructs a bounded Implementation instance.
 			 * @param capacity Maximum items allowed.
 			 */
-			explicit Implementation(std::size_t capacity) noexcept
-			: m_eof(false), m_wake(nullptr), m_cap(capacity), m_writers(1) {}
+			explicit Implementation(StormByte::Size capacity) noexcept
+			: m_eof(false), m_wake(nullptr), m_cap(static_cast<std::size_t>(capacity)), m_writers(1) {}
 
 			/**
 			 * @brief Destructor. Marks EoF and wakes waiting producers.
@@ -66,16 +66,16 @@ namespace StormByte::Buffer {
 			 * @brief Gets capacity ceiling.
 			 * @return Capacity value.
 			 */
-			std::size_t Capacity() const noexcept {
-				return m_cap.load(std::memory_order_acquire);
+			StormByte::Size Capacity() const noexcept {
+				return StormByte::Size{m_cap.load(std::memory_order_acquire)};
 			}
 
 			/**
 			 * @brief Sets capacity ceiling.
 			 * @param capacity New capacity value.
 			 */
-			void Capacity(std::size_t capacity) noexcept {
-				m_cap.store(capacity, std::memory_order_release);
+			void Capacity(StormByte::Size capacity) noexcept {
+				m_cap.store(static_cast<std::size_t>(capacity), std::memory_order_release);
 				m_space.notify_all();
 			}
 
@@ -83,9 +83,9 @@ namespace StormByte::Buffer {
 			 * @brief Gets item count in queue.
 			 * @return Count of items.
 			 */
-			std::size_t Size() const noexcept {
+			StormByte::Size Size() const noexcept {
 				std::lock_guard<std::mutex> lock(m_mutex);
-				return m_items.size();
+				return StormByte::Size{m_items.size()};
 			}
 
 			/**
@@ -248,24 +248,24 @@ namespace StormByte::Buffer {
 	: m_io(std::make_unique<Implementation>()) {}
 
 	template<Type::MoveConstructible T>
-	Hopper<T>::Hopper(std::size_t capacity) noexcept
+	Hopper<T>::Hopper(StormByte::Size capacity) noexcept
 	: m_io(std::make_unique<Implementation>(capacity)) {}
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::~Hopper() noexcept = default;
 
 	template<Type::MoveConstructible T>
-	std::size_t Hopper<T>::Capacity() const noexcept {
+	StormByte::Size Hopper<T>::Capacity() const noexcept {
 		return m_io->Capacity();
 	}
 
 	template<Type::MoveConstructible T>
-	void Hopper<T>::Capacity(std::size_t capacity) noexcept {
+	void Hopper<T>::Capacity(StormByte::Size capacity) noexcept {
 		m_io->Capacity(capacity);
 	}
 
 	template<Type::MoveConstructible T>
-	std::size_t Hopper<T>::Size() const noexcept {
+	StormByte::Size Hopper<T>::Size() const noexcept {
 		return m_io->Size();
 	}
 

@@ -41,7 +41,8 @@
 
 #pragma once
 
-#include <StormByte/buffer/data.hxx>
+#include <StormByte/binary_data.hxx>
+#include <StormByte/byte_size.hxx>
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
@@ -135,9 +136,9 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedWriter(IO::BufferedWriter& owner, StormByte::Size write_chunk,
+						BufferedWriter(IO::BufferedWriter& owner, StormByte::ByteSize write_chunk,
 							std::size_t back_pressure, std::chrono::milliseconds max_wait,
-							StormByte::Size max_memory);
+							StormByte::ByteSize max_memory);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -198,7 +199,7 @@ namespace StormByte {
 						 * @brief Publish the logical write offset from a leaf Seek.
 						 * @param offset New Tell.
 						 */
-						void SetTell(StormByte::Size offset) noexcept;
+						void SetTell(StormByte::ByteSize offset) noexcept;
 
 						/**
 						 * @name Session
@@ -285,13 +286,13 @@ namespace StormByte {
 						 * @brief Logical write offset.
 						 * @return Cursor including unflushed pages.
 						 */
-						StormByte::Size Tell() const noexcept;
+						StormByte::ByteSize Tell() const noexcept;
 
 						/**
 						 * @brief Bytes not yet on the origin.
 						 * @return Page map plus drain pipe.
 						 */
-						StormByte::Size Dirty() const noexcept;
+						StormByte::ByteSize Dirty() const noexcept;
 
 						/**
 						 * @brief Move only the logical cursor.
@@ -320,13 +321,13 @@ namespace StormByte {
 						 * @brief Configured origin push unit.
 						 * @return Bytes. 0 disables the ring.
 						 */
-						StormByte::Size WriteChunk() const noexcept;
+						StormByte::ByteSize WriteChunk() const noexcept;
 
 						/**
 						 * @brief Set origin push unit.
 						 * @param bytes Chunk size. 0 disables the ring.
 						 */
-						void WriteChunk(StormByte::Size bytes);
+						void WriteChunk(StormByte::ByteSize bytes);
 
 						/**
 						 * @brief Configured dirty cap in WriteChunk units.
@@ -344,13 +345,13 @@ namespace StormByte {
 						 * @brief Page-map budget.
 						 * @return Bytes. 0 stores no pages.
 						 */
-						StormByte::Size MaxMemory() const noexcept;
+						StormByte::ByteSize MaxMemory() const noexcept;
 
 						/**
 						 * @brief Set the page-map budget. May GC if below Dirty.
 						 * @param bytes 0 disables the page map.
 						 */
-						void MaxMemory(StormByte::Size bytes);
+						void MaxMemory(StormByte::ByteSize bytes);
 
 						/**
 						 * @brief Wait cap for OriginPush.
@@ -369,15 +370,15 @@ namespace StormByte {
 						 * @param n Prospective Write size.
 						 * @return @c true in direct mode, or if ring Dirty + n <= cap.
 						 */
-						bool WillWrite(StormByte::Size n) const noexcept;
+						bool WillWrite(StormByte::ByteSize n) const noexcept;
 
 					private:
 						/**
 						 * @brief Dirty page: absolute start and payload.
 						 */
 						struct Page {
-							StormByte::Size offset {0};	///< First byte of this span.
-							Data bytes;					///< Octets not yet on the origin.
+							StormByte::ByteSize offset {0};	///< First byte of this span.
+							BinaryData bytes;					///< Octets not yet on the origin.
 						};
 
 						/**
@@ -396,26 +397,26 @@ namespace StormByte {
 						 * @brief Ring cap in bytes.
 						 * @return BackPressure * WriteChunk, or 0 if direct.
 						 */
-						StormByte::Size PendingCap() const noexcept;
+						StormByte::ByteSize PendingCap() const noexcept;
 
 						/**
 						 * @brief Occupancy of @c m_pages.
 						 * @return Sum of page sizes.
 						 */
-						StormByte::Size PageDirty() const noexcept;
+						StormByte::ByteSize PageDirty() const noexcept;
 
 						/**
 						 * @brief Page map plus ring occupancy.
 						 * @return Bytes not on the origin.
 						 */
-						StormByte::Size TotalDirty() const noexcept;
+						StormByte::ByteSize TotalDirty() const noexcept;
 
 						/**
 						 * @brief Whether @p bytes fit under the ring cap.
 						 * @param bytes Payload size of the prospective Write.
 						 * @return @c true if the Write may proceed.
 						 */
-						bool WouldAccept(StormByte::Size bytes) const noexcept;
+						bool WouldAccept(StormByte::ByteSize bytes) const noexcept;
 
 						/**
 						 * @brief Start @c m_worker if it is not joinable.
@@ -464,7 +465,7 @@ namespace StormByte {
 						 * @brief Merge overlap / abut around @p offset.
 						 * @param offset Page start to repair from.
 						 */
-						void Coalesce(StormByte::Size offset);
+						void Coalesce(StormByte::ByteSize offset);
 
 						/**
 						 * @brief Materialise pages until PageDirty <= MaxMemory.
@@ -495,7 +496,7 @@ namespace StormByte {
 						 * Skips OriginSeek when @c m_origin_pos equals @p absolute
 						 * and @c m_origin_cursor_dirty is false.
 						 */
-						Result EnsureOrigin(StormByte::Size absolute);
+						Result EnsureOrigin(StormByte::ByteSize absolute);
 
 						/**
 						 * @brief Close the current seek epoch if one is open.
@@ -524,19 +525,19 @@ namespace StormByte {
 						mutable std::mutex m_origin_io;				///< Serialises every Origin* hook.
 						mutable std::condition_variable m_cv;		///< Worker / flush waits.
 
-						StormByte::Size m_write_chunk {0};			///< Origin push unit.
+						StormByte::ByteSize m_write_chunk {0};			///< Origin push unit.
 						std::size_t m_back_pressure {0};			///< Cap in WriteChunk units.
-						StormByte::Size m_max_memory {0};			///< Page-map budget.
+						StormByte::ByteSize m_max_memory {0};			///< Page-map budget.
 						std::chrono::milliseconds m_max_wait {0};	///< OriginPush wait cap.
 
 						enum State m_state { State::Unavailable };	///< Session state.
 						bool m_open {false};						///< Session armed.
 						mutable bool m_failed {false};				///< Permanent failure.
-						mutable StormByte::Size m_tell {0};			///< Logical cursor.
-						StormByte::Size m_high_water {0};			///< Max Tell seen this session.
+						mutable StormByte::ByteSize m_tell {0};			///< Logical cursor.
+						StormByte::ByteSize m_high_water {0};			///< Max Tell seen this session.
 						bool m_origin_cursor_dirty {false};			///< OriginFlush may desync the fd.
-						StormByte::Size m_origin_pos {0};			///< Device cursor.
-						StormByte::Size m_materialized {0};			///< Durable origin length.
+						StormByte::ByteSize m_origin_pos {0};			///< Device cursor.
+						StormByte::ByteSize m_materialized {0};			///< Durable origin length.
 
 						std::map<std::size_t, Page> m_pages;		///< Dirty pages by offset.
 						std::unique_ptr<LockFreeRing> m_ring;		///< Drain pipe. Null if ring off.
@@ -545,14 +546,14 @@ namespace StormByte {
 						bool m_epoch_hit {false};					///< Epoch wrote into a resident page.
 						bool m_epoch_origin {false};				///< Epoch already OriginSeek'd.
 
-						mutable StormByte::Size m_accepted {0};		///< Telemetry.Accepted.
-						mutable StormByte::Size m_behind {0};		///< Telemetry.Behind.
-						mutable StormByte::Size m_direct {0};		///< Telemetry.Direct.
-						mutable StormByte::Size m_origin_bytes {0};	///< Telemetry.Origin.
-						mutable StormByte::Size m_hit_ahead {0};	///< Telemetry.HitAhead.
-						mutable StormByte::Size m_hit_back {0};		///< Telemetry.HitBack.
-						mutable StormByte::Size m_miss {0};			///< Telemetry.Miss.
-						mutable StormByte::Size m_dirty_peak {0};	///< Telemetry.DirtyPeak.
+						mutable StormByte::ByteSize m_accepted {0};		///< Telemetry.Accepted.
+						mutable StormByte::ByteSize m_behind {0};		///< Telemetry.Behind.
+						mutable StormByte::ByteSize m_direct {0};		///< Telemetry.Direct.
+						mutable StormByte::ByteSize m_origin_bytes {0};	///< Telemetry.Origin.
+						mutable StormByte::ByteSize m_hit_ahead {0};	///< Telemetry.HitAhead.
+						mutable StormByte::ByteSize m_hit_back {0};		///< Telemetry.HitBack.
+						mutable StormByte::ByteSize m_miss {0};			///< Telemetry.Miss.
+						mutable StormByte::ByteSize m_dirty_peak {0};	///< Telemetry.DirtyPeak.
 						mutable std::size_t m_seek_logical {0};		///< Telemetry.SeekLogical.
 						mutable std::size_t m_seek_origin {0};		///< Telemetry.SeekOrigin.
 						mutable std::size_t m_seek_saved_full {0};	///< Telemetry.SeekSavedFull.

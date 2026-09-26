@@ -60,7 +60,7 @@
 
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
@@ -76,7 +76,7 @@ using StormByte::Buffer::IO::Drainer::Operation;
 using StormByte::Buffer::IO::Drainer::Status;
 
 namespace {
-	std::string BytesToText(const Data& data) {
+	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -102,15 +102,15 @@ namespace {
 
 	FIFO FromText(const std::string& text) {
 		FIFO fifo;
-		Data data(StormByte::Size{text.size()});
+		BinaryData data(StormByte::ByteSize{text.size()});
 		for (std::size_t i = 0; i < text.size(); ++i)
 			data[i] = static_cast<std::byte>(text[i]);
 		static_cast<void>(fifo.Write(data.size(), std::move(data)));
 		return fifo;
 	}
 
-	Data Pattern(const std::size_t n) {
-		Data data(StormByte::Size{n});
+	BinaryData Pattern(const std::size_t n) {
+		BinaryData data(StormByte::ByteSize{n});
 		for (std::size_t i = 0; i < n; ++i)
 			data[i] = static_cast<std::byte>(i & 0xFF);
 		return data;
@@ -121,7 +121,7 @@ namespace {
 	}
 
 	bool WaitFifoSize(const FIFO& fifo, const std::size_t n) {
-		const StormByte::Size want{n};
+		const StormByte::ByteSize want{n};
 		for (int i = 0; i < 500; ++i) {
 			if (fifo.Size() >= want)
 				return true;
@@ -131,7 +131,7 @@ namespace {
 	}
 
 	bool WaitSize(const StormByte::Buffer::Generic& buf, const std::size_t n) {
-		const StormByte::Size want{n};
+		const StormByte::ByteSize want{n};
 		for (int i = 0; i < 500; ++i) {
 			if (buf.Size() >= want)
 				return true;
@@ -151,11 +151,11 @@ namespace {
 
 	bool WaitDirtyZero(BufferedFileWriter& out) {
 		for (int i = 0; i < 200; ++i) {
-			if (out.Dirty() == StormByte::Size{0})
+			if (out.Dirty() == StormByte::ByteSize{0})
 				return true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return out.Dirty() == StormByte::Size{0};
+		return out.Dirty() == StormByte::ByteSize{0};
 	}
 
 	bool WaitConsumerEof(const Consumer& consumer) {
@@ -176,16 +176,16 @@ namespace {
 				return !m_closed && !m_error;
 			}
 
-			StormByte::Size Occupied() const noexcept override {
+			StormByte::ByteSize Occupied() const noexcept override {
 				return m_target.Size();
 			}
 
-			bool Write(const Data& data) noexcept override {
-				Data copy = data;
+			bool Write(const BinaryData& data) noexcept override {
+				BinaryData copy = data;
 				return Write(std::move(copy));
 			}
 
-			bool Write(Data&& in) noexcept override {
+			bool Write(BinaryData&& in) noexcept override {
 				if (m_closed || m_error)
 					return false;
 				if (m_calls < m_succeed) {
@@ -195,16 +195,16 @@ namespace {
 				return false;
 			}
 
-			bool Write(const StormByte::Size& count, const Data& data) noexcept override {
-				if (count == StormByte::Size{0})
+			bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept override {
+				if (count == StormByte::ByteSize{0})
 					return Write(data);
-				const StormByte::Size n = std::min(count, data.size());
-				Data tmp(data.data(), n);
+				const StormByte::ByteSize n = std::min(count, data.size());
+				BinaryData tmp(data.data(), n);
 				return Write(std::move(tmp));
 			}
 
-			bool Write(const StormByte::Size& count, Data&& data) noexcept override {
-				if (count == StormByte::Size{0})
+			bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept override {
+				if (count == StormByte::ByteSize{0})
 					return Write(std::move(data));
 				if (count < data.size())
 					data.resize(count);
@@ -270,7 +270,7 @@ int test_buf_to_io_uncapped_ctor() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out);
 	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, bridge.HighWater());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, bridge.HighWater());
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
 	out.Close();
@@ -289,7 +289,7 @@ int test_buf_to_io_writer_not_open() {
 	BufferedFileWriter out(out_path, 0, 0);
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_EQUAL(fn, StormByte::Size{4}, src.AvailableBytes());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, src.Available());
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -309,21 +309,21 @@ int test_backpressure_shared_fifo() {
 	Bridge bridge(in, out, 4);
 
 	std::atomic<bool> stop {false};
-	Data collected;
+	BinaryData collected;
 	std::thread consumer([&] {
-		while (!stop.load() || dst.AvailableBytes() > StormByte::Size{0}) {
-			if (dst.AvailableBytes() == StormByte::Size{0}) {
+		while (!stop.load() || dst.Available() > StormByte::ByteSize{0}) {
+			if (dst.Available() == StormByte::ByteSize{0}) {
 				std::this_thread::yield();
 				continue;
 			}
-			Data chunk;
-			const StormByte::Size n = std::min(StormByte::Size{2}, dst.AvailableBytes());
+			BinaryData chunk;
+			const StormByte::ByteSize n = std::min(StormByte::ByteSize{2}, dst.Available());
 			if (dst.Extract(n, chunk))
 				collected.insert(collected.end(), chunk.begin(), chunk.end());
 		}
 	});
 
-	for (int i = 0; i < 500 && collected.size() < StormByte::Size{text.size()}; ++i)
+	for (int i = 0; i < 500 && collected.size() < StormByte::ByteSize{text.size()}; ++i)
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	stop.store(true);
 	consumer.join();
@@ -386,7 +386,7 @@ int test_high_water_setter_does_not_toggle() {
 	ASSERT_TRUE(fn, bridge.Drainer(Operation::Toggle));
 	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
 	bridge.HighWater(0);
-	ASSERT_EQUAL(fn, StormByte::Size{0}, bridge.HighWater());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, bridge.HighWater());
 	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
 	ASSERT_TRUE(fn, src.Write("!!!"));
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -573,7 +573,7 @@ int test_ext_writer_failure() {
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	ASSERT_FALSE(fn, bridge.Flush());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, dst.Size());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, dst.Size());
 	RETURN_TEST(fn, 0);
 }
 
@@ -628,7 +628,7 @@ int test_io_to_buf_reader_not_open() {
 	ExternalBufferWriter out(dst);
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, dst.Size());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, dst.Size());
 	RETURN_TEST(fn, 0);
 }
 
@@ -756,7 +756,7 @@ int test_io_uncapped_ctor() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out);
 	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
-	ASSERT_EQUAL(fn, StormByte::Size{0}, bridge.HighWater());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, bridge.HighWater());
 	ASSERT_TRUE(fn, bridge.Flush());
 	in.Close();
 	out.Close();
@@ -795,8 +795,8 @@ int test_demuxer_file_to_producer() {
 	Bridge bridge(in, out, 512);
 	ASSERT_TRUE(fn, WaitSize(consumer, 256));
 	ASSERT_TRUE(fn, bridge.Flush());
-	Data got;
-	ASSERT_TRUE(fn, consumer.Extract(StormByte::Size{256}, got));
+	BinaryData got;
+	ASSERT_TRUE(fn, consumer.Extract(StormByte::ByteSize{256}, got));
 	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), BytesToText(got));
 	ASSERT_TRUE(fn, in.EoF());
 	in.Close();
@@ -807,7 +807,7 @@ int test_demuxer_file_to_producer() {
 int test_demuxer_file_to_producer_high_water() {
 	const std::string fn = "test_demuxer_file_to_producer_high_water";
 	const std::size_t total = 1024 * 1024;
-	const Data payload = Pattern(total);
+	const BinaryData payload = Pattern(total);
 	const auto src_path = Scratch("demux_src");
 	std::filesystem::remove(src_path);
 	{
@@ -823,28 +823,28 @@ int test_demuxer_file_to_producer_high_water() {
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 4096);
 
-	Data collected;
-	collected.reserve(StormByte::Size{total});
-	for (int i = 0; i < 4000 && collected.size() < StormByte::Size{total}; ++i) {
-		if (consumer.Size() == StormByte::Size{0}) {
+	BinaryData collected;
+	collected.reserve(StormByte::ByteSize{total});
+	for (int i = 0; i < 4000 && collected.size() < StormByte::ByteSize{total}; ++i) {
+		if (consumer.Size() == StormByte::ByteSize{0}) {
 			if (in.EoF())
 				break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			continue;
 		}
-		Data chunk;
-		const StormByte::Size n = std::min(StormByte::Size{4096}, consumer.Size());
+		BinaryData chunk;
+		const StormByte::ByteSize n = std::min(StormByte::ByteSize{4096}, consumer.Size());
 		if (consumer.Extract(n, chunk))
 			collected.insert(collected.end(), chunk.begin(), chunk.end());
 	}
 	ASSERT_TRUE(fn, bridge.Flush());
-	while (consumer.Size() > StormByte::Size{0}) {
-		Data chunk;
+	while (consumer.Size() > StormByte::ByteSize{0}) {
+		BinaryData chunk;
 		if (!consumer.Extract(consumer.Size(), chunk))
 			break;
 		collected.insert(collected.end(), chunk.begin(), chunk.end());
 	}
-	ASSERT_EQUAL(fn, StormByte::Size{total}, collected.size());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{total}, collected.size());
 	ASSERT_EQUAL(fn, BytesToText(payload), BytesToText(collected));
 	in.Close();
 	producer.Close();
@@ -860,7 +860,7 @@ int test_muxer_producer_to_file_high_water() {
 
 	Producer producer;
 	Consumer consumer = producer.Consumer();
-	const Data payload = Pattern(total);
+	const BinaryData payload = Pattern(total);
 	ASSERT_TRUE(fn, producer.Write(payload));
 	producer.Close();
 
@@ -912,8 +912,8 @@ int test_muxer_then_demuxer_roundtrip() {
 		Bridge demux(in, out, 4096);
 		ASSERT_TRUE(fn, WaitSize(consumer, text.size()));
 		ASSERT_TRUE(fn, demux.Flush());
-		Data got;
-		ASSERT_TRUE(fn, consumer.Extract(StormByte::Size{text.size()}, got));
+		BinaryData got;
+		ASSERT_TRUE(fn, consumer.Extract(StormByte::ByteSize{text.size()}, got));
 		ASSERT_EQUAL(fn, text, BytesToText(got));
 		in.Close();
 		producer.Close();
@@ -937,7 +937,7 @@ int test_producer_close_empty() {
 	Bridge bridge(in, out, 16);
 	producer.Close();
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_EQUAL(fn, StormByte::Size{0}, dst.Size());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, dst.Size());
 	ASSERT_TRUE(fn, consumer.EoF());
 	ASSERT_TRUE(fn, bridge.EoF());
 	RETURN_TEST(fn, 0);

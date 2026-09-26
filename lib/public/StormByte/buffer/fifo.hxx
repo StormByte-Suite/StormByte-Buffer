@@ -59,7 +59,7 @@ namespace StormByte::Buffer {
 	 * @brief Byte-oriented FIFO buffer with grow-on-demand and close/error support.
 	 *
 	 * @par Overview
-	 * A contiguous growable buffer implemented atop @ref StormByte::Buffer::Data
+	 * A contiguous growable buffer implemented atop @ref StormByte::BinaryData
 	 * that tracks a logical read position. It grows automatically to fit writes
 	 * and supports efficient non-destructive reads and destructive extracts.
 	 *
@@ -89,31 +89,31 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Construct FIFO with initial data (copy).
-			 * @param data Initial @ref StormByte::Buffer::Data.
+			 * @param data Initial @ref StormByte::BinaryData.
 			 */
-			inline FIFO(const class Data& data) noexcept
+			inline FIFO(const StormByte::BinaryData& data) noexcept
 				: m_buffer(data), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO with initial data (move).
-			 * @param data Initial @ref StormByte::Buffer::Data (moved into the FIFO).
+			 * @param data Initial @ref StormByte::BinaryData (moved into the FIFO).
 			 */
-			inline FIFO(class Data&& data) noexcept
+			inline FIFO(StormByte::BinaryData&& data) noexcept
 				: m_buffer(std::move(data)), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO from an input range (copy / convert).
 			 * @tparam R Input range whose elements are convertible to @c std::byte.
 			 * @param r Range to copy from.
-			 * @note Disabled when @p R is already @ref StormByte::Buffer::Data to avoid overload ambiguity.
+			 * @note Disabled when @p R is already @ref StormByte::BinaryData to avoid overload ambiguity.
 			 */
 			template<Type::ByteInputRange R>
-			requires (!Type::SameAs<R, class Data>)
+			requires (!Type::SameAs<R, StormByte::BinaryData>)
 			inline FIFO(const R& r) noexcept
 				: m_buffer(DataConvert(r)), m_position_offset(0) {}
 
 			/**
-			 * @brief Construct FIFO from an rvalue range (moves when @ref StormByte::Buffer::Data).
+			 * @brief Construct FIFO from an rvalue range (moves when @ref StormByte::BinaryData).
 			 * @tparam Rr Input range type.
 			 * @param r Range to consume.
 			 */
@@ -206,20 +206,20 @@ namespace StormByte::Buffer {
 			 * @return Unread byte count.
 			 * @see Size(), Read(), Extract(), Seek()
 			 */
-			virtual StormByte::Size AvailableBytes() const noexcept override;
+			virtual StormByte::ByteSize Available() const noexcept override;
 
 			/**
 			 * @brief Access the internal storage.
-			 * @return Constant reference to the owned @ref StormByte::Buffer::Data.
+			 * @return Constant reference to the owned @ref StormByte::BinaryData.
 			 */
-			virtual const class Data& Data() const noexcept override;
+			virtual const StormByte::BinaryData& BinaryData() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty.
 			 * @return @c true if @c m_buffer is empty.
 			 * @note With a non-zero read position, @ref Empty() may be @c false while
-			 *       @ref AvailableBytes() is zero.
-			 * @see Size(), AvailableBytes()
+			 *       @ref Available() is zero.
+			 * @see Size(), Available()
 			 */
 			virtual bool Empty() const noexcept override;
 
@@ -244,9 +244,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Total number of bytes stored (including already-read prefix).
 			 * @return Size of the internal buffer.
-			 * @see Empty(), AvailableBytes()
+			 * @see Empty(), Available()
 			 */
-			virtual StormByte::Size Size() const noexcept override;
+			virtual StormByte::ByteSize Size() const noexcept override;
 
 			/** @} */
 
@@ -270,7 +270,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Mark the buffer closed for further writes.
 			 * @details Subsequent @c Write() calls fail. Readers may still drain
-			 *          remaining data until @ref AvailableBytes() is zero.
+			 *          remaining data until @ref Available() is zero.
 			 */
 			void Close() noexcept override;
 
@@ -280,7 +280,7 @@ namespace StormByte::Buffer {
 			 * @return @c true on success, @c false if fewer bytes were available.
 			 * @see Read(), Seek()
 			 */
-			virtual bool Drop(const StormByte::Size& count) noexcept override;
+			virtual bool Drop(const StormByte::ByteSize& count) noexcept override;
 
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
@@ -303,12 +303,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Extract bytes into a @ref StormByte::Buffer::Data.
+			 * @brief Extract bytes into a @ref StormByte::BinaryData.
 			 * @param count Bytes to extract; 0 = all available.
 			 * @param outBuffer Destination (filled / resized as needed).
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Extract(const StormByte::Size& count, class Data& outBuffer) noexcept override;
+			bool Extract(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) noexcept override;
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly.
@@ -316,16 +316,16 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Extract(const StormByte::Size& count, WriteOnly& outBuffer) noexcept override;
+			bool Extract(const StormByte::ByteSize& count, WriteOnly& outBuffer) noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Extract overloads into scope. */
 			using ReadOnly::Extract;
 
 			/**
-			 * @brief Extract all remaining bytes until EoF into a @ref StormByte::Buffer::Data.
+			 * @brief Extract all remaining bytes until EoF into a @ref StormByte::BinaryData.
 			 * @param outBuffer Destination buffer.
 			 */
-			void ExtractUntilEoF(class Data& outBuffer) noexcept override;
+			void ExtractUntilEoF(StormByte::BinaryData& outBuffer) noexcept override;
 
 			/**
 			 * @brief Extract all remaining bytes until EoF into a @ref WriteOnly.
@@ -341,12 +341,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Non-destructive read into a @ref StormByte::Buffer::Data (advances position).
+			 * @brief Non-destructive read into a @ref StormByte::BinaryData (advances position).
 			 * @param count Bytes to read; 0 = all available.
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Read(const StormByte::Size& count, class Data& outBuffer) const noexcept override;
+			bool Read(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly (advances position).
@@ -354,16 +354,16 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Read(const StormByte::Size& count, WriteOnly& outBuffer) const noexcept override;
+			bool Read(const StormByte::ByteSize& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Read overloads into scope. */
 			using ReadOnly::Read;
 
 			/**
-			 * @brief Read all remaining bytes until EoF into a @ref StormByte::Buffer::Data.
+			 * @brief Read all remaining bytes until EoF into a @ref StormByte::BinaryData.
 			 * @param outBuffer Destination buffer.
 			 */
-			void ReadUntilEoF(class Data& outBuffer) const noexcept override;
+			void ReadUntilEoF(StormByte::BinaryData& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Read all remaining bytes until EoF into a @ref WriteOnly.
@@ -379,12 +379,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Peek into a @ref StormByte::Buffer::Data without advancing the read position.
+			 * @brief Peek into a @ref StormByte::BinaryData without advancing the read position.
 			 * @param count Bytes to peek; 0 = all available.
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Peek(const StormByte::Size& count, class Data& outBuffer) const noexcept override;
+			bool Peek(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
@@ -392,7 +392,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Peek(const StormByte::Size& count, WriteOnly& outBuffer) const noexcept override;
+			bool Peek(const StormByte::ByteSize& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @} */
 
@@ -408,8 +408,8 @@ namespace StormByte::Buffer {
 			 * @return Formatted string: size / position / status, then hex/ASCII lines
 			 *         (no trailing newline).
 			 */
-			virtual StormByte::String::String HexDump(const StormByte::Size& columns = 16,
-										const StormByte::Size& byte_limit = 0) const noexcept;
+			virtual StormByte::String::String HexDump(const StormByte::ByteSize& columns = 16,
+										const StormByte::ByteSize& byte_limit = 0) const noexcept;
 
 			/** @} */
 
@@ -419,20 +419,20 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Append bytes from a @ref StormByte::Buffer::Data (copy).
+			 * @brief Append bytes from a @ref StormByte::BinaryData (copy).
 			 * @param count Number of bytes to write.
 			 * @param data Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, const class Data& data) noexcept override;
+			bool Write(const StormByte::ByteSize& count, const StormByte::BinaryData& data) noexcept override;
 
 			/**
-			 * @brief Append bytes from a @ref StormByte::Buffer::Data (move).
+			 * @brief Append bytes from a @ref StormByte::BinaryData (move).
 			 * @param count Number of bytes to write.
 			 * @param data Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, class Data&& data) noexcept override;
+			bool Write(const StormByte::ByteSize& count, StormByte::BinaryData&& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (copy).
@@ -440,7 +440,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, const ReadOnly& data) noexcept override;
+			bool Write(const StormByte::ByteSize& count, const ReadOnly& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (move / extract path).
@@ -448,7 +448,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, ReadOnly&& data) noexcept override;
+			bool Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept override;
 
 			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
 			using WriteOnly::Write;
@@ -461,10 +461,10 @@ namespace StormByte::Buffer {
 			 * @return Number of bytes from the current read position.
 			 * @note Callers that synchronize derived state must hold their own lock.
 			 */
-			StormByte::Size AvailableBytesInternal() const noexcept;
+			StormByte::ByteSize AvailableInternal() const noexcept;
 
-			class Data m_buffer;							///< Owned contiguous byte storage
-			mutable StormByte::Size m_position_offset {0};	///< Logical read offset from start of m_buffer
+			StormByte::BinaryData m_buffer;							///< Owned contiguous byte storage
+			mutable StormByte::ByteSize m_position_offset {0};	///< Logical read offset from start of m_buffer
 			bool m_closed {false};						///< Once true, further writes fail
 			bool m_error {false};						///< Permanent error: unreadable and unwritable
 
@@ -485,8 +485,8 @@ namespace StormByte::Buffer {
 			 * @return Formatted lines (no header).
 			 */
 			static StormByte::String::String FormatHexLines(std::span<const std::byte>& data,
-											StormByte::Size start_offset,
-											StormByte::Size columns) noexcept;
+											StormByte::ByteSize start_offset,
+											StormByte::ByteSize columns) noexcept;
 
 			/**
 			 * @brief Build the hexdump header (size / position / status).
@@ -500,13 +500,13 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Shared implementation for Extract / Read / Peek into @ref StormByte::Buffer::Data.
+			 * @brief Shared implementation for Extract / Read / Peek into @ref StormByte::BinaryData.
 			 * @param count Requested byte count (0 = all available).
 			 * @param outBuffer Destination.
 			 * @param flag Operation kind.
 			 * @return @c true on success.
 			 */
-			virtual bool ReadInternal(const StormByte::Size& count, class Data& outBuffer,
+			virtual bool ReadInternal(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer,
 									const Operation& flag) noexcept;
 
 			/**
@@ -516,15 +516,15 @@ namespace StormByte::Buffer {
 			 * @param flag Operation kind.
 			 * @return @c true on success.
 			 */
-			virtual bool ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer,
+			virtual bool ReadInternal(const StormByte::ByteSize& count, WriteOnly& outBuffer,
 									const Operation& flag) noexcept;
 
 			/**
-			 * @brief Drain until EoF into @ref StormByte::Buffer::Data using @p flag semantics.
+			 * @brief Drain until EoF into @ref StormByte::BinaryData using @p flag semantics.
 			 * @param outBuffer Destination.
 			 * @param flag Extract or Read.
 			 */
-			virtual void ReadUntilEoFInternal(class Data& outBuffer, const Operation& flag) noexcept;
+			virtual void ReadUntilEoFInternal(StormByte::BinaryData& outBuffer, const Operation& flag) noexcept;
 
 			/**
 			 * @brief Drain until EoF into @ref WriteOnly using @p flag semantics.
@@ -534,20 +534,20 @@ namespace StormByte::Buffer {
 			virtual void ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept;
 
 			/**
-			 * @brief Append from @ref StormByte::Buffer::Data (copy).
+			 * @brief Append from @ref StormByte::BinaryData (copy).
 			 * @param count Number of bytes.
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const StormByte::Size& count, const class Data& src) noexcept;
+			virtual bool WriteInternal(const StormByte::ByteSize& count, const StormByte::BinaryData& src) noexcept;
 
 			/**
-			 * @brief Append from @ref StormByte::Buffer::Data (move).
+			 * @brief Append from @ref StormByte::BinaryData (move).
 			 * @param count Number of bytes.
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const StormByte::Size& count, class Data&& src) noexcept;
+			virtual bool WriteInternal(const StormByte::ByteSize& count, StormByte::BinaryData&& src) noexcept;
 
 			/**
 			 * @brief Append from @ref ReadOnly (copy path).
@@ -555,7 +555,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const StormByte::Size& count, const ReadOnly& src) noexcept;
+			virtual bool WriteInternal(const StormByte::ByteSize& count, const ReadOnly& src) noexcept;
 
 			/**
 			 * @brief Append from @ref ReadOnly (move / extract path).
@@ -563,7 +563,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const StormByte::Size& count, ReadOnly&& src) noexcept;
+			virtual bool WriteInternal(const StormByte::ByteSize& count, ReadOnly&& src) noexcept;
 
 			/** @} */
 	};

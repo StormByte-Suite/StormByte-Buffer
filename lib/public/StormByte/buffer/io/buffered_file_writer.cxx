@@ -55,7 +55,7 @@ using namespace StormByte::Buffer::IO;
 
 namespace {
 	constexpr std::size_t DefaultBackPressure = 4;
-	constexpr StormByte::Size DefaultMaxMemory{1024ull * 1024ull};
+	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
 
 	std::filesystem::path SpacePath(const std::filesystem::path& path) {
 		std::error_code ec;
@@ -68,8 +68,8 @@ namespace {
 		return {};
 	}
 
-	bool VolumeHas(const std::filesystem::path& path, const StormByte::Size n) {
-		if (n == StormByte::Size{0})
+	bool VolumeHas(const std::filesystem::path& path, const StormByte::ByteSize n) {
+		if (n == StormByte::ByteSize{0})
 			return true;
 		const auto probe = SpacePath(path);
 		if (probe.empty())
@@ -108,18 +108,18 @@ namespace {
 }
 
 BufferedFileWriter::BufferedFileWriter(std::filesystem::path path):
-	BufferedWriter(StormByte::Size{0}, 0),
+	BufferedWriter(StormByte::ByteSize{0}, 0),
 	m_path(std::move(path)),
 	m_probe_on_setup(true) {}
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::Size write_chunk,
+BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
 	BufferedWriter(write_chunk, back_pressure, max_wait),
 	m_path(std::move(path)),
 	m_probe_on_setup(false) {}
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::Size write_chunk,
-		const StormByte::Size max_memory, const std::size_t back_pressure,
+BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::ByteSize write_chunk,
+		const StormByte::ByteSize max_memory, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait):
 	BufferedWriter(write_chunk, back_pressure, max_wait, max_memory),
 	m_path(std::move(path)),
@@ -153,11 +153,11 @@ const std::filesystem::path& BufferedFileWriter::Path() const noexcept {
 	return m_path;
 }
 
-StormByte::Size BufferedFileWriter::Size() const noexcept {
+StormByte::ByteSize BufferedFileWriter::Size() const noexcept {
 	std::error_code ec;
 	const auto disk = std::filesystem::file_size(m_path, ec);
-	const StormByte::Size on_disk = ec ? StormByte::Size{0} : StormByte::Size{static_cast<std::size_t>(disk)};
-	const StormByte::Size logical = Tell();
+	const StormByte::ByteSize on_disk = ec ? StormByte::ByteSize{0} : StormByte::ByteSize{static_cast<std::size_t>(disk)};
+	const StormByte::ByteSize logical = Tell();
 	return on_disk > logical ? on_disk : logical;
 }
 
@@ -170,14 +170,14 @@ void BufferedFileWriter::Setup() {
 		return;
 	const auto device = CreateDevice();
 	if (!device || !*device)
-		WriteChunk(StormByte::Size{0});
+		WriteChunk(StormByte::ByteSize{0});
 	else
 		WriteChunk(device->Window().write);
 	BackPressure(DefaultBackPressure);
 	MaxMemory(DefaultMaxMemory);
 }
 
-bool BufferedFileWriter::WillWrite(const StormByte::Size n) const {
+bool BufferedFileWriter::WillWrite(const StormByte::ByteSize n) const {
 	if (!BufferedWriter::WillWrite(n))
 		return false;
 	return VolumeHas(m_path, n);
@@ -250,7 +250,7 @@ Result BufferedFileWriter::OriginPush(const std::span<const std::byte> data) {
 		return { Status::Error, 0 };
 	}
 
-	return { Status::Ok, StormByte::Size{data.size()} };
+	return { Status::Ok, StormByte::ByteSize{data.size()} };
 }
 
 Result BufferedFileWriter::OriginFlush() {
@@ -285,7 +285,7 @@ Result BufferedFileWriter::OriginTruncate() {
 	return { Status::Ok, 0 };
 }
 
-Result BufferedFileWriter::OriginSeek(const StormByte::Size absolute) {
+Result BufferedFileWriter::OriginSeek(const StormByte::ByteSize absolute) {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
 		return { Status::Failed, 0 };

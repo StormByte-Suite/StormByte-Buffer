@@ -29,7 +29,7 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 
 ## What this module does
 
-- **Data** — owned contiguous octets (`StormByte::Buffer::Data`). Vector-like API in lowercase (`size`, `data`, `span`, `begin`/`end`, …). Lengths are `StormByte::Size`. Use this type for every octet payload that enters or leaves Buffer; do not use `std::vector<std::byte>` across a DLL boundary on Windows.
+- **BinaryData** — octet payloads are `StormByte::BinaryData` (Base). Buffer does not define its own byte container. Lengths of byte buffers are `StormByte::ByteSize`. `Hopper` and `Sink` count items, so they stay on `StormByte::Size`. Do not pass `std::vector<std::byte>` across a DLL boundary.
 - **FIFO** — grow-on-demand byte buffer. Not thread-safe. `Read` / `Peek` keep data; `Extract` consumes it.
 - **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
 - **Ring** — concurrent ring (many-to-many).
@@ -92,14 +92,14 @@ cmake --build build
 
 Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. I/O types live in `StormByte::Buffer::IO`.
 
-Octet payloads use `StormByte::Buffer::Data`. `size()` is `StormByte::Size`. Text that leaves the module (`HexDump`) is `StormByte::String::String`.
+Octet payloads use `StormByte::BinaryData`. `size()` is `StormByte::ByteSize`. Text that leaves the module (`HexDump`) is `StormByte::String::String`. `Hopper<T>` and `Sink<T>` count items with `StormByte::Size`.
 
 ### FIFO
 
 ```cpp
 #include <StormByte/buffer/fifo.hxx>
 
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 
@@ -107,11 +107,11 @@ int main() {
 	FIFO fifo;
 	fifo.Write("Hello World");
 
-	Data data;
+	BinaryData data;
 	auto res = fifo.Read(5, data); // "Hello", still in the buffer
 	fifo.Seek(6, Position::Absolute);
 
-	Data extracted;
+	BinaryData extracted;
 	auto gone = fifo.Extract(5, extracted); // "World"
 }
 ```
@@ -128,7 +128,7 @@ Prefer these over touching `SharedFIFO` / `Ring` by hand. A `Producer` yields a 
 #include <thread>
 
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::Producer;
 
 int main() {
@@ -143,7 +143,7 @@ int main() {
 
 	std::thread reader([consumer]() mutable {
 		while (!consumer.EoF()) {
-			Data data;
+			BinaryData data;
 			if (consumer.Extract(0, data) && !data.empty()) {
 				// process
 			}
@@ -361,8 +361,8 @@ int main() {
 	const struct BufferedFileReader::Telemetry rt = in.Telemetry();
 	(void)rt.Delivered;
 
-	BufferedFileWriter out("out.bin", StormByte::Size{4096},
-		StormByte::Size{256ull * 1024ull}, 4);
+	BufferedFileWriter out("out.bin", StormByte::ByteSize{4096},
+		StormByte::ByteSize{256ull * 1024ull}, 4);
 	out.Open();
 	(void)out.Write(dest);
 	(void)out.Seek(0, Position::Absolute);
@@ -387,7 +387,7 @@ When `Process` gets a non-null logger it passes `log->Scope("Buffer/Pipeline")` 
 #include <cctype>
 #include <memory>
 
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::ExternalReader;
@@ -401,7 +401,7 @@ int main() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 						std::shared_ptr<Log> log) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (in.Extract(0, data) && !data.empty()) {
 				std::string str(reinterpret_cast<const char*>(data.data()),
 					static_cast<std::size_t>(data.size()));

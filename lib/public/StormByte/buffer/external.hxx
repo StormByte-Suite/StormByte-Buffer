@@ -119,7 +119,7 @@ namespace StormByte {
 				 * @brief Bytes that can be read without waiting on a producer.
 				 * @return Available octets. 0 if the store is empty.
 				 */
-				virtual StormByte::Size AvailableBytes() const noexcept = 0;
+				virtual StormByte::ByteSize Available() const noexcept = 0;
 
 				/**
 				 * @brief Whether the store holds no readable bytes.
@@ -145,15 +145,15 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				virtual bool Read(const StormByte::Size& count, Data& out) const noexcept = 0;
+				virtual bool Read(const StormByte::ByteSize& count, BinaryData& out) const noexcept = 0;
 
 				/**
 				 * @brief Read all bytes available now.
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				inline bool Read(Data& out) const noexcept {
-					return Read(StormByte::Size{0}, out);
+				inline bool Read(BinaryData& out) const noexcept {
+					return Read(StormByte::ByteSize{0}, out);
 				}
 
 				/**
@@ -162,15 +162,15 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				virtual bool Extract(const StormByte::Size& count, Data& out) noexcept = 0;
+				virtual bool Extract(const StormByte::ByteSize& count, BinaryData& out) noexcept = 0;
 
 				/**
 				 * @brief Extract all bytes available now.
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				inline bool Extract(Data& out) noexcept {
-					return Extract(StormByte::Size{0}, out);
+				inline bool Extract(BinaryData& out) noexcept {
+					return Extract(StormByte::ByteSize{0}, out);
 				}
 
 				/**
@@ -179,21 +179,21 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				virtual bool Peek(const StormByte::Size& count, Data& out) const noexcept = 0;
+				virtual bool Peek(const StormByte::ByteSize& count, BinaryData& out) const noexcept = 0;
 
 				/**
 				 * @brief Read until EoF without consuming the store.
 				 * @param out Destination.
 				 * @warning Can grow without bound. Prefer bounded @c Read.
 				 */
-				virtual void ReadUntilEoF(Data& out) const noexcept = 0;
+				virtual void ReadUntilEoF(BinaryData& out) const noexcept = 0;
 
 				/**
 				 * @brief Extract until EoF.
 				 * @param out Destination.
 				 * @warning Can grow without bound. Prefer bounded @c Extract.
 				 */
-				virtual void ExtractUntilEoF(Data& out) noexcept = 0;
+				virtual void ExtractUntilEoF(BinaryData& out) noexcept = 0;
 
 				/**
 				 * @brief Move the logical read cursor.
@@ -287,7 +287,7 @@ namespace StormByte {
 				 * @brief Bytes available on the store without waiting.
 				 * @return Available octets.
 				 */
-				StormByte::Size AvailableBytes() const noexcept override;
+				StormByte::ByteSize Available() const noexcept override;
 
 				/**
 				 * @brief Whether the store holds no readable bytes.
@@ -313,7 +313,7 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				bool Read(const StormByte::Size& count, Data& out) const noexcept override;
+				bool Read(const StormByte::ByteSize& count, BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Destructive read on the store.
@@ -321,7 +321,7 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				bool Extract(const StormByte::Size& count, Data& out) noexcept override;
+				bool Extract(const StormByte::ByteSize& count, BinaryData& out) noexcept override;
 
 				/**
 				 * @brief Peek on the store. Does not advance the cursor.
@@ -329,21 +329,21 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c false on insufficient data or error.
 				 */
-				bool Peek(const StormByte::Size& count, Data& out) const noexcept override;
+				bool Peek(const StormByte::ByteSize& count, BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Read the store until EoF without consuming it.
 				 * @param out Destination.
 				 * @warning Can grow without bound.
 				 */
-				void ReadUntilEoF(Data& out) const noexcept override;
+				void ReadUntilEoF(BinaryData& out) const noexcept override;
 
 				/**
 				 * @brief Extract the store until EoF.
 				 * @param out Destination.
 				 * @warning Can grow without bound.
 				 */
-				void ExtractUntilEoF(Data& out) noexcept override;
+				void ExtractUntilEoF(BinaryData& out) noexcept override;
 
 				/**
 				 * @brief Move the logical read cursor of the store.
@@ -437,21 +437,21 @@ namespace StormByte {
 				 * @brief Bytes stored in the sink right now.
 				 * @return Occupancy. 0 if the store is empty.
 				 */
-				virtual StormByte::Size Occupied() const noexcept = 0;
+				virtual StormByte::ByteSize Occupied() const noexcept = 0;
 
 				/**
-				 * @brief Write a full @ref StormByte::Buffer::Data (copy).
+				 * @brief Write a full @ref StormByte::BinaryData (copy).
 				 * @param data Octets to append.
 				 * @return @c false if closed or in error.
 				 */
-				virtual bool Write(const Data& data) noexcept = 0;
+				virtual bool Write(const BinaryData& data) noexcept = 0;
 
 				/**
-				 * @brief Write a full @ref StormByte::Buffer::Data (move).
+				 * @brief Write a full @ref StormByte::BinaryData (move).
 				 * @param data Octets to append.
 				 * @return @c false if closed or in error.
 				 */
-				virtual bool Write(Data&& data) noexcept = 0;
+				virtual bool Write(BinaryData&& data) noexcept = 0;
 
 				/**
 				 * @brief Write up to @p count bytes (copy).
@@ -459,7 +459,7 @@ namespace StormByte {
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				virtual bool Write(const StormByte::Size& count, const Data& data) noexcept = 0;
+				virtual bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept = 0;
 
 				/**
 				 * @brief Write up to @p count bytes (move).
@@ -467,7 +467,7 @@ namespace StormByte {
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				virtual bool Write(const StormByte::Size& count, Data&& data) noexcept = 0;
+				virtual bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept = 0;
 
 				/**
 				 * @brief Write a string view. No terminating NUL.
@@ -489,7 +489,7 @@ namespace StormByte {
 				 * @param sv Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, std::string_view sv) noexcept;
+				bool Write(const StormByte::ByteSize& count, std::string_view sv) noexcept;
 
 				/**
 				 * @brief Write a string literal without the trailing NUL.
@@ -500,7 +500,7 @@ namespace StormByte {
 				template<std::size_t N>
 				bool Write(const char (&s)[N]) noexcept {
 					if (N == 0)
-						return Write(Data{});
+						return Write(BinaryData{});
 					return Write(std::string_view(s, N > 0 ? N - 1 : 0));
 				}
 
@@ -600,21 +600,21 @@ namespace StormByte {
 				 * @brief Bytes stored in the sink right now.
 				 * @return @ref Generic::Size of the store. 0 if empty.
 				 */
-				StormByte::Size Occupied() const noexcept override;
+				StormByte::ByteSize Occupied() const noexcept override;
 
 				/**
-				 * @brief Write a full @ref StormByte::Buffer::Data (copy).
+				 * @brief Write a full @ref StormByte::BinaryData (copy).
 				 * @param data Octets to append.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const Data& data) noexcept override;
+				bool Write(const BinaryData& data) noexcept override;
 
 				/**
-				 * @brief Write a full @ref StormByte::Buffer::Data (move).
+				 * @brief Write a full @ref StormByte::BinaryData (move).
 				 * @param data Octets to append.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(Data&& data) noexcept override;
+				bool Write(BinaryData&& data) noexcept override;
 
 				/**
 				 * @brief Write up to @p count bytes (copy).
@@ -622,7 +622,7 @@ namespace StormByte {
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, const Data& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept override;
 
 				/**
 				 * @brief Write up to @p count bytes (move).
@@ -630,7 +630,7 @@ namespace StormByte {
 				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, Data&& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept override;
 
 				/**
 				 * @brief Bring string and counted helpers from @ref ExternalWriter into scope.

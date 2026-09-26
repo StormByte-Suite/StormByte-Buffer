@@ -104,8 +104,8 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedReader(IO::BufferedReader& owner, StormByte::Size read_ahead,
-							StormByte::Size max_memory, std::chrono::milliseconds max_wait);
+						BufferedReader(IO::BufferedReader& owner, StormByte::ByteSize read_ahead,
+							StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -230,7 +230,7 @@ namespace StormByte {
 						 * @param dest Caller FIFO.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Read(StormByte::Size n, FIFO& dest) const;
+						Result Read(StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @brief Copy @p n bytes into @p dest without consuming.
@@ -238,7 +238,7 @@ namespace StormByte {
 						 * @param dest Caller FIFO.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Peek(StormByte::Size n, FIFO& dest) const;
+						Result Peek(StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @}
@@ -261,7 +261,7 @@ namespace StormByte {
 						 * @brief Logical read offset in the stream.
 						 * @return Bytes from the origin start.
 						 */
-						StormByte::Size Tell() const noexcept;
+						StormByte::ByteSize Tell() const noexcept;
 
 						/**
 						 * @brief Whether the leaf origin can seek.
@@ -288,7 +288,7 @@ namespace StormByte {
 						 * @brief Origin length when known.
 						 * @return Length, or empty.
 						 */
-						std::optional<StormByte::Size> Size() const noexcept;
+						std::optional<StormByte::ByteSize> Size() const noexcept;
 
 						/**
 						 * @}
@@ -318,25 +318,25 @@ namespace StormByte {
 						 * @brief Configured prefetch length.
 						 * @return Current ReadAhead.
 						 */
-						StormByte::Size ReadAhead() const noexcept;
+						StormByte::ByteSize ReadAhead() const noexcept;
 
 						/**
 						 * @brief Set prefetch length.
 						 * @param bytes New target. 0 disables prefetch.
 						 */
-						void ReadAhead(StormByte::Size bytes);
+						void ReadAhead(StormByte::ByteSize bytes);
 
 						/**
 						 * @brief Configured cache cap.
 						 * @return Current MaxMemory.
 						 */
-						StormByte::Size MaxMemory() const noexcept;
+						StormByte::ByteSize MaxMemory() const noexcept;
 
 						/**
 						 * @brief Set cache cap.
 						 * @param bytes Approximate resident cap. 0 drops all spans.
 						 */
-						void MaxMemory(StormByte::Size bytes);
+						void MaxMemory(StormByte::ByteSize bytes);
 
 						/**
 						 * @brief Configured read wait limit.
@@ -384,21 +384,21 @@ namespace StormByte {
 						 * @brief Bytes stored across all spans.
 						 * @return Sum of each span's available length.
 						 */
-						StormByte::Size CachedBytes() const noexcept;
+						StormByte::ByteSize CachedBytes() const noexcept;
 
 						/**
 						 * @brief Contiguous cached bytes starting at @p pos.
 						 * @param pos Stream offset.
 						 * @return Length of the hit span from @p pos, or 0.
 						 */
-						StormByte::Size CoverageFrom(StormByte::Size pos) const noexcept;
+						StormByte::ByteSize CoverageFrom(StormByte::ByteSize pos) const noexcept;
 
 						/**
 						 * @brief Span that contains @p pos, or @c m_spans.end().
 						 * @param pos Stream offset.
 						 * @return Map iterator.
 						 */
-						std::map<StormByte::Size, FIFO>::iterator FindSpan(StormByte::Size pos) const noexcept;
+						std::map<StormByte::ByteSize, FIFO>::iterator FindSpan(StormByte::ByteSize pos) const noexcept;
 
 						/**
 						 * @brief Copy @p n bytes at @p pos from a hit span into @p dest.
@@ -407,21 +407,21 @@ namespace StormByte {
 						 * @param dest Destination FIFO (appends).
 						 * @return @c true if the copy succeeded.
 						 */
-						bool CopyFromCache(StormByte::Size pos, StormByte::Size n, FIFO& dest) const;
+						bool CopyFromCache(StormByte::ByteSize pos, StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @brief Remove @p [from, to) from the map, splitting spans.
 						 * @param from Inclusive stream offset.
 						 * @param to Exclusive stream offset.
 						 */
-						void EraseRange(StormByte::Size from, StormByte::Size to) const;
+						void EraseRange(StormByte::ByteSize from, StormByte::ByteSize to) const;
 
 						/**
 						 * @brief Insert @p piece at @p start and merge overlap / abutment.
 						 * @param start Stream offset of @p piece[0].
 						 * @param piece Owned bytes. Ignored when @ref MaxMemory is 0.
 						 */
-						void CommitSpan(StormByte::Size start, FIFO&& piece) const;
+						void CommitSpan(StormByte::ByteSize start, FIFO&& piece) const;
 
 						/**
 						 * @brief Evict spans farthest from @ref Tell until @ref MaxMemory.
@@ -438,7 +438,7 @@ namespace StormByte {
 						 *
 						 * Must not run under @c m_mutex.
 						 */
-						Result EnsureOrigin(StormByte::Size pos) const;
+						Result EnsureOrigin(StormByte::ByteSize pos) const;
 
 						/**
 						 * @brief @c OriginPull at @p at into @p dest and optionally cache.
@@ -449,7 +449,7 @@ namespace StormByte {
 						 *
 						 * Must not run under @c m_mutex.
 						 */
-						Result PullAt(StormByte::Size at, StormByte::Size n, FIFO& dest) const;
+						Result PullAt(StormByte::ByteSize at, StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @brief Shared @c Read / @c Peek implementation.
@@ -458,7 +458,7 @@ namespace StormByte {
 						 * @param consume @c true for Read, @c false for Peek.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Serve(StormByte::Size n, FIFO& dest, bool consume) const;
+						Result Serve(StormByte::ByteSize n, FIFO& dest, bool consume) const;
 
 						/**
 						 * @brief Record a wait sample. Caller holds @c m_mutex.
@@ -487,28 +487,28 @@ namespace StormByte {
 						mutable std::mutex m_mutex;						///< Session + map.
 						mutable std::condition_variable m_cv;			///< Worker / flush waits.
 
-						StormByte::Size m_read_ahead {0};				///< Prefetch target length.
-						StormByte::Size m_max_memory {0};				///< Approximate cache cap.
+						StormByte::ByteSize m_read_ahead {0};				///< Prefetch target length.
+						StormByte::ByteSize m_max_memory {0};				///< Approximate cache cap.
 						std::chrono::milliseconds m_max_wait {0};		///< Read wait cap. 0 = forever.
 
 						enum State m_state { State::Unavailable };		///< Session state.
 						bool m_open {false};							///< Session armed (Open until Close).
 						mutable bool m_failed {false};					///< Permanent failure.
 						mutable bool m_origin_exhausted {false};		///< Device EOF (not public EoF).
-						mutable StormByte::Size m_tell {0};				///< Logical cursor. AVIO contract.
-						mutable StormByte::Size m_max_tell {0};			///< High-water of consumed Tell.
-						mutable StormByte::Size m_origin_pos {0};		///< Device cursor. Not updated by Seek.
+						mutable StormByte::ByteSize m_tell {0};				///< Logical cursor. AVIO contract.
+						mutable StormByte::ByteSize m_max_tell {0};			///< High-water of consumed Tell.
+						mutable StormByte::ByteSize m_origin_pos {0};		///< Device cursor. Not updated by Seek.
 						mutable bool m_origin_valid {false};			///< Whether @c m_origin_pos is known.
 						mutable bool m_hold_prefetch {false};			///< Fake seek: prefetch off until catch-up or OriginSeek.
 
-						mutable std::map<StormByte::Size, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
+						mutable std::map<StormByte::ByteSize, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
 
-						mutable StormByte::Size m_delivered {0};		///< Telemetry.Delivered.
-						mutable StormByte::Size m_hit_ahead {0};		///< Telemetry.HitAhead.
-						mutable StormByte::Size m_hit_back {0};			///< Telemetry.HitBack.
-						mutable StormByte::Size m_miss {0};				///< Telemetry.Miss.
-						mutable StormByte::Size m_origin {0};			///< Telemetry.Origin.
-						mutable StormByte::Size m_cached_peak {0};		///< Telemetry.CachedPeak.
+						mutable StormByte::ByteSize m_delivered {0};		///< Telemetry.Delivered.
+						mutable StormByte::ByteSize m_hit_ahead {0};		///< Telemetry.HitAhead.
+						mutable StormByte::ByteSize m_hit_back {0};			///< Telemetry.HitBack.
+						mutable StormByte::ByteSize m_miss {0};				///< Telemetry.Miss.
+						mutable StormByte::ByteSize m_origin {0};			///< Telemetry.Origin.
+						mutable StormByte::ByteSize m_cached_peak {0};		///< Telemetry.CachedPeak.
 						mutable std::size_t m_seek_logical {0};			///< Telemetry.SeekLogical.
 						mutable std::size_t m_seek_origin {0};			///< Telemetry.SeekOrigin.
 						mutable std::size_t m_seek_saved_full {0};		///< Telemetry.SeekSavedFull.
@@ -527,7 +527,7 @@ namespace StormByte {
 						mutable std::atomic<bool> m_stop {false};		///< Worker teardown.
 						mutable std::atomic<bool> m_cancel_prefetch {false}; ///< Flush in-flight pull.
 						mutable bool m_prefetch_run {false};			///< Worker has an active target.
-						mutable StormByte::Size m_prefetch_target {0};	///< Desired coverage from Tell.
+						mutable StormByte::ByteSize m_prefetch_target {0};	///< Desired coverage from Tell.
 						std::thread m_worker;							///< Prefetch thread.
 				};
 			}

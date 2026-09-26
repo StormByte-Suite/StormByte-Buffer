@@ -88,8 +88,8 @@ static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
  */
 int test_hopper_bounded_constructor() {
 	Hopper<int> hopper(5);
-	ASSERT_EQUAL("test_hopper_bounded_constructor capacity", static_cast<std::size_t>(5), hopper.Capacity());
-	ASSERT_EQUAL("test_hopper_bounded_constructor size", static_cast<std::size_t>(0), hopper.Size());
+	ASSERT_EQUAL("test_hopper_bounded_constructor capacity", StormByte::Size{5}, hopper.Capacity());
+	ASSERT_EQUAL("test_hopper_bounded_constructor size", StormByte::Size{0}, hopper.Size());
 	ASSERT_TRUE("test_hopper_bounded_constructor empty", hopper.Empty());
 	ASSERT_FALSE("test_hopper_bounded_constructor full", hopper.Full());
 
@@ -102,8 +102,8 @@ int test_hopper_bounded_constructor() {
  */
 int test_hopper_default_constructor() {
 	Hopper<int> hopper;
-	ASSERT_EQUAL("test_hopper_default_constructor capacity", static_cast<std::size_t>(0), hopper.Capacity());
-	ASSERT_EQUAL("test_hopper_default_constructor size", static_cast<std::size_t>(0), hopper.Size());
+	ASSERT_EQUAL("test_hopper_default_constructor capacity", StormByte::Size{0}, hopper.Capacity());
+	ASSERT_EQUAL("test_hopper_default_constructor size", StormByte::Size{0}, hopper.Size());
 	ASSERT_TRUE("test_hopper_default_constructor empty", hopper.Empty());
 	ASSERT_FALSE("test_hopper_default_constructor full", hopper.Full());
 	ASSERT_FALSE("test_hopper_default_constructor eof", hopper.EoF());
@@ -121,16 +121,16 @@ int test_hopper_dynamic_capacity() {
 	hopper.Push(2);
 	hopper.Push(3);
 
-	ASSERT_EQUAL("test_hopper_dynamic_capacity initial size", static_cast<std::size_t>(3), hopper.Size());
+	ASSERT_EQUAL("test_hopper_dynamic_capacity initial size", StormByte::Size{3}, hopper.Size());
 	ASSERT_FALSE("test_hopper_dynamic_capacity initial full", hopper.Full());
 
 	hopper.Capacity(3);
-	ASSERT_EQUAL("test_hopper_dynamic_capacity lowered capacity", static_cast<std::size_t>(3), hopper.Capacity());
+	ASSERT_EQUAL("test_hopper_dynamic_capacity lowered capacity", StormByte::Size{3}, hopper.Capacity());
 	ASSERT_TRUE("test_hopper_dynamic_capacity full after lowering", hopper.Full());
-	ASSERT_EQUAL("test_hopper_dynamic_capacity size preserved", static_cast<std::size_t>(3), hopper.Size());
+	ASSERT_EQUAL("test_hopper_dynamic_capacity size preserved", StormByte::Size{3}, hopper.Size());
 
 	hopper.Capacity(0);
-	ASSERT_EQUAL("test_hopper_dynamic_capacity unbounded capacity", static_cast<std::size_t>(0), hopper.Capacity());
+	ASSERT_EQUAL("test_hopper_dynamic_capacity unbounded capacity", StormByte::Size{0}, hopper.Capacity());
 	ASSERT_FALSE("test_hopper_dynamic_capacity not full when unbounded", hopper.Full());
 
 	RETURN_TEST("test_hopper_dynamic_capacity", 0);
@@ -149,7 +149,7 @@ int test_hopper_stream_item_into() {
 	int live = 11;
 	live >> hopper;
 	12 >> hopper;
-	ASSERT_EQUAL("test_hopper_stream_item_into size", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_stream_item_into size", StormByte::Size{2}, hopper.Size());
 	ASSERT_EQUAL("test_hopper_stream_item_into pop 1", 11, hopper.Pop());
 	ASSERT_EQUAL("test_hopper_stream_item_into pop 2", 12, hopper.Pop());
 
@@ -173,7 +173,7 @@ int test_hopper_stream_members() {
 	Hopper<int> hopper;
 	hopper << 1;
 	hopper << 2;
-	ASSERT_EQUAL("test_hopper_stream_members size", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_stream_members size", StormByte::Size{2}, hopper.Size());
 
 	int a = 0;
 	int b = 0;
@@ -202,7 +202,7 @@ int test_hopper_non_nullable_smart_pointer() {
 	Hopper<NonNullableSmartPointer> hopper;
 	hopper.Push(NonNullableSmartPointer(456));
 
-	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer size", static_cast<std::size_t>(1), hopper.Size());
+	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer size", StormByte::Size{1}, hopper.Size());
 	auto popped = hopper.Pop();
 	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer value", 456, *popped);
 	ASSERT_TRUE("test_hopper_non_nullable_smart_pointer empty", hopper.Empty());
@@ -219,10 +219,10 @@ int test_hopper_smart_pointer_discard() {
 	std::unique_ptr<int> null_unique;
 	unique_hopper.Push(std::move(null_unique));
 	ASSERT_TRUE("test_hopper_smart_pointer_discard unique empty", unique_hopper.Empty());
-	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size", static_cast<std::size_t>(0), unique_hopper.Size());
+	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size", StormByte::Size{0}, unique_hopper.Size());
 
 	unique_hopper.Push(std::make_unique<int>(123));
-	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size 1", static_cast<std::size_t>(1), unique_hopper.Size());
+	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size 1", StormByte::Size{1}, unique_hopper.Size());
 	auto popped_unique = unique_hopper.Pop();
 	ASSERT_TRUE("test_hopper_smart_pointer_discard popped valid", static_cast<bool>(popped_unique));
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard popped value", 123, *popped_unique);
@@ -233,7 +233,7 @@ int test_hopper_smart_pointer_discard() {
 	ASSERT_TRUE("test_hopper_smart_pointer_discard shared empty", shared_hopper.Empty());
 
 	shared_hopper.Push(std::make_shared<std::string>("StormByte"));
-	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared size 1", static_cast<std::size_t>(1), shared_hopper.Size());
+	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared size 1", StormByte::Size{1}, shared_hopper.Size());
 	auto popped_shared = shared_hopper.Pop();
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared value", std::string("StormByte"), *popped_shared);
 
@@ -250,7 +250,7 @@ int test_hopper_value_types() {
 	hopper.Push("Beta");
 	hopper.Push("Gamma");
 
-	ASSERT_EQUAL("test_hopper_value_types size", static_cast<std::size_t>(3), hopper.Size());
+	ASSERT_EQUAL("test_hopper_value_types size", StormByte::Size{3}, hopper.Size());
 
 	ASSERT_EQUAL("test_hopper_value_types pop 1", std::string("Alpha"), hopper.Pop());
 	ASSERT_EQUAL("test_hopper_value_types pop 2", std::string("Beta"), hopper.Pop());
@@ -336,7 +336,7 @@ int test_hopper_unnotify_before_cv_dies() {
 	hopper.Notify(*wake);
 	hopper.Push(1);
 	ASSERT_EQUAL("test_hopper_unnotify_before_cv_dies queued",
-		static_cast<std::size_t>(1), hopper.Size());
+		StormByte::Size{1}, hopper.Size());
 
 	hopper.Unnotify();
 	hopper.Unnotify();
@@ -379,7 +379,7 @@ int test_hopper_eof_behavior() {
 	ASSERT_TRUE("test_hopper_eof_behavior eof flag set", hopper.EoF());
 
 	hopper.Push(30);
-	ASSERT_EQUAL("test_hopper_eof_behavior size 1", static_cast<std::size_t>(1), hopper.Size());
+	ASSERT_EQUAL("test_hopper_eof_behavior size 1", StormByte::Size{1}, hopper.Size());
 	ASSERT_EQUAL("test_hopper_eof_behavior pop remaining item", 10, hopper.Pop());
 	ASSERT_TRUE("test_hopper_eof_behavior empty", hopper.Empty());
 	ASSERT_TRUE("test_hopper_eof_behavior eof remains true", hopper.EoF());
@@ -411,7 +411,7 @@ int test_hopper_push_blocking_and_pop_unblock() {
 
 	producer.join();
 	ASSERT_TRUE("test_hopper_push_blocking_and_pop_unblock push resumed", push_completed.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock size 2", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock size 2", StormByte::Size{2}, hopper.Size());
 
 	RETURN_TEST("test_hopper_push_blocking_and_pop_unblock", 0);
 }
@@ -433,11 +433,11 @@ int test_hopper_front_peek() {
 	hopper.Push(20);
 	ASSERT_EQUAL("test_hopper_front_peek first", 10, hopper.Front());
 	ASSERT_EQUAL("test_hopper_front_peek first again", 10, hopper.Front());
-	ASSERT_EQUAL("test_hopper_front_peek size after peek", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_front_peek size after peek", StormByte::Size{2}, hopper.Size());
 
 	ASSERT_EQUAL("test_hopper_front_peek pop", 10, hopper.Pop());
 	ASSERT_EQUAL("test_hopper_front_peek second", 20, hopper.Front());
-	ASSERT_EQUAL("test_hopper_front_peek size after pop", static_cast<std::size_t>(1), hopper.Size());
+	ASSERT_EQUAL("test_hopper_front_peek size after pop", StormByte::Size{1}, hopper.Size());
 
 	Hopper<std::shared_ptr<std::string>> shared;
 	shared.Push(std::make_shared<std::string>("peek"));
@@ -447,7 +447,7 @@ int test_hopper_front_peek() {
 	ASSERT_TRUE("test_hopper_front_peek shared b", static_cast<bool>(b));
 	ASSERT_EQUAL("test_hopper_front_peek shared value", std::string("peek"), *a);
 	ASSERT_EQUAL("test_hopper_front_peek shared same ptr", a.get(), b.get());
-	ASSERT_EQUAL("test_hopper_front_peek shared size", static_cast<std::size_t>(1), shared.Size());
+	ASSERT_EQUAL("test_hopper_front_peek shared size", StormByte::Size{1}, shared.Size());
 
 	RETURN_TEST("test_hopper_front_peek", 0);
 }

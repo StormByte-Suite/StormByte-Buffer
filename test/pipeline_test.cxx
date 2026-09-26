@@ -56,7 +56,7 @@
 #include <vector>
 
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::Data;
+using StormByte::BinaryData;
 using StormByte::Buffer::ExecutionMode;
 using StormByte::Buffer::ExternalReader;
 using StormByte::Buffer::ExternalWriter;
@@ -78,7 +78,7 @@ namespace {
 	std::shared_ptr<StormByte::Logger::Log> logging =
 		std::make_shared<StormByte::Logger::Log>(logging_stream, StormByte::Logger::Level::Info);
 
-	std::string BytesToText(const Data& data) {
+	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -103,7 +103,7 @@ int test_pipeline_empty() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("TEST"));
 	RETURN_TEST(fn, 0);
@@ -115,7 +115,7 @@ int test_pipeline_empty_input() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				(void)out.Write(data);
 		}
@@ -125,11 +125,11 @@ int test_pipeline_empty_input() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	if (!CONSUME(result, 0, data))
 		ASSERT_TRUE(fn, result.EoF());
 	else
-		ASSERT_EQUAL(fn, data.size(), StormByte::Size{0});
+		ASSERT_EQUAL(fn, data.size(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -139,7 +139,7 @@ int test_pipeline_filter_stage() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				std::string filtered;
@@ -157,7 +157,7 @@ int test_pipeline_filter_stage() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("HelloWorld"));
 	RETURN_TEST(fn, 0);
@@ -169,7 +169,7 @@ int test_pipeline_incremental_processing() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 1, data) && !data.empty()) {
 				char c = static_cast<char>(std::toupper(static_cast<unsigned char>(data[0])));
 				(void)out.Write(std::string(1, c));
@@ -182,7 +182,7 @@ int test_pipeline_incremental_processing() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("ABC"));
 	RETURN_TEST(fn, 0);
@@ -194,7 +194,7 @@ int test_pipeline_multiple_writes() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				(void)out.Write(data);
 				(void)out.Write(data);
@@ -207,7 +207,7 @@ int test_pipeline_multiple_writes() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("ABAB"));
 	RETURN_TEST(fn, 0);
@@ -219,7 +219,7 @@ int test_pipeline_single_stage() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -234,7 +234,7 @@ int test_pipeline_single_stage() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("HELLO WORLD"));
 	RETURN_TEST(fn, 0);
@@ -246,7 +246,7 @@ int test_pipeline_three_stages() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -259,7 +259,7 @@ int test_pipeline_three_stages() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				std::replace(str.begin(), str.end(), ' ', '-');
@@ -272,7 +272,7 @@ int test_pipeline_three_stages() {
 		std::shared_ptr<StormByte::Logger::Log>) {
 		(void)out.Write("[");
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				(void)out.Write(BytesToText(data));
 		}
@@ -284,7 +284,7 @@ int test_pipeline_three_stages() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("[TEST-DATA]"));
 	RETURN_TEST(fn, 0);
@@ -296,7 +296,7 @@ int test_pipeline_two_stages() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -309,7 +309,7 @@ int test_pipeline_two_stages() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				std::replace(str.begin(), str.end(), ' ', '_');
@@ -323,7 +323,7 @@ int test_pipeline_two_stages() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("HELLO_WORLD_TEST"));
 	RETURN_TEST(fn, 0);
@@ -340,7 +340,7 @@ int test_pipeline_addpipe_move() {
 		[](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data data;
+				BinaryData data;
 				if (CONSUME(in, 0, data) && !data.empty())
 					(void)out.Write(data);
 			}
@@ -352,7 +352,7 @@ int test_pipeline_addpipe_move() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("MOVE"));
 	RETURN_TEST(fn, 0);
@@ -364,7 +364,7 @@ int test_pipeline_copy_constructor() {
 	pipeline1.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -380,7 +380,7 @@ int test_pipeline_copy_constructor() {
 	input.Close();
 	Consumer result = pipeline2.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("TEST"));
 	RETURN_TEST(fn, 0);
@@ -392,7 +392,7 @@ int test_pipeline_move_constructor() {
 	pipeline1.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -408,7 +408,7 @@ int test_pipeline_move_constructor() {
 	input.Close();
 	Consumer result = pipeline2.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("test"));
 	RETURN_TEST(fn, 0);
@@ -420,7 +420,7 @@ int test_pipeline_null_logger() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data d;
+			BinaryData d;
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
@@ -430,7 +430,7 @@ int test_pipeline_null_logger() {
 	(void)input.Write("null-log");
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Sync, nullptr);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("null-log"));
 	RETURN_TEST(fn, 0);
@@ -443,7 +443,7 @@ int test_pipeline_reuse() {
 		std::shared_ptr<StormByte::Logger::Log>) {
 		(void)out.Write(">");
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				(void)out.Write(data);
 		}
@@ -455,7 +455,7 @@ int test_pipeline_reuse() {
 		input1.Close();
 		Consumer result1 = pipeline.Process(input1.Consumer(), ExecutionMode::Async, logging);
 		WaitForPipelineCompletion(result1);
-		Data data1;
+		BinaryData data1;
 		ASSERT_TRUE(fn, CONSUME(result1, 0, data1));
 		ASSERT_EQUAL(fn, BytesToText(data1), std::string(">TEST1"));
 	}
@@ -465,7 +465,7 @@ int test_pipeline_reuse() {
 		input2.Close();
 		Consumer result2 = pipeline.Process(input2.Consumer(), ExecutionMode::Async, logging);
 		WaitForPipelineCompletion(result2);
-		Data data2;
+		BinaryData data2;
 		ASSERT_TRUE(fn, CONSUME(result2, 0, data2));
 		ASSERT_EQUAL(fn, BytesToText(data2), std::string(">TEST2"));
 	}
@@ -477,7 +477,7 @@ int test_pipeline_stage_must_close() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
-		Data d;
+		BinaryData d;
 		while (!in.EoF()) {
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
@@ -489,7 +489,7 @@ int test_pipeline_stage_must_close() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Sync, logging);
 	ASSERT_TRUE(fn, result.EoF() || !result.IsWritable());
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("close-me"));
 	RETURN_TEST(fn, 0);
@@ -505,7 +505,7 @@ int test_pipeline_async_reuse_many_times() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data d;
+			BinaryData d;
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
@@ -518,7 +518,7 @@ int test_pipeline_async_reuse_many_times() {
 		input.Close();
 		Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 		WaitForPipelineCompletion(result);
-		Data data;
+		BinaryData data;
 		ASSERT_TRUE(fn, CONSUME(result, 0, data));
 		ASSERT_EQUAL(fn, BytesToText(data), msg);
 	}
@@ -534,7 +534,7 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 			while (!in.EoF()) {
 				if (!out.IsWritable())
 					return;
-				Data d;
+				BinaryData d;
 				if (CONSUME(in, 0, d) && !d.empty()) {
 					std::this_thread::sleep_for(std::chrono::milliseconds(2));
 					if (!out.IsWritable())
@@ -565,7 +565,7 @@ int test_pipeline_interrupted_by_seterror() {
 		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data data;
+				BinaryData data;
 				if (CONSUME(in, 0, data) && !data.empty()) {
 					for (int k = 0; k < 200; ++k) {
 						if (!out.IsWritable())
@@ -589,7 +589,7 @@ int test_pipeline_interrupted_by_seterror() {
 	WaitForPipelineCompletion(result);
 	ASSERT_FALSE(fn, result.IsWritable());
 	ASSERT_TRUE(fn, result.EoF());
-	ASSERT_EQUAL(fn, result.AvailableBytes(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, result.Available(), StormByte::ByteSize{0});
 	RETURN_TEST(fn, 0);
 }
 
@@ -600,7 +600,7 @@ int test_pipeline_large_async_many_stages() {
 		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data data;
+				BinaryData data;
 				if (CONSUME(in, 0, data) && !data.empty()) {
 					std::string s = BytesToText(data);
 					for (char& c : s)
@@ -616,7 +616,7 @@ int test_pipeline_large_async_many_stages() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string(8192, 'A'));
 	RETURN_TEST(fn, 0);
@@ -629,7 +629,7 @@ int test_pipeline_parallel_async_correctness() {
 		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data d;
+				BinaryData d;
 				if (CONSUME(in, 0, d) && !d.empty()) {
 					std::string s = BytesToText(d);
 					for (char& c : s)
@@ -645,7 +645,7 @@ int test_pipeline_parallel_async_correctness() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("PARALLEL-ASYNC-OK"));
 	RETURN_TEST(fn, 0);
@@ -658,7 +658,7 @@ int test_pipeline_parallel_blocking() {
 		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data d;
+				BinaryData d;
 				if (CONSUME(in, 0, d) && !d.empty()) {
 					for (auto& b : d)
 						b = static_cast<std::byte>(static_cast<std::uint8_t>(b) + 1);
@@ -669,16 +669,16 @@ int test_pipeline_parallel_blocking() {
 		});
 	}
 	Producer input;
-	Data payload;
+	BinaryData payload;
 	for (int i = 0; i < 32; ++i)
 		payload.push_back(static_cast<std::byte>(i));
 	(void)input.Write(payload);
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Parallel, logging);
 	ASSERT_FALSE(fn, result.IsWritable());
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
-	ASSERT_EQUAL(fn, data.size(), StormByte::Size{32});
+	ASSERT_EQUAL(fn, data.size(), StormByte::ByteSize{32});
 	for (int i = 0; i < 32; ++i)
 		ASSERT_EQUAL(fn, static_cast<int>(data[static_cast<std::size_t>(i)]), i + 4);
 	RETURN_TEST(fn, 0);
@@ -690,7 +690,7 @@ int test_pipeline_sync_execution() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				for (auto& c : str)
@@ -703,7 +703,7 @@ int test_pipeline_sync_execution() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				std::string str = BytesToText(data);
 				std::replace(str.begin(), str.end(), ' ', '-');
@@ -717,7 +717,7 @@ int test_pipeline_sync_execution() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Sync, logging);
 	ASSERT_FALSE(fn, result.IsWritable());
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("SYNC-MODE-TEST"));
 	RETURN_TEST(fn, 0);
@@ -732,7 +732,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	auto cpu_stage = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, kChunk, data) && !data.empty()) {
 				for (auto& b : data) {
 					std::uint8_t v = static_cast<std::uint8_t>(b);
@@ -754,10 +754,10 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 			pipeline.AddPipe(cpu_stage);
 		return pipeline;
 	};
-	Data input_data(StormByte::Size{kSize});
+	BinaryData input_data(StormByte::ByteSize{kSize});
 	for (std::size_t i = 0; i < kSize; ++i)
 		input_data[i] = static_cast<std::byte>((i * 31u + 17u) & 0xFFu);
-	Data expected = input_data;
+	BinaryData expected = input_data;
 	for (int s = 0; s < kStages; ++s) {
 		for (auto& b : expected) {
 			std::uint8_t v = static_cast<std::uint8_t>(b);
@@ -779,9 +779,9 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 		const auto t1 = std::chrono::steady_clock::now();
 		total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 		ASSERT_FALSE(fn, result.IsWritable());
-		Data out;
+		BinaryData out;
 		ASSERT_TRUE(fn, CONSUME(result, 0, out));
-		ASSERT_EQUAL(fn, out.size(), StormByte::Size{kSize});
+		ASSERT_EQUAL(fn, out.size(), StormByte::ByteSize{kSize});
 		ASSERT_TRUE(fn, out == expected);
 		return 0;
 	};
@@ -810,7 +810,7 @@ int test_pipeline_available_bytes_during_process() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data d;
+			BinaryData d;
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
@@ -821,10 +821,10 @@ int test_pipeline_available_bytes_during_process() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	ASSERT_TRUE(fn, result.AvailableBytes() > 0 || result.EoF());
-	Data data;
+	ASSERT_TRUE(fn, result.Available() > 0 || result.EoF());
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
-	ASSERT_EQUAL(fn, data.size(), StormByte::Size{1000});
+	ASSERT_EQUAL(fn, data.size(), StormByte::ByteSize{1000});
 	RETURN_TEST(fn, 0);
 }
 
@@ -835,9 +835,9 @@ int test_pipeline_byte_arithmetic() {
 		return [op](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data data;
+				BinaryData data;
 				if (CONSUME(in, 0, data) && !data.empty()) {
-					Data mapped;
+					BinaryData mapped;
 					mapped.reserve(data.size());
 					for (const auto& byte : data)
 						mapped.push_back(op(byte));
@@ -859,15 +859,15 @@ int test_pipeline_byte_arithmetic() {
 	pipeline.AddPipe(map([](std::byte b) {
 		return static_cast<std::byte>(static_cast<int>(b) - 1);
 	}));
-	Data input_data {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}};
+	BinaryData input_data {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}};
 	Producer input;
 	(void)input.Write(input_data);
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
-	ASSERT_EQUAL(fn, data.size(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, data.size(), StormByte::ByteSize{5});
 	ASSERT_EQUAL(fn, static_cast<int>(data[0]), 1);
 	ASSERT_EQUAL(fn, static_cast<int>(data[1]), 2);
 	ASSERT_EQUAL(fn, static_cast<int>(data[2]), 3);
@@ -883,7 +883,7 @@ int test_pipeline_identity_many_stages() {
 		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 			std::shared_ptr<StormByte::Logger::Log>) {
 			while (!in.EoF()) {
-				Data d;
+				BinaryData d;
 				if (CONSUME(in, 0, d) && !d.empty())
 					(void)out.Write(d);
 			}
@@ -896,7 +896,7 @@ int test_pipeline_identity_many_stages() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), msg);
 	RETURN_TEST(fn, 0);
@@ -908,7 +908,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto xor55 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b ^= std::byte{0x55};
@@ -920,7 +920,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto add17 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) + 17);
@@ -932,7 +932,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto bnot = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = ~b;
@@ -944,7 +944,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto xorAA = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b ^= std::byte{0xAA};
@@ -956,7 +956,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto mul3 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) * 3);
@@ -968,7 +968,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto rotl3 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data) {
 					const auto v = static_cast<std::uint8_t>(b);
@@ -982,7 +982,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto sub42 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) - 42);
@@ -994,7 +994,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto xor33 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b ^= std::byte{0x33};
@@ -1006,7 +1006,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto mul171 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) * 171);
@@ -1018,7 +1018,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto rotr3 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data) {
 					const auto v = static_cast<std::uint8_t>(b);
@@ -1032,7 +1032,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto add42 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) + 42);
@@ -1044,7 +1044,7 @@ int test_pipeline_large_concurrent_stress() {
 	auto sub17 = [](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty()) {
 				for (auto& b : data)
 					b = static_cast<std::byte>(static_cast<std::uint8_t>(b) - 17);
@@ -1070,8 +1070,8 @@ int test_pipeline_large_concurrent_stress() {
 	pipeline.AddPipe(sub17);
 	pipeline.AddPipe(xor55);
 	const std::size_t data_size = LARGE_TEST_SIZE_KB * 1024;
-	Data input_data;
-	input_data.reserve(StormByte::Size{data_size});
+	BinaryData input_data;
+	input_data.reserve(StormByte::ByteSize{data_size});
 	for (std::size_t i = 0; i < data_size; ++i)
 		input_data.push_back(static_cast<std::byte>((i * 31 + 17) % 256));
 	Producer input;
@@ -1081,7 +1081,7 @@ int test_pipeline_large_concurrent_stress() {
 		while (offset < static_cast<std::size_t>(input_data.size())) {
 			const std::size_t to_write = std::min(chunk_size,
 				static_cast<std::size_t>(input_data.size()) - offset);
-			Data chunk(input_data.data() + offset, StormByte::Size{to_write});
+			BinaryData chunk(input_data.data() + offset, StormByte::ByteSize{to_write});
 			(void)input.Write(std::move(chunk));
 			offset += to_write;
 			std::this_thread::yield();
@@ -1091,15 +1091,15 @@ int test_pipeline_large_concurrent_stress() {
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	writer.join();
 	WaitForPipelineCompletion(result);
-	Data output_data;
-	output_data.reserve(StormByte::Size{data_size});
-	while (result.AvailableBytes() > 0) {
-		Data chunk;
+	BinaryData output_data;
+	output_data.reserve(StormByte::ByteSize{data_size});
+	while (result.Available() > 0) {
+		BinaryData chunk;
 		if (CONSUME(result, 2048, chunk) && !chunk.empty())
 			output_data.insert(output_data.end(), chunk.begin(), chunk.end());
 		std::this_thread::yield();
 	}
-	ASSERT_EQUAL(fn, output_data.size(), StormByte::Size{data_size});
+	ASSERT_EQUAL(fn, output_data.size(), StormByte::ByteSize{data_size});
 	ASSERT_TRUE(fn, output_data == input_data);
 	RETURN_TEST(fn, 0);
 }
@@ -1111,7 +1111,7 @@ int test_pipeline_large_data() {
 		std::shared_ptr<StormByte::Logger::Log>) {
 		std::size_t count = 0;
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				count += static_cast<std::size_t>(data.size());
 		}
@@ -1123,7 +1123,7 @@ int test_pipeline_large_data() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("10000"));
 	RETURN_TEST(fn, 0);
@@ -1136,7 +1136,7 @@ int test_pipeline_reverse_string() {
 		std::shared_ptr<StormByte::Logger::Log>) {
 		std::string buffer;
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				buffer += BytesToText(data);
 		}
@@ -1149,7 +1149,7 @@ int test_pipeline_reverse_string() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("FEDCBA"));
 	RETURN_TEST(fn, 0);
@@ -1161,7 +1161,7 @@ int test_pipeline_streaming_data() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 		std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				(void)out.Write(data);
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1180,7 +1180,7 @@ int test_pipeline_streaming_data() {
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	writer.join();
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("Part1Part2Part3"));
 	RETURN_TEST(fn, 0);
@@ -1194,7 +1194,7 @@ int test_pipeline_word_count() {
 		std::size_t word_count = 0;
 		std::string buffer;
 		while (!in.EoF()) {
-			Data data;
+			BinaryData data;
 			if (CONSUME(in, 0, data) && !data.empty())
 				buffer += BytesToText(data);
 		}
@@ -1215,7 +1215,7 @@ int test_pipeline_word_count() {
 	input.Close();
 	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
 	WaitForPipelineCompletion(result);
-	Data data;
+	BinaryData data;
 	ASSERT_TRUE(fn, CONSUME(result, 0, data));
 	ASSERT_EQUAL(fn, BytesToText(data), std::string("6"));
 	RETURN_TEST(fn, 0);

@@ -41,7 +41,8 @@
 
 #pragma once
 
-#include <StormByte/buffer/data.hxx>
+#include <StormByte/binary_data.hxx>
+#include <StormByte/byte_size.hxx>
 #include <StormByte/buffer/exception.hxx>
 #include <StormByte/logger/log.hxx>
 #include <StormByte/expected.hxx>

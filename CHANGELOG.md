@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on StormByte Base, StormByte String, StormByte System and StormByte Logger. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Logger](https://github.com/StormBytePP/StormByte-Logger) and [StormByte System](https://github.com/StormBytePP/StormByte-System), which bring Base and String. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
-Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks).
+Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::BinaryData`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
 If you landed here from a release link and have not read the tree:
 
@@ -34,7 +34,6 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `StormByte::Buffer::Data`. Public contiguous byte container with the `std::vector<std::byte>` contract used across the module (constructors, iterators, algorithms, insert/erase). Range constructors stay. Tests cover the vector-shaped API.
 - `BufferedReader` page cache. Consumed bytes can stay in RAM up to `MaxMemory`. CollectGarbage evicts farthest from `Tell`. Readahead and the page map work together; a later `Seek` into a live page is served from cache.
 - Reader logical seek. `Seek` updates `Tell` immediately. If the target is already cached, the origin is not moved. When the next `Read` runs off the cached range, one real `OriginSeek` resumes prefetch. Documented on the public reader: `Tell` never lies.
 - `BufferedWriter` `MaxMemory` and a dirty page map. Writes are lazy until `MaxMemory`, `Flush` or `Close`. Typical case is a nearby backward correction plus continue-at-Tell. Far-future islands are supported while RAM lasts; eviction prefers the oldest dirty page behind the origin cursor (a real write, possibly with a real seek).
@@ -44,6 +43,10 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
+- **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
+- **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
+- **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
+- **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`. `ReadError` is `StormByte.Buffer.Read`. `WriteError` is `StormByte.Buffer.Write`. `Component` is gone. Destructors are defined in this module.
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
 - Writer contract: lazy write up to `MaxMemory`. More random access needs more `MaxMemory` or islands get evicted (a real write + seek).
@@ -62,7 +65,6 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `DataTests`. Vector-shaped coverage including algorithms and iterators.
 - `BufferedFileReaderTests`. Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints (no asserts on racy counters except identities such as delivered vs hit+miss where stable).
 - `BufferedFileWriterTests`. Close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs, first-mismatch dump on the patch-evict stress. Telemetry prints on the seek and pressure paths.
 
