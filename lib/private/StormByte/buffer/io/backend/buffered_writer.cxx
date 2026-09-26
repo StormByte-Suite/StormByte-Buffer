@@ -82,7 +82,7 @@ const StormByte::String::String& BufferedWriter::Path() const noexcept {
 	return m_path;
 }
 
-IO::Location BufferedWriter::Location() const noexcept {
+StormByte::Buffer::IO::Location BufferedWriter::Location() const noexcept {
 	return m_location;
 }
 

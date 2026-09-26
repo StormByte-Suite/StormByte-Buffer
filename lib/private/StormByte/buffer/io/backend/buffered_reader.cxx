@@ -122,7 +122,7 @@ const StormByte::String::String& BufferedReader::Path() const noexcept {
 	return m_path;
 }
 
-IO::Location BufferedReader::Location() const noexcept {
+StormByte::Buffer::IO::Location BufferedReader::Location() const noexcept {
 	return m_location;
 }
 
