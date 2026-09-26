@@ -166,8 +166,11 @@ std::span<const std::byte> LockFreeRing::FrontSpan() const noexcept {
 }
 
 void LockFreeRing::Clean() noexcept {
-	const std::size_t l = m_logical.load(std::memory_order_relaxed);
-	m_head.store(l, std::memory_order_release);
+	{
+		std::lock_guard lock(m_wait_mtx);
+		const std::size_t l = m_logical.load(std::memory_order_relaxed);
+		m_head.store(l, std::memory_order_release);
+	}
 	m_cv.notify_all();
 }
 
@@ -181,21 +184,32 @@ void LockFreeRing::Clear() noexcept {
 }
 
 void LockFreeRing::Close() noexcept {
-	m_closed.store(true, std::memory_order_release);
+	{
+		std::lock_guard lock(m_wait_mtx);
+		m_closed.store(true, std::memory_order_release);
+	}
 	m_cv.notify_all();
 }
 
 void LockFreeRing::SetError() noexcept {
-	m_error.store(true, std::memory_order_release);
+	{
+		std::lock_guard lock(m_wait_mtx);
+		m_error.store(true, std::memory_order_release);
+	}
 	m_cv.notify_all();
 }
 
 bool LockFreeRing::Drop(const StormByte::ByteSize& count) noexcept {
-	if (count == StormByte::ByteSize{0}) return true;
-	const StormByte::ByteSize avail = Available();
-	if (count > avail) return false;
-	m_logical.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
-	m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
+	if (count == StormByte::ByteSize{0})
+		return true;
+	{
+		std::lock_guard lock(m_wait_mtx);
+		const StormByte::ByteSize avail = Available();
+		if (count > avail)
+			return false;
+		m_logical.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
+		m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
+	}
 	m_cv.notify_all();
 	return true;
 }
@@ -203,14 +217,17 @@ bool LockFreeRing::Drop(const StormByte::ByteSize& count) noexcept {
 bool LockFreeRing::Consume(const StormByte::ByteSize n) noexcept {
 	if (n == StormByte::ByteSize{0})
 		return true;
-	if (m_error.load(std::memory_order_acquire))
-		return false;
-	const StormByte::ByteSize avail = Available();
-	if (n > avail)
-		return false;
-	const std::size_t next = m_logical.load(std::memory_order_relaxed) + static_cast<std::size_t>(n);
-	m_logical.store(next, std::memory_order_relaxed);
-	m_head.store(next, std::memory_order_release);
+	{
+		std::lock_guard lock(m_wait_mtx);
+		if (m_error.load(std::memory_order_acquire))
+			return false;
+		const StormByte::ByteSize avail = Available();
+		if (n > avail)
+			return false;
+		const std::size_t next = m_logical.load(std::memory_order_relaxed) + static_cast<std::size_t>(n);
+		m_logical.store(next, std::memory_order_relaxed);
+		m_head.store(next, std::memory_order_release);
+	}
 	m_cv.notify_all();
 	return true;
 }

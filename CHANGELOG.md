@@ -62,6 +62,7 @@ If you landed here from a release link and have not read the tree:
 - Writer `Flush` returning before `m_origin_pos` was stored, which let the next `EnsureOrigin` land a patch on the wrong offset.
 - Concurrent `FILE*` / `ofstream` use from the writer thread and the drain worker.
 - Origin cursor after `OriginFlush` treated as untrusted until the next `EnsureOrigin` (Darwin). Sequential drain after that first realign does not seek again.
+- `LockFreeRing` `Close`, `SetError`, `Clean`, `Drop` and `Consume` publish under the wait mutex. A parallel pipeline stage waiting on an intermediate ring could miss the wake and leave `Process` spinning on `IsWritable()`.
 - Doxygen: broken `\ref` on the public reader header; private storage types not listed as public API.
 
 ### Tests
