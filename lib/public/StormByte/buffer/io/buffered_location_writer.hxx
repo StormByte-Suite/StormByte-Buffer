@@ -124,10 +124,16 @@ namespace StormByte {
 					BufferedLocationWriter& operator=(BufferedLocationWriter&& other) noexcept;
 
 					/**
-					 * @brief Locator passed to the constructor.
+					 * @brief Locator passed to the constructor. Stored once.
 					 * @return Owned text. Not resolved. Empty if moved-from.
 					 */
 					const StormByte::String::String& Location() const noexcept;
+
+					/**
+					 * @brief Same stored locator as @ref Location.
+					 * @return @ref Location. Not a copy.
+					 */
+					const StormByte::String::String& Path() const noexcept;
 
 					/**
 					 * @brief Measurement of this location.

@@ -44,7 +44,6 @@
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/visibility.h>
 
-#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -96,17 +95,17 @@ namespace StormByte {
 
 					/**
 					 * @brief Store the path. @ref ReadAhead comes from @ref Setup.
-					 * @param path Filesystem path.
+					 * @param path Locator. Stored once as @ref Location.
 					 */
-					explicit BufferedFileReader(std::filesystem::path path);
+					explicit BufferedFileReader(StormByte::String::String path);
 
 					/**
 					 * @brief Store the path and explicit knobs. Does not open.
-					 * @param path Filesystem path.
+					 * @param path Locator. Stored once as @ref Location.
 					 * @param read_ahead Prefetch length. 0 disables prefetch.
 					 * @param max_memory Cache cap. 0 stores no cache.
 					 */
-					BufferedFileReader(std::filesystem::path path,
+					BufferedFileReader(StormByte::String::String path,
 						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory);
 
 					/**
@@ -141,12 +140,6 @@ namespace StormByte {
 					/**
 					 * @}
 					 */
-
-					/**
-					 * @brief Filesystem path of @ref Location.
-					 * @return Path built from the stored locator. Not resolved.
-					 */
-					std::filesystem::path Path() const;
 
 				protected:
 					/**

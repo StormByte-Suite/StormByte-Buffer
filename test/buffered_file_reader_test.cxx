@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/string/wstring.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <array>
@@ -51,6 +52,7 @@
 #include <iostream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -66,6 +68,14 @@ namespace {
 	constexpr char kHex[] = "0123456789abcdef";
 	constexpr std::size_t kHexLen = 16;
 	constexpr std::size_t kHexFile = 4 * 1024 * 1024;
+
+	StormByte::String::String Loc(const std::filesystem::path& path) {
+#ifdef WINDOWS
+		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+#else
+		return StormByte::String::String(std::string_view(path.string()));
+#endif
+	}
 
 	std::filesystem::path File(const char* name) {
 		return CurrentFileDirectory / "files" / name;
@@ -176,7 +186,7 @@ namespace {
 
 int test_lines_are_octets() {
 	const std::string fn = "test_lines_are_octets";
-	BufferedFileReader in(File("lines.txt"));
+	BufferedFileReader in(Loc(File("lines.txt")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	const auto read = in.Read(18, dest);
@@ -188,13 +198,13 @@ int test_lines_are_octets() {
 
 int test_no_nl_and_nul() {
 	const std::string fn = "test_no_nl_and_nul";
-	BufferedFileReader text(File("no_nl.txt"));
+	BufferedFileReader text(Loc(File("no_nl.txt")));
 	ASSERT_TRUE(fn, text.Open());
 	FIFO t;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(text.Read(17, t).status));
 	ASSERT_EQUAL(fn, std::string("no newline at end"), Text(t));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{17}, text.Tell());
-	BufferedFileReader raw(File("with_nuls.bin"));
+	BufferedFileReader raw(Loc(File("with_nuls.bin")));
 	ASSERT_TRUE(fn, raw.Open());
 	FIFO n;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(raw.Read(5, n).status));
@@ -207,7 +217,7 @@ int test_no_nl_and_nul() {
 
 int test_pattern_256() {
 	const std::string fn = "test_pattern_256";
-	BufferedFileReader in(File("pattern_256.bin"));
+	BufferedFileReader in(Loc(File("pattern_256.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	const auto read = in.Read(256, dest);
@@ -226,7 +236,7 @@ int test_pattern_256() {
 
 int test_move_transfers_session() {
 	const std::string fn = "test_move_transfers_session";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, first).status));
@@ -247,7 +257,7 @@ int test_move_transfers_session() {
 
 int test_explicit_readahead_survives_setup() {
 	const std::string fn = "test_explicit_readahead_survives_setup";
-	BufferedFileReader in(File("ahead.bin"), 25, 1024);
+	BufferedFileReader in(Loc(File("ahead.bin")), 25, 1024);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{25}, in.ReadAhead());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{1024}, in.MaxMemory());
@@ -259,7 +269,7 @@ int test_explicit_readahead_survives_setup() {
 
 int test_explicit_zero_survives_open() {
 	const std::string fn = "test_explicit_zero_survives_open";
-	BufferedFileReader in(File("five.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.ReadAhead());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.MaxMemory());
@@ -271,7 +281,7 @@ int test_explicit_zero_survives_open() {
 
 int test_path_only_setup_sets_readahead() {
 	const std::string fn = "test_path_only_setup_sets_readahead";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, in.ReadAhead() > 0);
 	FIFO dest;
@@ -286,7 +296,7 @@ int test_path_only_setup_sets_readahead() {
 
 int test_block_4k_chunked() {
 	const std::string fn = "test_block_4k_chunked";
-	BufferedFileReader in(File("block_4k.bin"), 512, 2048);
+	BufferedFileReader in(Loc(File("block_4k.bin")), 512, 2048);
 	ASSERT_TRUE(fn, in.Open());
 	StormByte::ByteSize total{0};
 	while (!in.EoF()) {
@@ -305,7 +315,7 @@ int test_block_4k_chunked() {
 
 int test_max_memory_zero_span_reads() {
 	const std::string fn = "test_max_memory_zero_span_reads";
-	BufferedFileReader in(File("five.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 5> raw {};
 	const auto got = in.Read(std::span<std::byte>(raw));
@@ -318,7 +328,7 @@ int test_max_memory_zero_span_reads() {
 
 int test_max_memory_zero_still_reads() {
 	const std::string fn = "test_max_memory_zero_still_reads";
-	BufferedFileReader in(File("block_256.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("block_256.bin")), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	const auto read = in.Read(256, dest);
@@ -330,7 +340,7 @@ int test_max_memory_zero_still_reads() {
 
 int test_readahead_knobs() {
 	const std::string fn = "test_readahead_knobs";
-	BufferedFileReader in(File("ahead.bin"), 25, 1024);
+	BufferedFileReader in(Loc(File("ahead.bin")), 25, 1024);
 	ASSERT_EQUAL(fn, StormByte::ByteSize{25}, in.ReadAhead());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{1024}, in.MaxMemory());
 	RETURN_TEST(fn, 0);
@@ -342,7 +352,7 @@ int test_readahead_knobs() {
 
 int test_empty_file() {
 	const std::string fn = "test_empty_file";
-	BufferedFileReader in(File("empty.bin"));
+	BufferedFileReader in(Loc(File("empty.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
@@ -361,7 +371,7 @@ int test_empty_file() {
 
 int test_open_five_read_exact() {
 	const std::string fn = "test_open_five_read_exact";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, in.IsOpen());
 	ASSERT_TRUE(fn, static_cast<bool>(in));
@@ -372,7 +382,7 @@ int test_open_five_read_exact() {
 	ASSERT_TRUE(fn, size.has_value());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, *size);
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
-	ASSERT_EQUAL(fn, File("five.bin"), in.Path());
+	ASSERT_EQUAL(fn, Loc(File("five.bin")), in.Path());
 	FIFO dest;
 	const auto read = in.Read(5, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
@@ -384,7 +394,7 @@ int test_open_five_read_exact() {
 
 int test_peek_does_not_consume() {
 	const std::string fn = "test_peek_does_not_consume";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO peek;
 	const auto peeked = in.Peek(3, peek);
@@ -400,7 +410,7 @@ int test_peek_does_not_consume() {
 
 int test_peek_span_does_not_consume() {
 	const std::string fn = "test_peek_span_does_not_consume";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 3> raw {};
 	const auto peeked = in.Peek(std::span<std::byte>(raw));
@@ -417,7 +427,7 @@ int test_peek_span_does_not_consume() {
 
 int test_read_overwrites_dest() {
 	const std::string fn = "test_read_overwrites_dest";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest("OLD");
 	const auto read = in.Read(5, dest);
@@ -428,7 +438,7 @@ int test_read_overwrites_dest() {
 
 int test_read_past_end_is_short() {
 	const std::string fn = "test_read_past_end_is_short";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	const auto read = in.Read(100, dest);
@@ -444,7 +454,7 @@ int test_read_past_end_is_short() {
 
 int test_read_span_before_open_leaves_dest() {
 	const std::string fn = "test_read_span_before_open_leaves_dest";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	std::array<std::byte, 2> raw {};
 	Fill(raw, std::byte{0x5A});
 	const auto got = in.Read(std::span<std::byte>(raw));
@@ -457,7 +467,7 @@ int test_read_span_before_open_leaves_dest() {
 
 int test_read_span_empty_ok() {
 	const std::string fn = "test_read_span_empty_ok";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	const auto got = in.Read(std::span<std::byte>{});
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(got.status));
@@ -472,7 +482,7 @@ int test_read_span_empty_ok() {
 
 int test_read_span_exact() {
 	const std::string fn = "test_read_span_exact";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 5> raw {};
 	Fill(raw, std::byte{0x5A});
@@ -487,7 +497,7 @@ int test_read_span_exact() {
 
 int test_read_span_short_leaves_tail() {
 	const std::string fn = "test_read_span_short_leaves_tail";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 8> raw {};
 	Fill(raw, std::byte{0x5A});
@@ -503,7 +513,7 @@ int test_read_span_short_leaves_tail() {
 
 int test_read_zero_serves_window() {
 	const std::string fn = "test_read_zero_serves_window";
-	BufferedFileReader in(File("five.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	FIFO empty;
 	const auto first = in.Read(0, empty);
@@ -519,7 +529,7 @@ int test_read_zero_serves_window() {
 
 int test_second_read_after_end() {
 	const std::string fn = "test_second_read_after_end";
-	BufferedFileReader in(File("one.bin"));
+	BufferedFileReader in(Loc(File("one.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(1, dest).status));
@@ -537,7 +547,7 @@ int test_second_read_after_end() {
 
 int test_sequential_splits() {
 	const std::string fn = "test_sequential_splits";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO a, b;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(3, a).status));
@@ -555,7 +565,7 @@ int test_sequential_splits() {
 
 int test_peek_window_survives_seek() {
 	const std::string fn = "test_peek_window_survives_seek";
-	BufferedFileReader in(File("ahead.bin"), 16, 64);
+	BufferedFileReader in(Loc(File("ahead.bin")), 16, 64);
 	ASSERT_TRUE(fn, in.Open());
 	FIFO window;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(10, window).status));
@@ -583,7 +593,7 @@ int test_peek_window_survives_seek() {
 
 int test_seek_absolute_and_relative() {
 	const std::string fn = "test_seek_absolute_and_relative";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(4, Position::Absolute).status));
@@ -602,7 +612,7 @@ int test_seek_absolute_and_relative() {
 
 int test_seek_end_via_size() {
 	const std::string fn = "test_seek_end_via_size";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, in.IsSized());
 	const auto size = in.Size();
@@ -631,7 +641,7 @@ int test_seek_end_via_size() {
 
 int test_seek_hits_readahead_then_realigns() {
 	const std::string fn = "test_seek_hits_readahead_then_realigns";
-	BufferedFileReader in(File("ahead.bin"), 16, 64);
+	BufferedFileReader in(Loc(File("ahead.bin")), 16, 64);
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, first).status));
@@ -649,7 +659,7 @@ int test_seek_hits_readahead_then_realigns() {
 
 int test_seek_negative_absolute_fails() {
 	const std::string fn = "test_seek_negative_absolute_fails";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-1, Position::Absolute).status));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
@@ -658,7 +668,7 @@ int test_seek_negative_absolute_fails() {
 
 int test_seek_past_size_then_read() {
 	const std::string fn = "test_seek_past_size_then_read";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
@@ -676,7 +686,7 @@ int test_seek_past_size_then_read() {
 
 int test_seek_relative_before_zero_fails() {
 	const std::string fn = "test_seek_relative_before_zero_fails";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(-1, Position::Relative).status));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
@@ -685,7 +695,7 @@ int test_seek_relative_before_zero_fails() {
 
 int test_seek_without_open_fails() {
 	const std::string fn = "test_seek_without_open_fails";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Seek(0, Position::Absolute).status));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	RETURN_TEST(fn, 0);
@@ -693,7 +703,7 @@ int test_seek_without_open_fails() {
 
 int test_seek_zero_after_end_clears_eof() {
 	const std::string fn = "test_seek_zero_after_end_clears_eof";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	const auto drain = in.Read(16, first);
@@ -720,7 +730,7 @@ int test_seek_zero_after_end_clears_eof() {
 
 int test_seek_zero_after_end_twice() {
 	const std::string fn = "test_seek_zero_after_end_twice";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	for (int pass = 0; pass < 2; ++pass) {
 		FIFO dest;
@@ -741,7 +751,7 @@ int test_seek_zero_after_end_twice() {
 
 int test_seek_zero_on_fresh_open() {
 	const std::string fn = "test_seek_zero_on_fresh_open";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
@@ -756,7 +766,7 @@ int test_seek_zero_on_fresh_open() {
 
 int test_seek_zero_rereads() {
 	const std::string fn = "test_seek_zero_rereads";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(4, first).status));
@@ -780,7 +790,7 @@ int test_hex_seq_matches_pattern() {
 	const std::string fn = "test_hex_seq_matches_pattern";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 64 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 64 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (CheckTell(fn, in, 0) != 0)
 		return 1;
@@ -799,7 +809,7 @@ int test_hex_fake_seek_tell_before_read() {
 	const std::string fn = "test_hex_fake_seek_tell_before_read";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 32 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 32 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
 		return 1;
@@ -831,7 +841,7 @@ int test_hex_fake_seek_in_page() {
 	const std::string fn = "test_hex_fake_seek_in_page";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 32 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 32 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
 		return 1;
@@ -858,7 +868,7 @@ int test_hex_fake_seek_small_reads_then_catchup() {
 	const std::string fn = "test_hex_fake_seek_small_reads_then_catchup";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 48 * 1024) != 0)
 		return 1;
@@ -881,7 +891,7 @@ int test_hex_fake_seek_peek_does_not_move_tell() {
 	const std::string fn = "test_hex_fake_seek_peek_does_not_move_tell";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 64 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 32 * 1024) != 0)
 		return 1;
@@ -906,7 +916,7 @@ int test_hex_seek_cold_tell_then_bytes() {
 	const std::string fn = "test_hex_seek_cold_tell_then_bytes";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	BufferedFileReader in(Loc(path), 8 * 1024, 32 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 4096) != 0)
 		return 1;
@@ -927,7 +937,7 @@ int test_hex_seek_miss_cold() {
 	const std::string fn = "test_hex_seek_miss_cold";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	BufferedFileReader in(Loc(path), 8 * 1024, 32 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 4096) != 0)
 		return 1;
@@ -948,7 +958,7 @@ int test_hex_seek_partial_hole() {
 	const std::string fn = "test_hex_seek_partial_hole";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 4 * 1024, 16 * 1024);
+	BufferedFileReader in(Loc(path), 4 * 1024, 16 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 8192) != 0)
 		return 1;
@@ -965,7 +975,7 @@ int test_hex_seek_partial_hole_tell() {
 	const std::string fn = "test_hex_seek_partial_hole_tell";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 4 * 1024, 16 * 1024);
+	BufferedFileReader in(Loc(path), 4 * 1024, 16 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 8192) != 0)
 		return 1;
@@ -982,7 +992,7 @@ int test_hex_seek_saved_partial_disjoint_spans() {
 	const std::string fn = "test_hex_seek_saved_partial_disjoint_spans";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 4 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 4 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 8192) != 0)
 		return 1;
@@ -1010,7 +1020,7 @@ int test_hex_relative_fake_seek() {
 	const std::string fn = "test_hex_relative_fake_seek";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 64 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 20 * 1024) != 0)
 		return 1;
@@ -1028,7 +1038,7 @@ int test_hex_seek_stress_fixed_offsets() {
 	const std::string fn = "test_hex_seek_stress_fixed_offsets";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 128 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 128 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	const std::size_t offs[] = {
 		0, 1, 15, 16, 17,
@@ -1058,7 +1068,7 @@ int test_hex_seek_stress_fixed_offsets() {
 
 int test_close_then_reopen() {
 	const std::string fn = "test_close_then_reopen";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Close().status));
 	ASSERT_EQUAL(fn, ToString(State::Unavailable), ToString(in.State()));
@@ -1080,20 +1090,20 @@ int test_close_then_reopen() {
 
 int test_ctor_unavailable_bool_false() {
 	const std::string fn = "test_ctor_unavailable_bool_false";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_EQUAL(fn, ToString(State::Unavailable), ToString(in.State()));
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	ASSERT_FALSE(fn, in.IsOpen());
 	ASSERT_FALSE(fn, in.IsReadable());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.ReadAhead());
-	ASSERT_EQUAL(fn, File("five.bin"), in.Path());
+	ASSERT_EQUAL(fn, Loc(File("five.bin")), in.Path());
 	RETURN_TEST(fn, 0);
 }
 
 int test_open_directory() {
 	const std::string fn = "test_open_directory";
-	BufferedFileReader in(CurrentFileDirectory / "files");
+	BufferedFileReader in(Loc(CurrentFileDirectory / "files"));
 	ASSERT_FALSE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(State::Directory), ToString(in.State()));
 	ASSERT_FALSE(fn, static_cast<bool>(in));
@@ -1102,7 +1112,7 @@ int test_open_directory() {
 
 int test_open_missing() {
 	const std::string fn = "test_open_missing";
-	BufferedFileReader in(File("does-not-exist.bin"));
+	BufferedFileReader in(Loc(File("does-not-exist.bin")));
 	ASSERT_FALSE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(State::Missing), ToString(in.State()));
 	ASSERT_FALSE(fn, static_cast<bool>(in));
@@ -1112,7 +1122,7 @@ int test_open_missing() {
 
 int test_open_not_idempotent() {
 	const std::string fn = "test_open_not_idempotent";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(in.State()));
 	ASSERT_TRUE(fn, static_cast<bool>(in));
@@ -1127,7 +1137,7 @@ int test_open_not_idempotent() {
 
 int test_read_before_open_leaves_dest() {
 	const std::string fn = "test_read_before_open_leaves_dest";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	FIFO dest("KEEP");
 	const auto read = in.Read(1, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(read.status));
@@ -1139,7 +1149,7 @@ int test_read_before_open_leaves_dest() {
 
 int test_rewind_rereads() {
 	const std::string fn = "test_rewind_rereads";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, first).status));
@@ -1156,7 +1166,7 @@ int test_rewind_rereads() {
 
 int test_rewind_without_open_fails() {
 	const std::string fn = "test_rewind_without_open_fails";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_FALSE(fn, in.Rewind());
 	ASSERT_EQUAL(fn, ToString(State::Unavailable), ToString(in.State()));
 	RETURN_TEST(fn, 0);
@@ -1168,7 +1178,7 @@ int test_rewind_without_open_fails() {
 
 int test_tell_after_span_read_and_seek_zero() {
 	const std::string fn = "test_tell_after_span_read_and_seek_zero";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	std::array<std::byte, 3> raw {};
 	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, in.Read(std::span<std::byte>(raw)).count);
@@ -1185,7 +1195,7 @@ int test_tell_after_span_read_and_seek_zero() {
 
 int test_tell_at_size_and_past_size() {
 	const std::string fn = "test_tell_at_size_and_past_size";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
@@ -1205,7 +1215,7 @@ int test_tell_at_size_and_past_size() {
 
 int test_tell_matches_seek_and_failed_seek_stays() {
 	const std::string fn = "test_tell_matches_seek_and_failed_seek_stays";
-	BufferedFileReader in(File("seek.bin"));
+	BufferedFileReader in(Loc(File("seek.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(7, Position::Absolute).status));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{7}, in.Tell());
@@ -1220,7 +1230,7 @@ int test_tell_matches_seek_and_failed_seek_stays() {
 
 int test_tell_max_memory_zero_seek_read() {
 	const std::string fn = "test_tell_max_memory_zero_seek_read";
-	BufferedFileReader in(File("seek.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("seek.bin")), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(4, Position::Absolute).status));
@@ -1234,7 +1244,7 @@ int test_tell_max_memory_zero_seek_read() {
 
 int test_tell_open_is_zero() {
 	const std::string fn = "test_tell_open_is_zero";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
@@ -1243,7 +1253,7 @@ int test_tell_open_is_zero() {
 
 int test_tell_tracks_each_read() {
 	const std::string fn = "test_tell_tracks_each_read";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO a, b, c;
 	ASSERT_EQUAL(fn, StormByte::ByteSize{1}, in.Read(1, a).count);
@@ -1257,7 +1267,7 @@ int test_tell_tracks_each_read() {
 
 int test_tell_unchanged_on_peek_and_empty_span() {
 	const std::string fn = "test_tell_unchanged_on_peek_and_empty_span";
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ASSERT_TRUE(fn, in.Open());
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(2, dest).status));
@@ -1279,7 +1289,7 @@ int test_tell_unchanged_on_peek_and_empty_span() {
 
 int test_telemetry_ctor_is_zero() {
 	const std::string fn = "test_telemetry_ctor_is_zero";
-	BufferedFileReader in(File("five.bin"), 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")), 0, 0);
 	DumpTelemetry("ctor", in);
 	const struct BufferedFileReader::Telemetry t = in.Telemetry();
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.Delivered);
@@ -1293,7 +1303,7 @@ int test_telemetry_fake_seek_epoch() {
 	const std::string fn = "test_telemetry_fake_seek_epoch";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	DumpTelemetry("tel-fake-open", in);
 	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
@@ -1319,7 +1329,7 @@ int test_telemetry_cold_seek_epoch() {
 	const std::string fn = "test_telemetry_cold_seek_epoch";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	BufferedFileReader in(Loc(path), 8 * 1024, 32 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 4096) != 0)
 		return 1;
@@ -1340,7 +1350,7 @@ int test_telemetry_hex_pressure() {
 	const std::string fn = "test_telemetry_hex_pressure";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	BufferedFileReader in(Loc(path), 16 * 1024, 64 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	DumpTelemetry("open", in);
 	if (ReadExpect(fn, in, 0, 512 * 1024) != 0)
@@ -1367,7 +1377,7 @@ int test_telemetry_saved_partial_disjoint() {
 	const std::string fn = "test_telemetry_saved_partial_disjoint";
 	const auto path = HexPath();
 	ASSERT_TRUE(fn, WriteHexFile(path));
-	BufferedFileReader in(path, 4 * 1024, 256 * 1024);
+	BufferedFileReader in(Loc(path), 4 * 1024, 256 * 1024);
 	ASSERT_TRUE(fn, in.Open());
 	if (ReadExpect(fn, in, 0, 8192) != 0)
 		return 1;

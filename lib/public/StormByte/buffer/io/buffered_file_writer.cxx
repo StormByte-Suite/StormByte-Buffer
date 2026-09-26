@@ -42,6 +42,7 @@
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/string/wstring.hxx>
 
+#include <filesystem>
 #include <cstdint>
 #include <ios>
 #include <system_error>
@@ -55,14 +56,6 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	StormByte::String::String ToLocation(const std::filesystem::path& path) {
-#ifdef WINDOWS
-		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
-#else
-		return StormByte::String::String(std::string_view(path.string()));
-#endif
-	}
-
 	std::filesystem::path ToPath(const StormByte::String::String& location) {
 #ifdef WINDOWS
 		const StormByte::String::WString wide(location);
@@ -122,19 +115,19 @@ namespace {
 	}
 }
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path):
-	BufferedLocationWriter(ToLocation(path), StormByte::ByteSize{0}, 0,
+BufferedFileWriter::BufferedFileWriter(StormByte::String::String path):
+	BufferedLocationWriter(std::move(path), StormByte::ByteSize{0}, 0,
 		std::chrono::milliseconds{0}, StormByte::ByteSize{0}, true) {}
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::ByteSize write_chunk,
+BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(ToLocation(path), write_chunk, back_pressure, max_wait,
+	BufferedLocationWriter(std::move(path), write_chunk, back_pressure, max_wait,
 		StormByte::ByteSize{0}, false) {}
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::ByteSize write_chunk,
+BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
 		const StormByte::ByteSize max_memory, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(ToLocation(path), write_chunk, back_pressure, max_wait, max_memory, false) {}
+	BufferedLocationWriter(std::move(path), write_chunk, back_pressure, max_wait, max_memory, false) {}
 
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedLocationWriter(std::move(other)),
@@ -152,17 +145,13 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 	return *this;
 }
 
-std::filesystem::path BufferedFileWriter::Path() const {
-	return ToPath(Location());
-}
-
 StormByte::System::Device BufferedFileWriter::OriginDevice() const {
 	return StormByte::System::Device{Location()};
 }
 
 StormByte::ByteSize BufferedFileWriter::OriginSize() const noexcept {
 	std::error_code ec;
-	const auto disk = std::filesystem::file_size(Path(), ec);
+	const auto disk = std::filesystem::file_size(ToPath(Path()), ec);
 	const StormByte::ByteSize on_disk = ec ? StormByte::ByteSize{0} : StormByte::ByteSize{static_cast<std::size_t>(disk)};
 	const StormByte::ByteSize logical = Tell();
 	return on_disk > logical ? on_disk : logical;
@@ -171,7 +160,7 @@ StormByte::ByteSize BufferedFileWriter::OriginSize() const noexcept {
 bool BufferedFileWriter::WillWrite(const StormByte::ByteSize n) const {
 	if (!BufferedWriter::WillWrite(n))
 		return false;
-	return VolumeHas(Path(), n);
+	return VolumeHas(ToPath(Path()), n);
 }
 
 Result BufferedFileWriter::OriginOpen() {
@@ -179,7 +168,7 @@ Result BufferedFileWriter::OriginOpen() {
 	if (m_file.is_open())
 		return { Status::Failed, 0 };
 
-	const auto path = Path();
+	const auto path = ToPath(Path());
 	std::error_code ec;
 	const auto parent = path.parent_path();
 	if (!parent.empty()) {
@@ -264,13 +253,13 @@ Result BufferedFileWriter::OriginTruncate() {
 
 	m_file.close();
 	std::error_code ec;
-	std::filesystem::resize_file(Path(), 0, ec);
+	std::filesystem::resize_file(ToPath(Path()), 0, ec);
 	if (ec) {
 		SetState(State::Fault);
 		return { Status::Failed, 0 };
 	}
 
-	if (!OpenRandomAccess(m_file, Path())) {
+	if (!OpenRandomAccess(m_file, ToPath(Path()))) {
 		SetState(State::NotWritable);
 		return { Status::Failed, 0 };
 	}

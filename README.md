@@ -327,7 +327,7 @@ This cache is not magic. Local seeks and short rewinds with a budget that fits t
 
 ### BufferedFileReader / BufferedFileWriter
 
-File leaves of `BufferedLocationReader` / `BufferedLocationWriter`. Those are the file-like layer (locator, `Device()`, always seekable and sized). The file classes are `final`: they only open, transfer and seek the filesystem file. `Path()` is the filesystem view of `Location()`.
+File leaves of `BufferedLocationReader` / `BufferedLocationWriter`. Those are the file-like layer (locator, `Device()`, always seekable and sized). The file classes are `final`: they only open, transfer and seek the filesystem file. Constructors take a `StormByte::String::String`. `Path()` and `Location()` return that same `const String&`.
 
 | Constructor | What happens at `Open` |
 | --- | --- |

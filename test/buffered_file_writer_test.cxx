@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/string/wstring.hxx>
 #include <StormByte/system/file.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -49,6 +50,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 using StormByte::BinaryData;
@@ -76,6 +78,14 @@ namespace {
 		{ StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4, "pages-large" },
 		{ StormByte::ByteSize{4096}, StormByte::ByteSize{65536}, 8, "pages-ring" },
 	};
+
+	StormByte::String::String Loc(const std::filesystem::path& path) {
+#ifdef WINDOWS
+		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+#else
+		return StormByte::String::String(std::string_view(path.string()));
+#endif
+	}
 
 	std::filesystem::path Scratch(const char* tag) {
 		StormByte::String::String path;
@@ -211,10 +221,10 @@ namespace {
 
 	BufferedFileWriter MakeWriter(const std::filesystem::path& path, const WriterKnob& k) {
 		if (k.chunk == StormByte::ByteSize{0} && k.memory == StormByte::ByteSize{0})
-			return BufferedFileWriter(path, StormByte::ByteSize{0}, 0);
+			return BufferedFileWriter(Loc(path), StormByte::ByteSize{0}, 0);
 		if (k.memory == StormByte::ByteSize{0})
-			return BufferedFileWriter(path, k.chunk, k.pressure);
-		return BufferedFileWriter(path, k.chunk, k.memory, k.pressure);
+			return BufferedFileWriter(Loc(path), k.chunk, k.pressure);
+		return BufferedFileWriter(Loc(path), k.chunk, k.memory, k.pressure);
 	}
 }
 
@@ -226,7 +236,7 @@ int test_direct_span_write() {
 	const std::string fn = "test_direct_span_write";
 	const auto path = Scratch("span");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	const char raw[] = { 'Z', 'Y', 'X' };
 	const auto written = out.Write(std::span<const std::byte>(
@@ -244,7 +254,7 @@ int test_direct_write_hits_disk() {
 	const std::string fn = "test_direct_write_hits_disk";
 	const auto path = Scratch("direct");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BackPressure());
@@ -265,7 +275,7 @@ int test_empty_write_ok() {
 	const std::string fn = "test_empty_write_ok";
 	const auto path = Scratch("empty");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO empty;
 	const auto written = out.Write(empty);
@@ -282,7 +292,7 @@ int test_explicit_zero_survives_open() {
 	const std::string fn = "test_explicit_zero_survives_open";
 	const auto path = Scratch("zero");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BackPressure());
@@ -299,7 +309,7 @@ int test_move_transfers_session() {
 	const std::string fn = "test_move_transfers_session";
 	const auto path = Scratch("move");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO first = FromText("AB");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(first).status));
@@ -324,7 +334,7 @@ int test_explicit_chunk_survives_setup() {
 	const std::string fn = "test_explicit_chunk_survives_setup";
 	const auto path = Scratch("keep");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 8, 2);
+	BufferedFileWriter out(Loc(path), 8, 2);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), out.BackPressure());
@@ -338,7 +348,7 @@ int test_path_only_setup_sets_device_knobs() {
 	const std::string fn = "test_path_only_setup_sets_device_knobs";
 	const auto path = Scratch("probe");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(Loc(path));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BackPressure());
 	ASSERT_TRUE(fn, out.Open());
@@ -355,7 +365,7 @@ int test_path_only_short_write_holds_until_flush() {
 	const std::string fn = "test_path_only_short_write_holds_until_flush";
 	const auto path = Scratch("phold");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(Loc(path));
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("ZYX");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -378,7 +388,7 @@ int test_backpressure_tryagain_atomic() {
 	const std::string fn = "test_backpressure_tryagain_atomic";
 	const auto path = Scratch("bp");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 4, 1);
+	BufferedFileWriter out(Loc(path), 4, 1);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO first = FromText("AB");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(first).status));
@@ -400,7 +410,7 @@ int test_chunk_holds_until_flush() {
 	const std::string fn = "test_chunk_holds_until_flush";
 	const auto path = Scratch("hold");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 8, 4);
+	BufferedFileWriter out(Loc(path), 8, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("ABC");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -421,7 +431,7 @@ int test_close_flushes_dirty() {
 	const auto path = Scratch("cflush");
 	std::filesystem::remove(path);
 	{
-		BufferedFileWriter out(path, 8, 4);
+		BufferedFileWriter out(Loc(path), 8, 4);
 		ASSERT_TRUE(fn, out.Open());
 		FIFO src = FromText("XY");
 		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -437,7 +447,7 @@ int test_full_chunk_clears_dirty() {
 	const std::string fn = "test_full_chunk_clears_dirty";
 	const auto path = Scratch("drain");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 4, 4);
+	BufferedFileWriter out(Loc(path), 4, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("ABCD");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -455,7 +465,7 @@ int test_truncate_drops_dirty() {
 	const std::string fn = "test_truncate_drops_dirty";
 	const auto path = Scratch("tdrop");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 8, 4);
+	BufferedFileWriter out(Loc(path), 8, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("NOPE");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -473,7 +483,7 @@ int test_truncate_zeros_file_and_tell() {
 	const std::string fn = "test_truncate_zeros_file_and_tell";
 	const auto path = Scratch("trunc");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("XYZ");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -495,7 +505,7 @@ int test_two_chunks_then_flush() {
 	const std::string fn = "test_two_chunks_then_flush";
 	const auto path = Scratch("two");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 2, 4);
+	BufferedFileWriter out(Loc(path), 2, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO a = FromText("AB");
 	FIFO b = FromText("CD");
@@ -520,7 +530,7 @@ int test_seek_before_start_fails() {
 	const std::string fn = "test_seek_before_start_fails";
 	const auto path = Scratch("neg");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("HI");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -537,7 +547,7 @@ int test_seek_keeps_dirty_then_patches() {
 	const std::string fn = "test_seek_keeps_dirty_then_patches";
 	const auto path = Scratch("sdirty");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{8}, StormByte::ByteSize{64}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{8}, StormByte::ByteSize{64}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO fill = FromText("XXXX");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(fill).status));
@@ -559,7 +569,7 @@ int test_seek_patch_direct() {
 	const std::string fn = "test_seek_patch_direct";
 	const auto path = Scratch("patch");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO fill = FromText("XXXXYYYY");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(fill).status));
@@ -587,7 +597,7 @@ int test_seek_relative() {
 	const std::string fn = "test_seek_relative";
 	const auto path = Scratch("rel");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO fill = FromText("01234567");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(fill).status));
@@ -605,7 +615,7 @@ int test_seek_then_extend() {
 	const std::string fn = "test_seek_then_extend";
 	const auto path = Scratch("ext");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO head = FromText("AB");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(head).status));
@@ -622,7 +632,7 @@ int test_seek_then_extend() {
 
 int test_seek_without_open_fails() {
 	const std::string fn = "test_seek_without_open_fails";
-	BufferedFileWriter out(Scratch("closed"), 0, 0);
+	BufferedFileWriter out(Loc(Scratch("closed")), 0, 0);
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(out.Seek(0, Position::Absolute).status));
 	RETURN_TEST(fn, 0);
 }
@@ -631,7 +641,7 @@ int test_size_counts_dirty() {
 	const std::string fn = "test_size_counts_dirty";
 	const auto path = Scratch("szdirty");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 8, 4);
+	BufferedFileWriter out(Loc(path), 8, 4);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("ABC");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -657,7 +667,7 @@ int test_hex_seq_matches_pattern() {
 	const std::string fn = "test_hex_seq_matches_pattern";
 	const auto path = Scratch("hexseq");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	const std::string body = HexSlice(0, 65536);
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, body));
@@ -675,7 +685,7 @@ int test_hex_fake_seek_patch() {
 	const std::string fn = "test_hex_fake_seek_patch";
 	const auto path = Scratch("hexfake");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, HexSlice(0, 65536)));
 	DumpTelemetry("hex-fake-before-seek", out);
@@ -698,7 +708,7 @@ int test_hex_fake_seek_small_then_front() {
 	const std::string fn = "test_hex_fake_seek_small_then_front";
 	const auto path = Scratch("hexfront");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, HexSlice(0, 65536)));
 	ASSERT_EQUAL(fn, 0, SeekExpectTell(fn, out, 8, Position::Absolute, 8));
@@ -723,7 +733,7 @@ int test_hex_island_1m_zeros() {
 	const std::string fn = "test_hex_island_1m_zeros";
 	const auto path = Scratch("island");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, std::string("HEADHEAD")));
 	ASSERT_EQUAL(fn, 0, SeekExpectTell(fn, out, 1024 * 1024, Position::Absolute, 1024 * 1024));
@@ -750,7 +760,7 @@ int test_hex_seek_past_eof_hole() {
 	const std::string fn = "test_hex_seek_past_eof_hole";
 	const auto path = Scratch("hole");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{8}, StormByte::ByteSize{64}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{8}, StormByte::ByteSize{64}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, std::string("AB")));
 	ASSERT_EQUAL(fn, 0, SeekExpectTell(fn, out, 8, Position::Absolute, 8));
@@ -770,7 +780,7 @@ int test_hex_evict_keeps_pattern() {
 	const std::string fn = "test_hex_evict_keeps_pattern";
 	const auto path = Scratch("evict");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{1024}, StormByte::ByteSize{4096}, 2);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{1024}, StormByte::ByteSize{4096}, 2);
 	ASSERT_TRUE(fn, out.Open());
 	const std::string body = HexSlice(0, 16384);
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, body));
@@ -992,7 +1002,7 @@ int test_close_then_reopen_appends() {
 	const auto path = Scratch("reopen");
 	std::filesystem::remove(path);
 	{
-		BufferedFileWriter out(path, 0, 0);
+		BufferedFileWriter out(Loc(path), 0, 0);
 		ASSERT_TRUE(fn, out.Open());
 		FIFO a = FromText("AB");
 		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(a).status));
@@ -1018,7 +1028,7 @@ int test_close_then_reopen_appends() {
 int test_ctor_unavailable() {
 	const std::string fn = "test_ctor_unavailable";
 	const auto path = Scratch("ctor");
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(Loc(path));
 	ASSERT_EQUAL(fn, ToString(State::Unavailable), ToString(out.State()));
 	ASSERT_FALSE(fn, static_cast<bool>(out));
 	ASSERT_FALSE(fn, out.IsOpen());
@@ -1026,7 +1036,7 @@ int test_ctor_unavailable() {
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Dirty());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BackPressure());
-	ASSERT_EQUAL(fn, path, out.Path());
+	ASSERT_EQUAL(fn, Loc(path), out.Path());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1034,7 +1044,7 @@ int test_open_creates_and_not_idempotent() {
 	const std::string fn = "test_open_creates_and_not_idempotent";
 	const auto path = Scratch("create");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(Loc(path));
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(out.State()));
 	ASSERT_TRUE(fn, static_cast<bool>(out));
@@ -1049,7 +1059,7 @@ int test_open_creates_and_not_idempotent() {
 
 int test_open_directory() {
 	const std::string fn = "test_open_directory";
-	BufferedFileWriter out(CurrentFileDirectory / "files");
+	BufferedFileWriter out(Loc(CurrentFileDirectory / "files"));
 	ASSERT_FALSE(fn, out.Open());
 	ASSERT_EQUAL(fn, ToString(State::Directory), ToString(out.State()));
 	RETURN_TEST(fn, 0);
@@ -1057,7 +1067,7 @@ int test_open_directory() {
 
 int test_open_missing_parent() {
 	const std::string fn = "test_open_missing_parent";
-	BufferedFileWriter out(std::filesystem::path("no_such_sbw_dir") / "x.bin");
+	BufferedFileWriter out(Loc(std::filesystem::path("no_such_sbw_dir") / "x.bin"));
 	ASSERT_FALSE(fn, out.Open());
 	ASSERT_EQUAL(fn, ToString(State::Missing), ToString(out.State()));
 	ASSERT_FALSE(fn, static_cast<bool>(out));
@@ -1066,7 +1076,7 @@ int test_open_missing_parent() {
 
 int test_rewind_without_open_fails() {
 	const std::string fn = "test_rewind_without_open_fails";
-	BufferedFileWriter out(Scratch("rew"));
+	BufferedFileWriter out(Loc(Scratch("rew")));
 	ASSERT_FALSE(fn, out.Rewind());
 	ASSERT_EQUAL(fn, ToString(State::Unavailable), ToString(out.State()));
 	RETURN_TEST(fn, 0);
@@ -1074,7 +1084,7 @@ int test_rewind_without_open_fails() {
 
 int test_write_before_open_leaves_src() {
 	const std::string fn = "test_write_before_open_leaves_src";
-	BufferedFileWriter out(Scratch("before"));
+	BufferedFileWriter out(Loc(Scratch("before")));
 	FIFO src = FromText("KEEP");
 	const auto written = out.Write(src);
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(written.status));
@@ -1092,7 +1102,7 @@ int test_telemetry_ctor_is_zero() {
 	const std::string fn = "test_telemetry_ctor_is_zero";
 	const auto path = Scratch("tzero");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	DumpTelemetry("ctor", out);
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Accepted);
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Materialized);
@@ -1106,7 +1116,7 @@ int test_telemetry_direct_write_counts_accepted() {
 	const std::string fn = "test_telemetry_direct_write_counts_accepted";
 	const auto path = Scratch("tdir");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("HELLO");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
@@ -1125,7 +1135,7 @@ int test_telemetry_fake_seek_epoch() {
 	const std::string fn = "test_telemetry_fake_seek_epoch";
 	const auto path = Scratch("tepoch");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, HexSlice(0, 8192)));
 	DumpTelemetry("tel-fill", out);
@@ -1152,7 +1162,7 @@ int test_telemetry_island_and_hole() {
 	const std::string fn = "test_telemetry_island_and_hole";
 	const auto path = Scratch("tisland");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
+	BufferedFileWriter out(Loc(path), StormByte::ByteSize{4096}, StormByte::ByteSize{256ull * 1024ull}, 4);
 	ASSERT_TRUE(fn, out.Open());
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, std::string("AA")));
 	ASSERT_EQUAL(fn, 0, SeekExpectTell(fn, out, 4096, Position::Absolute, 4096));
@@ -1174,7 +1184,7 @@ int test_telemetry_pressure_mixed_seeks() {
 	const std::string fn = "test_telemetry_pressure_mixed_seeks";
 	const auto path = Scratch("tmix");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 4096, 8);
+	BufferedFileWriter out(Loc(path), 4096, 8);
 	ASSERT_TRUE(fn, out.Open());
 
 	constexpr std::size_t kBytes = 512u * 1024u;
@@ -1258,7 +1268,7 @@ int test_telemetry_ring_counts_behind_and_tryagain() {
 	const std::string fn = "test_telemetry_ring_counts_behind_and_tryagain";
 	const auto path = Scratch("tring");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 4, 1);
+	BufferedFileWriter out(Loc(path), 4, 1);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO first = FromText("AB");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(first).status));
@@ -1277,7 +1287,7 @@ int test_telemetry_survives_close_and_truncate() {
 	const std::string fn = "test_telemetry_survives_close_and_truncate";
 	const auto path = Scratch("tkeep");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path, 0, 0);
+	BufferedFileWriter out(Loc(path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("XYZ");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));

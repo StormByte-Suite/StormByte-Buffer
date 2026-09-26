@@ -44,7 +44,6 @@
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
 #include <StormByte/buffer/visibility.h>
 
-#include <filesystem>
 #include <fstream>
 #include <mutex>
 
@@ -99,32 +98,32 @@ namespace StormByte {
 
 					/**
 					 * @brief Store the path. Chunk, backpressure and MaxMemory come from @ref Setup.
-					 * @param path Filesystem path.
+					 * @param path Locator. Stored once as @ref Location.
 					 */
-					explicit BufferedFileWriter(std::filesystem::path path);
+					explicit BufferedFileWriter(StormByte::String::String path);
 
 					/**
 					 * @brief Store the path and explicit ring knobs. Does not open.
-					 * @param path Filesystem path.
+					 * @param path Locator. Stored once as @ref Location.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.
 					 * @param max_wait Initial @ref MaxWait.
 					 *
 					 * @ref MaxMemory stays 0.
 					 */
-					BufferedFileWriter(std::filesystem::path path,
+					BufferedFileWriter(StormByte::String::String path,
 						StormByte::ByteSize write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
 					 * @brief Store the path, page budget and ring knobs. Does not open.
-					 * @param path Filesystem path.
+					 * @param path Locator. Stored once as @ref Location.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.
 					 * @param max_wait Initial @ref MaxWait.
 					 */
-					BufferedFileWriter(std::filesystem::path path,
+					BufferedFileWriter(StormByte::String::String path,
 						StormByte::ByteSize write_chunk, StormByte::ByteSize max_memory,
 						std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
@@ -161,12 +160,6 @@ namespace StormByte {
 					/**
 					 * @}
 					 */
-
-					/**
-					 * @brief Filesystem path of @ref Location.
-					 * @return Path built from the stored locator. Not resolved.
-					 */
-					std::filesystem::path Path() const;
 
 				protected:
 					/**

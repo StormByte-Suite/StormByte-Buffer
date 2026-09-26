@@ -80,6 +80,10 @@ const StormByte::String::String& BufferedLocationWriter::Location() const noexce
 	return m_io ? m_io->Location() : EmptyLocation();
 }
 
+const StormByte::String::String& BufferedLocationWriter::Path() const noexcept {
+	return Location();
+}
+
 StormByte::System::Device BufferedLocationWriter::Device() const {
 	return OriginDevice();
 }

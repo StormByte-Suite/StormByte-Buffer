@@ -76,6 +76,10 @@ const StormByte::String::String& BufferedLocationReader::Location() const noexce
 	return m_io ? m_io->Location() : EmptyLocation();
 }
 
+const StormByte::String::String& BufferedLocationReader::Path() const noexcept {
+	return Location();
+}
+
 StormByte::System::Device BufferedLocationReader::Device() const {
 	return OriginDevice();
 }

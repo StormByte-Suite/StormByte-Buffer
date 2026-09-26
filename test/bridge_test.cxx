@@ -45,6 +45,7 @@
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/shared_fifo.hxx>
+#include <StormByte/string/wstring.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
@@ -56,6 +57,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 using StormByte::Buffer::Bridge;
@@ -81,6 +83,14 @@ namespace {
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
 			static_cast<std::size_t>(data.size()));
+	}
+
+	StormByte::String::String Loc(const std::filesystem::path& path) {
+#ifdef WINDOWS
+		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+#else
+		return StormByte::String::String(std::string_view(path.string()));
+#endif
 	}
 
 	std::filesystem::path File(const char* name) {
@@ -247,7 +257,7 @@ int test_buf_to_io() {
 	FIFO src = FromText("HELLO");
 	src.Close();
 	ExternalBufferReader in(src);
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, bridge.Flush());
@@ -266,7 +276,7 @@ int test_buf_to_io_uncapped_ctor() {
 	FIFO src = FromText("HELLO");
 	src.Close();
 	ExternalBufferReader in(src);
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out);
 	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
@@ -286,7 +296,7 @@ int test_buf_to_io_writer_not_open() {
 	std::filesystem::remove(out_path);
 	FIFO src = FromText("NOPE");
 	ExternalBufferReader in(src);
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, src.Available());
@@ -584,7 +594,7 @@ int test_ext_writer_failure() {
 int test_io_to_buf() {
 	const std::string fn = "test_io_to_buf";
 	FIFO dst;
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ExternalBufferWriter out(dst);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 16);
@@ -598,7 +608,7 @@ int test_io_to_buf() {
 int test_io_to_buf_nul_and_binary() {
 	const std::string fn = "test_io_to_buf_nul_and_binary";
 	FIFO dst;
-	BufferedFileReader in(File("with_nuls.bin"));
+	BufferedFileReader in(Loc(File("with_nuls.bin")));
 	ExternalBufferWriter out(dst);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 16);
@@ -611,7 +621,7 @@ int test_io_to_buf_nul_and_binary() {
 int test_io_to_buf_pattern() {
 	const std::string fn = "test_io_to_buf_pattern";
 	FIFO dst;
-	BufferedFileReader in(File("pattern_256.bin"));
+	BufferedFileReader in(Loc(File("pattern_256.bin")));
 	ExternalBufferWriter out(dst);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 512);
@@ -624,7 +634,7 @@ int test_io_to_buf_pattern() {
 int test_io_to_buf_reader_not_open() {
 	const std::string fn = "test_io_to_buf_reader_not_open";
 	FIFO dst;
-	BufferedFileReader in(File("five.bin"));
+	BufferedFileReader in(Loc(File("five.bin")));
 	ExternalBufferWriter out(dst);
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -640,8 +650,8 @@ int test_io_empty_file() {
 	const std::string fn = "test_io_empty_file";
 	const auto out_path = Scratch("empty");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("empty.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("empty.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
@@ -657,8 +667,8 @@ int test_io_file_to_file() {
 	const std::string fn = "test_io_file_to_file";
 	const auto out_path = Scratch("io2io");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
@@ -675,8 +685,8 @@ int test_io_flush_and_close_does_not_close_file() {
 	const std::string fn = "test_io_flush_and_close_does_not_close_file";
 	const auto out_path = Scratch("noclose");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
@@ -694,8 +704,8 @@ int test_io_high_water_zero_pumps() {
 	const std::string fn = "test_io_high_water_zero_pumps";
 	const auto out_path = Scratch("iohw0");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 0);
@@ -713,8 +723,8 @@ int test_io_pattern_256() {
 	const std::string fn = "test_io_pattern_256";
 	const auto out_path = Scratch("pat");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("pattern_256.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("pattern_256.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 512);
@@ -731,8 +741,8 @@ int test_io_set_error_noop() {
 	const std::string fn = "test_io_set_error_noop";
 	const auto out_path = Scratch("seterr");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
@@ -750,8 +760,8 @@ int test_io_uncapped_ctor() {
 	const std::string fn = "test_io_uncapped_ctor";
 	const auto out_path = Scratch("iouncap");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out);
@@ -770,8 +780,8 @@ int test_io_unopened_does_not_write() {
 	const std::string fn = "test_io_unopened_does_not_write";
 	const auto out_path = Scratch("unopen");
 	std::filesystem::remove(out_path);
-	BufferedFileReader in(File("five.bin"));
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileReader in(Loc(File("five.bin")));
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	Bridge bridge(in, out, 16);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	ASSERT_FALSE(fn, bridge.IsReadable());
@@ -789,7 +799,7 @@ int test_demuxer_file_to_producer() {
 	const std::string fn = "test_demuxer_file_to_producer";
 	Producer producer;
 	Consumer consumer = producer.Consumer();
-	BufferedFileReader in(File("pattern_256.bin"));
+	BufferedFileReader in(Loc(File("pattern_256.bin")));
 	ExternalBufferWriter out(producer);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 512);
@@ -818,7 +828,7 @@ int test_demuxer_file_to_producer_high_water() {
 
 	Producer producer;
 	Consumer consumer = producer.Consumer();
-	BufferedFileReader in(src_path);
+	BufferedFileReader in(Loc(src_path));
 	ExternalBufferWriter out(producer);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 4096);
@@ -865,7 +875,7 @@ int test_muxer_producer_to_file_high_water() {
 	producer.Close();
 
 	ExternalBufferReader in(consumer);
-	BufferedFileWriter out(out_path, 0, 0);
+	BufferedFileWriter out(Loc(out_path), 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 4096);
 	ASSERT_TRUE(fn, WaitConsumerEof(consumer));
@@ -893,7 +903,7 @@ int test_muxer_then_demuxer_roundtrip() {
 		ASSERT_TRUE(fn, producer.Write(text));
 		producer.Close();
 		ExternalBufferReader in(consumer);
-		BufferedFileWriter out(path, 0, 0);
+		BufferedFileWriter out(Loc(path), 0, 0);
 		ASSERT_TRUE(fn, out.Open());
 		Bridge mux(in, out, 8);
 		ASSERT_TRUE(fn, WaitConsumerEof(consumer));
@@ -906,7 +916,7 @@ int test_muxer_then_demuxer_roundtrip() {
 	{
 		Producer producer;
 		Consumer consumer = producer.Consumer();
-		BufferedFileReader in(path);
+		BufferedFileReader in(Loc(path));
 		ExternalBufferWriter out(producer);
 		ASSERT_TRUE(fn, in.Open());
 		Bridge demux(in, out, 4096);
