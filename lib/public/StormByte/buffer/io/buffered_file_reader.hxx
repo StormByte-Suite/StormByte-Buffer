@@ -41,13 +41,11 @@
 
 #pragma once
 
-#include <StormByte/buffer/io/buffered_reader.hxx>
+#include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/system/device.hxx>
 
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -68,35 +66,28 @@ namespace StormByte {
 		namespace IO {
 			/**
 			 * @class BufferedFileReader
-			 * @brief @ref BufferedReader leaf over a filesystem file.
+			 * @brief Final @ref BufferedLocationReader over a filesystem file.
 			 *
 			 * Binary `ifstream` only. Hooks call @ref SetState.
-			 * Does not open in the constructor. Not sealed.
+			 * Does not open in the constructor.
 			 *
 			 * The device does not change after construction: @ref ReadAhead
-			 * is chosen once. Cache size (@ref MaxMemory) stays dynamic.
+			 * is chosen once by @ref BufferedLocationReader::Setup.
+			 * Cache size (@ref MaxMemory) stays dynamic.
 			 *
 			 * @par Constructors
-			 * @c BufferedFileReader(path) defers @ref ReadAhead to
-			 * @ref Setup (`CreateDevice` + @ref StormByte::System::Device::Window).
-			 * Initial @ref MaxMemory is 1 MiB.
+			 * @c BufferedFileReader(path) asks the location layer to probe
+			 * @ref Device at @ref Setup. Initial @ref MaxMemory is 1 MiB.
 			 * @c BufferedFileReader(path, read_ahead, max_memory) stores
 			 * those values. @c read_ahead 0 disables prefetch.
 			 *
-			 * A derived class may override any @c Origin* hook,
-			 * @ref Setup and @ref CreateDevice. Override @ref CreateDevice
-			 * to supply a @ref StormByte::System::Device derivative; File
-			 * only reads measurement and Window. When the transport is still
-			 * this file, call the File implementation and then add behaviour.
-			 * When it is not, do not call these File implementations.
-			 * Prefetch and Seek stay in @ref BufferedReader.
+			 * This leaf only opens, reads, seeks and reports the file length.
+			 * @ref OriginDevice builds a @ref StormByte::System::Device from
+			 * @ref Location.
 			 *
-			 * The derived destructor must call @ref Close first.
-			 * File @ref Close is idempotent.
-			 *
-			 * @see BufferedReader, State, StormByte::System::Device
+			 * @see BufferedLocationReader, State
 			 */
-			class STORMBYTE_BUFFER_PUBLIC BufferedFileReader: public BufferedReader {
+			class STORMBYTE_BUFFER_PUBLIC BufferedFileReader final: public BufferedLocationReader {
 				public:
 					/**
 					 * @name Lifecycle
@@ -152,32 +143,20 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Path passed to the constructor.
-					 * @return Stored path (not resolved).
+					 * @brief Filesystem path of @ref Location.
+					 * @return Path built from the stored locator. Not resolved.
 					 */
-					virtual const std::filesystem::path& Path() const noexcept;
+					std::filesystem::path Path() const;
 
 				protected:
 					/**
-					 * @brief Device used for path-only @ref Setup knobs.
-					 * @return Owned @ref StormByte::System::Device (or a derivative).
-					 *
-					 * Default is a @ref StormByte::System::Device on @c m_path.
-					 * A derived reader returns its own type; File does not slice.
+					 * @brief Device for the location probe.
+					 * @return @ref StormByte::System::Device on @ref Location.
 					 */
-					virtual std::unique_ptr<StormByte::System::Device> CreateDevice() const;
+					StormByte::System::Device OriginDevice() const override;
 
 					/**
-					 * @brief Apply device @ref ReadAhead when constructed from path only.
-					 *
-					 * No-op when the three-argument constructor already set
-					 * an explicit prefetch length (including 0 = off).
-					 * A failed Device probe leaves @ref ReadAhead at zero.
-					 */
-					void Setup() override;
-
-					/**
-					 * @brief Open @c m_path as a binary input file and cache its size.
+					 * @brief Open the file as a binary input and cache its size.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
 					 */
 					Result OriginOpen() override;
@@ -197,12 +176,6 @@ namespace StormByte {
 					Result OriginPull(StormByte::ByteSize n, FIFO& dest) override;
 
 					/**
-					 * @brief Files are seekable.
-					 * @return @c true.
-					 */
-					bool OriginCanSeek() const noexcept override;
-
-					/**
 					 * @brief Seek the file stream.
 					 * @param offset Byte offset.
 					 * @param mode Absolute from start or relative to the file cursor.
@@ -211,23 +184,15 @@ namespace StormByte {
 					Result OriginSeek(std::ptrdiff_t offset, Position mode) override;
 
 					/**
-					 * @brief Length is known after a successful @ref OriginOpen.
-					 * @return @c true when @c m_size is set.
-					 */
-					bool OriginHasSize() const noexcept override;
-
-					/**
 					 * @brief Cached file size.
 					 * @return Size in bytes, or empty if not open.
 					 */
 					std::optional<StormByte::ByteSize> OriginSize() const noexcept override;
 
 				private:
-					std::filesystem::path m_path;			///< Path given at construction.
 					std::ifstream m_file;					///< Binary input stream.
 					std::optional<StormByte::ByteSize> m_size;	///< Size after OriginOpen.
 					mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
-					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};
 		}
 	}

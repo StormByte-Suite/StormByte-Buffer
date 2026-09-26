@@ -41,13 +41,11 @@
 
 #pragma once
 
-#include <StormByte/buffer/io/buffered_writer.hxx>
+#include <StormByte/buffer/io/buffered_location_writer.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/system/device.hxx>
 
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <mutex>
 
 /**
@@ -67,45 +65,32 @@ namespace StormByte {
 		namespace IO {
 			/**
 			 * @class BufferedFileWriter
-			 * @brief @ref BufferedWriter leaf over a filesystem file.
+			 * @brief Final @ref BufferedLocationWriter over a filesystem file.
 			 *
 			 * Binary file, random-access. Open creates the file when
 			 * missing and leaves existing content. Overwrite is
 			 * @ref Truncate. Does not open in the constructor. Does
-			 * not create parent directories. Not sealed.
+			 * not create parent directories.
 			 *
-			 * The device does not change after construction: @ref WriteChunk,
-			 * @ref BackPressure and @ref MaxMemory are chosen once.
-			 * @ref MaxWait stays dynamic.
+			 * The device does not change after construction. Chunk,
+			 * backpressure and @ref MaxMemory for the path-only constructor
+			 * come from @ref BufferedLocationWriter::Setup.
 			 *
 			 * @par Constructors
-			 * @c BufferedFileWriter(path) defers chunk to @ref Setup
-			 * (`CreateDevice` + @ref StormByte::System::Device::Window).
-			 * Path-only @ref BackPressure is 4. Path-only @ref MaxMemory
-			 * is 1 MiB. @c BufferedFileWriter(path, write_chunk,
-			 * back_pressure, max_wait) stores those values and leaves
-			 * @ref MaxMemory at 0. @c BufferedFileWriter(path,
-			 * write_chunk, max_memory, back_pressure, max_wait) stores
-			 * the page budget too. A zero chunk or backpressure disables
+			 * @c BufferedFileWriter(path) asks the location layer to probe.
+			 * @c BufferedFileWriter(path, write_chunk, back_pressure, max_wait)
+			 * stores those values and leaves @ref MaxMemory at 0.
+			 * @c BufferedFileWriter(path, write_chunk, max_memory, back_pressure, max_wait)
+			 * stores the page budget too. A zero chunk or backpressure disables
 			 * the ring. A zero @ref MaxMemory stores no pages.
 			 *
-			 * @ref Seek is the base implementation: logical cursor only.
-			 * This leaf supplies @ref OriginSeek for GC / Flush / Close.
+			 * This leaf only opens, writes, flushes, truncates, seeks and
+			 * reports the file length. @ref OriginDevice builds a
+			 * @ref StormByte::System::Device from @ref Location.
 			 *
-			 * A derived class may override any @c Origin* hook, @ref Seek,
-			 * @ref Size, @ref WillWrite, @ref Setup and @ref CreateDevice.
-			 * Override @ref CreateDevice to supply a
-			 * @ref StormByte::System::Device derivative; File only reads
-			 * measurement and Window. When the transport is still this file,
-			 * call the File implementation and then add behaviour. When it
-			 * is not, do not call these File implementations.
-			 *
-			 * The derived destructor must call @ref Close first.
-			 * File @ref Close is idempotent.
-			 *
-			 * @see BufferedWriter, State, StormByte::System::Device
+			 * @see BufferedLocationWriter, State
 			 */
-			class STORMBYTE_BUFFER_PUBLIC BufferedFileWriter: public BufferedWriter {
+			class STORMBYTE_BUFFER_PUBLIC BufferedFileWriter final: public BufferedLocationWriter {
 				public:
 					/**
 					 * @name Lifecycle
@@ -178,45 +163,32 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Path passed to the constructor.
-					 * @return Stored path (not resolved).
+					 * @brief Filesystem path of @ref Location.
+					 * @return Path built from the stored locator. Not resolved.
 					 */
-					virtual const std::filesystem::path& Path() const noexcept;
-
-					/**
-					 * @brief On-disk size or the write cursor, whichever is larger.
-					 * @return Byte length.
-					 */
-					virtual StormByte::ByteSize Size() const noexcept;
+					std::filesystem::path Path() const;
 
 				protected:
 					/**
-					 * @brief Device used for path-only @ref Setup knobs.
-					 * @return Owned @ref StormByte::System::Device (or a derivative).
-					 *
-					 * Default is a @ref StormByte::System::Device on @c m_path.
-					 * A derived writer returns its own type; File does not slice.
+					 * @brief Device for the location probe.
+					 * @return @ref StormByte::System::Device on @ref Location.
 					 */
-					virtual std::unique_ptr<StormByte::System::Device> CreateDevice() const;
+					StormByte::System::Device OriginDevice() const override;
 
 					/**
-					 * @brief Apply device chunk, backpressure and MaxMemory for the path-only ctor.
-					 *
-					 * No-op when the explicit constructor already set those knobs
-					 * (including 0 = ring off). A failed Device probe leaves
-					 * @ref WriteChunk at zero. Path-only @ref BackPressure stays 4.
-					 * Path-only @ref MaxMemory stays 1 MiB.
+					 * @brief On-disk size or the write cursor, whichever is larger.
+					 * @return Byte length. 0 when the path cannot be stated.
 					 */
-					virtual void Setup() override;
+					StormByte::ByteSize OriginSize() const noexcept override;
 
 					/**
-					 * @brief Open @c m_path for binary random-access write.
+					 * @brief Open the path for binary random-access write.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 *
 					 * Creates the file when missing. Does not truncate an
 					 * existing file.
 					 */
-					virtual Result OriginOpen() override;
+					Result OriginOpen() override;
 
 					/**
 					 * @brief Close the file stream.
@@ -248,7 +220,7 @@ namespace StormByte {
 					 * @param absolute Byte offset from the start of the file.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginSeek(StormByte::ByteSize absolute);
+					Result OriginSeek(StormByte::ByteSize absolute) override;
 
 					/**
 					 * @brief Whether the volume looks able to accept @p n more bytes.
@@ -258,10 +230,8 @@ namespace StormByte {
 					virtual bool WillWrite(StormByte::ByteSize n) const override;
 
 				private:
-					std::filesystem::path m_path;			///< Path given at construction.
 					std::ofstream m_file;					///< Binary output stream.
 					mutable std::mutex m_file_mutex;		///< Serialises ofstream access.
-					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};
 		}
 	}

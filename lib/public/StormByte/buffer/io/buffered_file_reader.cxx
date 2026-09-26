@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/string/wstring.hxx>
 
 #include <ios>
 #include <system_error>
@@ -50,27 +51,37 @@ using namespace StormByte::Buffer::IO;
 
 namespace {
 	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
+
+	StormByte::String::String ToLocation(const std::filesystem::path& path) {
+#ifdef WINDOWS
+		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+#else
+		return StormByte::String::String(std::string_view(path.string()));
+#endif
+	}
+
+	std::filesystem::path ToPath(const StormByte::String::String& location) {
+#ifdef WINDOWS
+		const StormByte::String::WString wide(location);
+		return std::filesystem::path(static_cast<std::wstring_view>(wide));
+#else
+		return std::filesystem::path(static_cast<std::string_view>(location));
+#endif
+	}
 }
 
 BufferedFileReader::BufferedFileReader(std::filesystem::path path):
-	BufferedReader(StormByte::ByteSize{0}, DefaultMaxMemory),
-	m_path(std::move(path)),
-	m_probe_on_setup(true) {}
+	BufferedLocationReader(ToLocation(path), StormByte::ByteSize{0}, DefaultMaxMemory, true) {}
 
 BufferedFileReader::BufferedFileReader(std::filesystem::path path, const StormByte::ByteSize read_ahead,
 		const StormByte::ByteSize max_memory):
-	BufferedReader(read_ahead, max_memory),
-	m_path(std::move(path)),
-	m_probe_on_setup(false) {}
+	BufferedLocationReader(ToLocation(path), read_ahead, max_memory, false) {}
 
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
-	BufferedReader(std::move(other)),
-	m_path(std::move(other.m_path)),
+	BufferedLocationReader(std::move(other)),
 	m_file(std::move(other.m_file)),
-	m_size(other.m_size),
-	m_probe_on_setup(other.m_probe_on_setup) {
+	m_size(other.m_size) {
 	other.m_size.reset();
-	other.m_probe_on_setup = false;
 	if (IsOpen())
 		static_cast<void>(Seek(static_cast<std::ptrdiff_t>(Tell()), Position::Absolute));
 }
@@ -81,37 +92,22 @@ BufferedFileReader::~BufferedFileReader() noexcept {
 
 BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) noexcept {
 	if (this != &other) {
-		static_cast<void>(Close());
-		BufferedReader::operator=(std::move(other));
-		m_path = std::move(other.m_path);
+		BufferedLocationReader::operator=(std::move(other));
 		m_file = std::move(other.m_file);
 		m_size = other.m_size;
-		m_probe_on_setup = other.m_probe_on_setup;
 		other.m_size.reset();
-		other.m_probe_on_setup = false;
 		if (IsOpen())
 			static_cast<void>(Seek(static_cast<std::ptrdiff_t>(Tell()), Position::Absolute));
 	}
 	return *this;
 }
 
-const std::filesystem::path& BufferedFileReader::Path() const noexcept {
-	return m_path;
+std::filesystem::path BufferedFileReader::Path() const {
+	return ToPath(Location());
 }
 
-std::unique_ptr<StormByte::System::Device> BufferedFileReader::CreateDevice() const {
-	return std::make_unique<StormByte::System::Device>(m_path);
-}
-
-void BufferedFileReader::Setup() {
-	if (!m_probe_on_setup)
-		return;
-	const auto device = CreateDevice();
-	if (!device || !*device) {
-		ReadAhead(StormByte::ByteSize{0});
-		return;
-	}
-	ReadAhead(device->Window().read);
+StormByte::System::Device BufferedFileReader::OriginDevice() const {
+	return StormByte::System::Device{Location()};
 }
 
 Result BufferedFileReader::OriginOpen() {
@@ -119,8 +115,9 @@ Result BufferedFileReader::OriginOpen() {
 	if (m_file.is_open())
 		return { IO::Status::Failed, 0 };
 
+	const auto path = Path();
 	std::error_code ec;
-	const auto st = std::filesystem::status(m_path, ec);
+	const auto st = std::filesystem::status(path, ec);
 	if (ec) {
 		if (ec == std::errc::no_such_file_or_directory)
 			SetState(State::Missing);
@@ -139,13 +136,13 @@ Result BufferedFileReader::OriginOpen() {
 		return { IO::Status::Failed, 0 };
 	}
 
-	const auto size = std::filesystem::file_size(m_path, ec);
+	const auto size = std::filesystem::file_size(path, ec);
 	if (ec) {
 		SetState(State::Permission);
 		return { IO::Status::Failed, 0 };
 	}
 
-	m_file.open(m_path, std::ios::in | std::ios::binary);
+	m_file.open(path, std::ios::in | std::ios::binary);
 	if (!m_file) {
 		SetState(State::Permission);
 		return { IO::Status::Failed, 0 };
@@ -195,10 +192,6 @@ Result BufferedFileReader::OriginPull(const StormByte::ByteSize n, FIFO& dest) {
 	return { IO::Status::Ok, got };
 }
 
-bool BufferedFileReader::OriginCanSeek() const noexcept {
-	return true;
-}
-
 Result BufferedFileReader::OriginSeek(const std::ptrdiff_t offset, const Position mode) {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
@@ -217,10 +210,6 @@ Result BufferedFileReader::OriginSeek(const std::ptrdiff_t offset, const Positio
 	if (!m_file)
 		return { IO::Status::Failed, 0 };
 	return { IO::Status::Ok, 0 };
-}
-
-bool BufferedFileReader::OriginHasSize() const noexcept {
-	return m_size.has_value();
 }
 
 std::optional<StormByte::ByteSize> BufferedFileReader::OriginSize() const noexcept {

@@ -23,7 +23,7 @@ Typical wires:
 - `Bridge(Consumer, BufferedFileWriter)` — drain a ring to a file.
 - `BufferedFileReader` as a `BufferedReader` — sequential or seekable reads with a page map and delayed seek.
 - `BufferedFileWriter` as a `BufferedWriter` — sequential or seekable writes with lazy pages and delayed seek.
-- Future leaves (remote file, socket) inherit the File leaves and override the same hooks.
+- Future leaves that act as a file inherit `BufferedLocationReader` / `BufferedLocationWriter`. A plain byte stream inherits `BufferedReader` / `BufferedWriter`. `BufferedFileReader` and `BufferedFileWriter` are final.
 
 See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWriter](#iobufferedwriter) and [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 
@@ -38,7 +38,7 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 - **Sink** — map of integer keys to Hopper buckets. See [Sink](#sink).
 - **Bridge** — chunked passthrough `ExternalReader` → `ExternalWriter`, with optional high-water. See [Bridge](#bridge).
 - **IO::BufferedReader / IO::BufferedWriter** — session bases (`Open` / `Close` / `Tell` / `Seek` / `Telemetry`). Leaves implement `Origin*`. Page cache + delayed seek live here. See [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
-- **BufferedFileReader / BufferedFileWriter** — file leaves. Path-only constructors pick device-tuned windows at `Open` via System `Device`; explicit constructors keep the knobs you pass. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
+- **BufferedFileReader / BufferedFileWriter** — final file leaves of `BufferedLocationReader` / `BufferedLocationWriter`. Path-only constructors pick device-tuned windows at `Open` via `Device()`; explicit constructors keep the knobs you pass and forward them. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 - **Pipeline** — stages chained with `ExecutionMode`. See [Pipeline](#pipeline).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
@@ -327,18 +327,18 @@ This cache is not magic. Local seeks and short rewinds with a budget that fits t
 
 ### BufferedFileReader / BufferedFileWriter
 
-File leaves of the bases above. They are meant to be derived from (same hooks, no extra setters for the path). Override `CreateDevice()` to return a `unique_ptr<StormByte::System::Device>` when a derived leaf needs its own measurement (no slicing).
+File leaves of `BufferedLocationReader` / `BufferedLocationWriter`. Those are the file-like layer (locator, `Device()`, always seekable and sized). The file classes are `final`: they only open, transfer and seek the filesystem file. `Path()` is the filesystem view of `Location()`.
 
 | Constructor | What happens at `Open` |
 | --- | --- |
-| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` uses `CreateDevice()` and `Device::Window` to set `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). Path-only `MaxMemory` is 1 MiB. Path-only writer `BackPressure` is 4. |
-| `BufferedFileReader(path, read_ahead, max_memory)` | Those values stay. `(path, 0, 0)` is no prefetch / no pages. |
-| `BufferedFileWriter(path, write_chunk, back_pressure)` | Ring knobs stay. `MaxMemory` stays 0 (no pages). |
+| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` on the location layer uses `Device()` and `Device::Window` to set `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). Path-only `MaxMemory` is 1 MiB. Path-only writer `BackPressure` is 4. |
+| `BufferedFileReader(path, read_ahead, max_memory)` | Those values are forwarded and stay. `(path, 0, 0)` is no prefetch / no pages. |
+| `BufferedFileWriter(path, write_chunk, back_pressure)` | Ring knobs are forwarded and stay. `MaxMemory` stays 0 (no pages). |
 | `BufferedFileWriter(path, write_chunk, max_memory, back_pressure)` | Pages and ring together. Either ring knob `0` disables the ring. `MaxMemory == 0` disables pages. |
 
 The device does not change after construction. `MaxMemory` and `MaxWait` stay settable: they are cache and wait policy, not device speed.
 
-`Setup()` is a protected hook on the base, called from `Open` before `OriginOpen`. A derived leaf can override `Setup()` (or skip the probe) and still reuse File origin hooks.
+`Setup()` is sealed on the location layer and runs from `Open` before `OriginOpen`. An explicit constructor skips the probe.
 
 `Open` on an existing file does not truncate. `Truncate` overwrites. A second `Open` after `Close` starts `Tell` at 0; seek to `Size()` to append.
 
