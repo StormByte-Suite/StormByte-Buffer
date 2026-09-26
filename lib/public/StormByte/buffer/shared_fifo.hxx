@@ -238,7 +238,7 @@ namespace StormByte::Buffer {
 			 * @warning Not safe under concurrent mutation without external exclusion.
 			 * @return Constant reference to the base @ref StormByte::BinaryData.
 			 */
-			virtual const StormByte::BinaryData& BinaryData() const noexcept override;
+			virtual const StormByte::BinaryData& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty (thread-safe).

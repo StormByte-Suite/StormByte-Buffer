@@ -55,7 +55,7 @@ StormByte::ByteSize Consumer::Available() const noexcept {
 }
 
 const StormByte::BinaryData& Consumer::Data() const noexcept {
-	return m_buffer->BinaryData();
+	return m_buffer->Data();
 }
 
 bool Consumer::Empty() const noexcept {

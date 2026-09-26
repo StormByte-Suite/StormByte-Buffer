@@ -287,7 +287,7 @@ namespace StormByte {
 				 * @brief View of internal storage. Implementation-defined.
 				 * @return Constant reference to a @ref StormByte::BinaryData.
 				 */
-				virtual const BinaryData& BinaryData() const noexcept = 0;
+				virtual const BinaryData& Data() const noexcept = 0;
 
 				/**
 				 * @brief Whether the store holds no bytes.
@@ -689,7 +689,7 @@ namespace StormByte {
 					BinaryData tmp;
 					if (to_write > StormByte::ByteSize{0})
 						tmp.reserve(to_write);
-					std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(to_write.Value()),
+					std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(to_write)),
 						std::back_inserter(tmp),
 						[](char e) noexcept { return static_cast<std::byte>(e); });
 					return Write(to_write, std::move(tmp));

@@ -77,7 +77,7 @@ namespace StormByte {
 		 * @see ExternalBufferReader, ExternalWriter, Pipeline, Bridge
 		 */
 		class STORMBYTE_BUFFER_PUBLIC ExternalReader
-			: public Clonable<ExternalReader, std::unique_ptr<ExternalReader>> {
+			: public Clonable<ExternalReader, StormByte::Unique<ExternalReader>> {
 			public:
 				/**
 				 * @brief Default constructor.
@@ -389,7 +389,7 @@ namespace StormByte {
 		 * @see ExternalBufferWriter, ExternalReader, Pipeline, Bridge
 		 */
 		class STORMBYTE_BUFFER_PUBLIC ExternalWriter
-			: public Clonable<ExternalWriter, std::unique_ptr<ExternalWriter>> {
+			: public Clonable<ExternalWriter, StormByte::Unique<ExternalWriter>> {
 			public:
 				/**
 				 * @brief Default constructor.

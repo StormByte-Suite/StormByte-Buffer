@@ -180,7 +180,7 @@ namespace StormByte {
 				 * @return Constant reference to the Ring’s @ref StormByte::BinaryData view.
 				 * @warning Not intended for concurrent mutation; prefer Read / Extract.
 				 */
-				const StormByte::BinaryData& BinaryData() const noexcept override;
+				const StormByte::BinaryData& Data() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring holds no stored bytes.

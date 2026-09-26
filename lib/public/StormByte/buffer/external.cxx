@@ -168,7 +168,7 @@ bool ExternalWriter::Write(const StormByte::ByteSize& count, const std::string_v
 	BinaryData tmp;
 	if (to_write > StormByte::ByteSize{0})
 		tmp.reserve(to_write);
-	std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(to_write),
+	std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(to_write)),
 		std::back_inserter(tmp),
 		[](char c) noexcept { return static_cast<std::byte>(c); });
 	return Write(std::move(tmp));

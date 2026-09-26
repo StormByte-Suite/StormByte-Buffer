@@ -175,7 +175,7 @@ namespace StormByte::Buffer {
 			 * @return Constant reference to a @ref StormByte::BinaryData view.
 			 * @warning Intended for diagnostics; prefer Read / Extract on the hot path.
 			 */
-			const StormByte::BinaryData& BinaryData() const noexcept override;
+			const StormByte::BinaryData& Data() const noexcept override;
 
 			/**
 			 * @brief Longest contiguous unread span from the read cursor.

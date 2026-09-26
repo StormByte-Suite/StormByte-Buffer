@@ -212,7 +212,7 @@ namespace StormByte::Buffer {
 			 * @brief Access the internal storage.
 			 * @return Constant reference to the owned @ref StormByte::BinaryData.
 			 */
-			virtual const StormByte::BinaryData& BinaryData() const noexcept override;
+			virtual const StormByte::BinaryData& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty.

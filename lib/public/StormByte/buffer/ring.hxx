@@ -215,7 +215,7 @@ namespace StormByte::Buffer {
 			 * @brief Snapshot of stored data (may rebuild an internal cache).
 			 * @return Constant reference to a @ref StormByte::BinaryData view.
 			 */
-			const StormByte::BinaryData& BinaryData() const noexcept override;
+			const StormByte::BinaryData& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty.
