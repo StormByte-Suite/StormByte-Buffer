@@ -44,9 +44,17 @@
 
 using namespace StormByte::Buffer::IO;
 
-BufferedWriter::BufferedWriter(const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
+namespace {
+	const StormByte::String::String& EmptyPath() noexcept {
+		static const StormByte::String::String empty;
+		return empty;
+	}
+}
+
+BufferedWriter::BufferedWriter(StormByte::String::String path, const enum Location location,
+		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory):
-	m_io(std::make_unique<Backend::BufferedWriter>(*this, write_chunk, back_pressure, max_wait, max_memory)) {}
+	m_io(std::make_unique<Backend::BufferedWriter>(*this, std::move(path), location, write_chunk, back_pressure, max_wait, max_memory)) {}
 
 BufferedWriter::BufferedWriter(BufferedWriter&& other) noexcept:
 	m_io(std::move(other.m_io)) {
@@ -68,6 +76,14 @@ BufferedWriter& BufferedWriter::operator=(BufferedWriter&& other) noexcept {
 			m_io->Rebind(*this);
 	}
 	return *this;
+}
+
+const StormByte::String::String& BufferedWriter::Path() const noexcept {
+	return m_io ? m_io->Path() : EmptyPath();
+}
+
+enum Location BufferedWriter::Location() const noexcept {
+	return m_io ? m_io->Location() : Location::Local;
 }
 
 BufferedWriter::operator bool() const noexcept {

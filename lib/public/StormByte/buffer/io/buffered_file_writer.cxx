@@ -116,18 +116,18 @@ namespace {
 }
 
 BufferedFileWriter::BufferedFileWriter(StormByte::String::String path):
-	BufferedLocationWriter(std::move(path), StormByte::ByteSize{0}, 0,
+	BufferedLocationWriter(std::move(path), Location::Local, StormByte::ByteSize{0}, 0,
 		std::chrono::milliseconds{0}, StormByte::ByteSize{0}, true) {}
 
 BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(std::move(path), write_chunk, back_pressure, max_wait,
+	BufferedLocationWriter(std::move(path), Location::Local, write_chunk, back_pressure, max_wait,
 		StormByte::ByteSize{0}, false) {}
 
 BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
 		const StormByte::ByteSize max_memory, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(std::move(path), write_chunk, back_pressure, max_wait, max_memory, false) {}
+	BufferedLocationWriter(std::move(path), Location::Local, write_chunk, back_pressure, max_wait, max_memory, false) {}
 
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedLocationWriter(std::move(other)),
@@ -146,7 +146,7 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 }
 
 StormByte::System::Device BufferedFileWriter::OriginDevice() const {
-	return StormByte::System::Device{Location()};
+	return StormByte::System::Device{Path()};
 }
 
 StormByte::ByteSize BufferedFileWriter::OriginSize() const noexcept {

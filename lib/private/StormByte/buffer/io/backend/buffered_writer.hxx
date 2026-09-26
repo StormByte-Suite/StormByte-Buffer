@@ -47,6 +47,7 @@
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/string/string.hxx>
 
 #include <atomic>
 #include <chrono>
@@ -129,6 +130,8 @@ namespace StormByte {
 						/**
 						 * @brief Bind to the public leaf and store policy knobs.
 						 * @param owner Public instance (the most-derived object).
+						 * @param path Locator. Not changed afterwards.
+						 * @param location Local or remote. Not changed afterwards.
 						 * @param write_chunk Initial WriteChunk in bytes.
 						 * @param back_pressure Initial BackPressure in chunks.
 						 * @param max_wait Initial MaxWait.
@@ -136,7 +139,8 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedWriter(IO::BufferedWriter& owner, StormByte::ByteSize write_chunk,
+						BufferedWriter(IO::BufferedWriter& owner, StormByte::String::String path,
+							IO::Location location, StormByte::ByteSize write_chunk,
 							std::size_t back_pressure, std::chrono::milliseconds max_wait,
 							StormByte::ByteSize max_memory);
 
@@ -176,6 +180,18 @@ namespace StormByte {
 						 * @param owner Destination public object.
 						 */
 						void Rebind(IO::BufferedWriter& owner) noexcept;
+
+						/**
+						 * @brief Locator stored at construction.
+						 * @return Owned text.
+						 */
+						const StormByte::String::String& Path() const noexcept;
+
+						/**
+						 * @brief Kind stored at construction.
+						 * @return Local or remote.
+						 */
+						IO::Location Location() const noexcept;
 
 						/**
 						 * @brief Whether the sink is prepared to write.
@@ -520,6 +536,8 @@ namespace StormByte {
 						void NoteDirty() const noexcept;
 
 						IO::BufferedWriter* m_owner;				///< Public leaf (hooks).
+						StormByte::String::String m_path;		///< Locator. Not changed.
+						IO::Location m_location {IO::Location::Local};	///< Local or remote. Not changed.
 
 						mutable std::mutex m_mutex;					///< Session + knobs.
 						mutable std::mutex m_origin_io;				///< Serialises every Origin* hook.

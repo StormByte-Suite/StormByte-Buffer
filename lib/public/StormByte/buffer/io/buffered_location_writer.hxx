@@ -80,7 +80,11 @@ namespace StormByte {
 			 * @ref Size is @ref OriginSize. The leaf does not override @ref Size.
 			 * @ref OriginSeek is pure: the base default that only fails is not enough.
 			 *
-			 * @ref Location is owned here (@c String), in this module.
+			 * @ref Path and @ref Location live on @ref BufferedWriter. They are
+			 * stored once and do not change. @ref Path may be a filesystem
+			 * path, @c socket://… or @c http://… . A file leaf passes
+			 * @ref Location::Local and its path is a local filesystem path.
+			 *
 			 * @ref Device is not virtual. @ref OriginDevice is pure.
 			 * @ref Setup applies @ref StormByte::System::Device::Window,
 			 * backpressure 4 and 1 MiB of @ref MaxMemory when the constructor
@@ -124,18 +128,6 @@ namespace StormByte {
 					BufferedLocationWriter& operator=(BufferedLocationWriter&& other) noexcept;
 
 					/**
-					 * @brief Locator passed to the constructor. Stored once.
-					 * @return Owned text. Not resolved. Empty if moved-from.
-					 */
-					const StormByte::String::String& Location() const noexcept;
-
-					/**
-					 * @brief Same stored locator as @ref Location.
-					 * @return @ref Location. Not a copy.
-					 */
-					const StormByte::String::String& Path() const noexcept;
-
-					/**
 					 * @brief Measurement of this location.
 					 * @return @ref OriginDevice by value. Not a pointer.
 					 */
@@ -161,15 +153,16 @@ namespace StormByte {
 
 				protected:
 					/**
-					 * @brief Store the locator and forward the sink knobs.
-					 * @param location Owned locator.
+					 * @brief Forward the locator and the sink knobs.
+					 * @param path Locator. Stored once on @ref BufferedWriter.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param write_chunk Initial @ref WriteChunk. Ignored when @p probe is true.
 					 * @param back_pressure Initial @ref BackPressure.
 					 * @param max_wait Initial @ref MaxWait.
 					 * @param max_memory Initial @ref MaxMemory. Ignored when @p probe is true.
 					 * @param probe When true, @ref Setup replaces chunk, backpressure and MaxMemory.
 					 */
-					BufferedLocationWriter(StormByte::String::String location,
+					BufferedLocationWriter(StormByte::String::String path, enum Location location,
 						StormByte::ByteSize write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory, bool probe);
 

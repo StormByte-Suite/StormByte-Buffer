@@ -41,19 +41,12 @@
 
 #include <StormByte/buffer/io/backend/buffered_location_reader.hxx>
 
-#include <utility>
-
 using namespace StormByte::Buffer::IO::Backend;
 
-BufferedLocationReader::BufferedLocationReader(StormByte::String::String location, const bool probe):
-	m_location(std::move(location)),
+BufferedLocationReader::BufferedLocationReader(const bool probe):
 	m_probe(probe) {}
 
 BufferedLocationReader::~BufferedLocationReader() = default;
-
-const StormByte::String::String& BufferedLocationReader::Location() const noexcept {
-	return m_location;
-}
 
 bool BufferedLocationReader::Probe() const noexcept {
 	return m_probe;

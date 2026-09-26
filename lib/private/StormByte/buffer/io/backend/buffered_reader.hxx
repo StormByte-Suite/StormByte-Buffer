@@ -46,6 +46,7 @@
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/string/string.hxx>
 
 #include <atomic>
 #include <chrono>
@@ -98,13 +99,16 @@ namespace StormByte {
 						/**
 						 * @brief Bind to the public leaf and store policy knobs.
 						 * @param owner Public instance (the most-derived object).
+						 * @param path Locator. Not changed afterwards.
+						 * @param location Local or remote. Not changed afterwards.
 						 * @param read_ahead Initial @ref ReadAhead in bytes.
 						 * @param max_memory Initial @ref MaxMemory in bytes.
 						 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedReader(IO::BufferedReader& owner, StormByte::ByteSize read_ahead,
+						BufferedReader(IO::BufferedReader& owner, StormByte::String::String path,
+							IO::Location location, StormByte::ByteSize read_ahead,
 							StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait);
 
 						/**
@@ -141,6 +145,18 @@ namespace StormByte {
 						 * @param owner Destination public object.
 						 */
 						void Rebind(IO::BufferedReader& owner) noexcept;
+
+						/**
+						 * @brief Locator stored at construction.
+						 * @return Owned text.
+						 */
+						const StormByte::String::String& Path() const noexcept;
+
+						/**
+						 * @brief Kind stored at construction.
+						 * @return Local or remote.
+						 */
+						IO::Location Location() const noexcept;
 
 						/**
 						 * @brief Cancel the in-flight pull and wait until the worker is idle.
@@ -483,6 +499,8 @@ namespace StormByte {
 						void CloseSeekEpoch() const noexcept;
 
 						IO::BufferedReader* m_owner;					///< Public leaf (hooks).
+						StormByte::String::String m_path;				///< Locator. Not changed.
+						IO::Location m_location {IO::Location::Local};	///< Local or remote. Not changed.
 
 						mutable std::mutex m_mutex;						///< Session + map.
 						mutable std::condition_variable m_cv;			///< Worker / flush waits.

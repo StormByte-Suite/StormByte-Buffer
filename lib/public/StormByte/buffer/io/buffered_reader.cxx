@@ -61,11 +61,17 @@ namespace {
 		std::copy_n(raw.begin(), static_cast<std::size_t>(got.count), dest.begin());
 		return got;
 	}
+
+	const StormByte::String::String& EmptyPath() noexcept {
+		static const StormByte::String::String empty;
+		return empty;
+	}
 }
 
-BufferedReader::BufferedReader(const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
+BufferedReader::BufferedReader(StormByte::String::String path, const enum Location location,
+		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<Backend::BufferedReader>(*this, read_ahead, max_memory, max_wait)) {}
+	m_io(std::make_unique<Backend::BufferedReader>(*this, std::move(path), location, read_ahead, max_memory, max_wait)) {}
 
 BufferedReader::BufferedReader(BufferedReader&& other) noexcept:
 	m_io(std::move(other.m_io)) {
@@ -91,6 +97,14 @@ BufferedReader& BufferedReader::operator=(BufferedReader&& other) noexcept {
 		}
 	}
 	return *this;
+}
+
+const StormByte::String::String& BufferedReader::Path() const noexcept {
+	return m_io ? m_io->Path() : EmptyPath();
+}
+
+enum Location BufferedReader::Location() const noexcept {
+	return m_io ? m_io->Location() : Location::Local;
 }
 
 BufferedReader::operator bool() const noexcept {

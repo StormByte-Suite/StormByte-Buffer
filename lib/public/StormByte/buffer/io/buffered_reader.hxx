@@ -45,6 +45,7 @@
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/string/string.hxx>
 
 #include <chrono>
 #include <cstddef>
@@ -355,6 +356,22 @@ namespace StormByte {
 					 */
 
 					/**
+					 * @brief Locator stored at construction. Does not change.
+					 *
+					 * A file path, @c socket://… or @c http://… . A file leaf's
+					 * path is always a local filesystem path.
+					 *
+					 * @return Owned text. Empty if moved-from.
+					 */
+					const StormByte::String::String& Path() const noexcept;
+
+					/**
+					 * @brief Where @ref Path points. Does not change.
+					 * @return @ref Location::Local or @ref Location::Remote. @ref Location::Local if moved-from.
+					 */
+					enum Location Location() const noexcept;
+
+					/**
 					 * @brief Whether the source is prepared to read.
 					 * @return @c true if @ref State is @ref State::Idle and not @ref EoF.
 					 */
@@ -600,11 +617,14 @@ namespace StormByte {
 				protected:
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
+					 * @param path Locator. Stored once.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param read_ahead Initial @ref ReadAhead in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 					 */
-					explicit BufferedReader(StormByte::ByteSize read_ahead = 0, StormByte::ByteSize max_memory = 0,
+					BufferedReader(StormByte::String::String path, enum Location location,
+						StormByte::ByteSize read_ahead = 0, StormByte::ByteSize max_memory = 0,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**

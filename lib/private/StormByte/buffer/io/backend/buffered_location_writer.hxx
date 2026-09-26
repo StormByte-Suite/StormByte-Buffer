@@ -42,7 +42,6 @@
 #pragma once
 
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/string/string.hxx>
 
 /**
  * @namespace StormByte
@@ -68,16 +67,15 @@ namespace StormByte {
 				 * @class BufferedLocationWriter
 				 * @brief Private state of @ref StormByte::Buffer::IO::BufferedLocationWriter.
 				 *
-				 * Owns the location string. Destroyed in this module.
+				 * Owns the probe flag. The locator lives on @ref IO::BufferedWriter.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedLocationWriter {
 					public:
 						/**
-						 * @brief Store the location and whether @ref Setup probes the device.
-						 * @param location Owned locator.
+						 * @brief Store whether @ref Setup probes the device.
 						 * @param probe True when windows were not passed to the constructor.
 						 */
-						BufferedLocationWriter(StormByte::String::String location, bool probe);
+						explicit BufferedLocationWriter(bool probe);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -105,20 +103,13 @@ namespace StormByte {
 						BufferedLocationWriter& operator=(BufferedLocationWriter&&) = delete;
 
 						/**
-						 * @brief Locator stored at construction.
-						 * @return Owned text. Not resolved.
-						 */
-						const StormByte::String::String& Location() const noexcept;
-
-						/**
 						 * @brief Whether @ref Setup should apply @ref Device::Window.
 						 * @return True for the locator-only constructor.
 						 */
 						bool Probe() const noexcept;
 
 					private:
-						StormByte::String::String m_location;	///< Locator given at construction.
-						bool m_probe;							///< True when Setup reads the device window.
+						bool m_probe;	///< True when Setup reads the device window.
 				};
 			}
 		}

@@ -98,13 +98,13 @@ namespace StormByte {
 
 					/**
 					 * @brief Store the path. Chunk, backpressure and MaxMemory come from @ref Setup.
-					 * @param path Locator. Stored once as @ref Location.
+					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
 					 */
 					explicit BufferedFileWriter(StormByte::String::String path);
 
 					/**
 					 * @brief Store the path and explicit ring knobs. Does not open.
-					 * @param path Locator. Stored once as @ref Location.
+					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.
 					 * @param max_wait Initial @ref MaxWait.
@@ -117,7 +117,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Store the path, page budget and ring knobs. Does not open.
-					 * @param path Locator. Stored once as @ref Location.
+					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.

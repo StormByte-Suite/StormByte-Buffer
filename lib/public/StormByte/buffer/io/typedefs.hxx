@@ -128,6 +128,34 @@ namespace StormByte {
 			}
 
 			/**
+			 * @enum Location
+			 * @brief Where the bytes of a file-like source or sink live.
+			 *
+			 * @ref Path is the locator text. This says what that text means.
+			 * @c Local is a filesystem path. @c Remote is anything else
+			 * (a socket URL, an HTTP URL, a custom scheme).
+			 *
+			 * @see BufferedLocationReader, BufferedLocationWriter
+			 */
+			enum class STORMBYTE_BUFFER_PUBLIC Location {
+				Local,	///< @ref Path is a filesystem path on this machine.
+				Remote	///< @ref Path names a non-local target.
+			};
+
+			/**
+			 * @brief Enumerator name of @p location.
+			 * @param location Where the bytes live.
+			 * @return Stable name, or empty if unknown.
+			 */
+			[[nodiscard]] constexpr std::string_view ToString(Location location) noexcept {
+				switch (location) {
+					case Location::Local:	return "Local";
+					case Location::Remote:	return "Remote";
+				}
+				return {};
+			}
+
+			/**
 			 * @struct Result
 			 * @brief Per-call status plus how many bytes this call transferred.
 			 *

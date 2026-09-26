@@ -46,17 +46,10 @@
 
 using namespace StormByte::Buffer::IO;
 
-namespace {
-	const StormByte::String::String& EmptyLocation() noexcept {
-		static const StormByte::String::String empty;
-		return empty;
-	}
-}
-
-BufferedLocationReader::BufferedLocationReader(StormByte::String::String location,
+BufferedLocationReader::BufferedLocationReader(StormByte::String::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory, const bool probe):
-	BufferedReader(read_ahead, max_memory),
-	m_io(std::make_unique<Backend::BufferedLocationReader>(std::move(location), probe)) {}
+	BufferedReader(std::move(path), location, read_ahead, max_memory),
+	m_io(std::make_unique<Backend::BufferedLocationReader>(probe)) {}
 
 BufferedLocationReader::BufferedLocationReader(BufferedLocationReader&& other) noexcept:
 	BufferedReader(std::move(other)),
@@ -70,14 +63,6 @@ BufferedLocationReader& BufferedLocationReader::operator=(BufferedLocationReader
 		m_io = std::move(other.m_io);
 	}
 	return *this;
-}
-
-const StormByte::String::String& BufferedLocationReader::Location() const noexcept {
-	return m_io ? m_io->Location() : EmptyLocation();
-}
-
-const StormByte::String::String& BufferedLocationReader::Path() const noexcept {
-	return Location();
 }
 
 StormByte::System::Device BufferedLocationReader::Device() const {

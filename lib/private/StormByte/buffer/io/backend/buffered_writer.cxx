@@ -53,10 +53,13 @@ using Status = StormByte::Buffer::IO::Status;
 using BinaryData = StormByte::BinaryData;
 using Position = StormByte::Buffer::Position;
 
-BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, const StormByte::ByteSize write_chunk,
+BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, StormByte::String::String path,
+		const IO::Location location, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
 		const StormByte::ByteSize max_memory):
 	m_owner(&owner),
+	m_path(std::move(path)),
+	m_location(location),
 	m_write_chunk(write_chunk),
 	m_back_pressure(back_pressure),
 	m_max_memory(max_memory),
@@ -73,6 +76,14 @@ BufferedWriter::~BufferedWriter() {
 
 void BufferedWriter::Rebind(IO::BufferedWriter& owner) noexcept {
 	m_owner = &owner;
+}
+
+const StormByte::String::String& BufferedWriter::Path() const noexcept {
+	return m_path;
+}
+
+IO::Location BufferedWriter::Location() const noexcept {
+	return m_location;
 }
 
 BufferedWriter::operator bool() const noexcept {

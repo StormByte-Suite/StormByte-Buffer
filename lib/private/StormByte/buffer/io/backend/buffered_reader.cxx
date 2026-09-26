@@ -97,9 +97,12 @@ namespace {
 	}
 }
 
-BufferedReader::BufferedReader(IO::BufferedReader& owner, const StormByte::ByteSize read_ahead,
+BufferedReader::BufferedReader(IO::BufferedReader& owner, StormByte::String::String path,
+		const IO::Location location, const StormByte::ByteSize read_ahead,
 		const StormByte::ByteSize max_memory, const std::chrono::milliseconds max_wait):
 	m_owner(&owner),
+	m_path(std::move(path)),
+	m_location(location),
 	m_read_ahead(read_ahead),
 	m_max_memory(max_memory),
 	m_max_wait(max_wait),
@@ -113,6 +116,14 @@ BufferedReader::~BufferedReader() {
 
 void BufferedReader::Rebind(IO::BufferedReader& owner) noexcept {
 	m_owner = &owner;
+}
+
+const StormByte::String::String& BufferedReader::Path() const noexcept {
+	return m_path;
+}
+
+IO::Location BufferedReader::Location() const noexcept {
+	return m_location;
 }
 
 BufferedReader::operator bool() const noexcept {

@@ -95,13 +95,13 @@ namespace StormByte {
 
 					/**
 					 * @brief Store the path. @ref ReadAhead comes from @ref Setup.
-					 * @param path Locator. Stored once as @ref Location.
+					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
 					 */
 					explicit BufferedFileReader(StormByte::String::String path);
 
 					/**
 					 * @brief Store the path and explicit knobs. Does not open.
-					 * @param path Locator. Stored once as @ref Location.
+					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
 					 * @param read_ahead Prefetch length. 0 disables prefetch.
 					 * @param max_memory Cache cap. 0 stores no cache.
 					 */

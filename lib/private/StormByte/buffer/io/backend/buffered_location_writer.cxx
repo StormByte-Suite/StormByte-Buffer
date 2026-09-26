@@ -41,19 +41,12 @@
 
 #include <StormByte/buffer/io/backend/buffered_location_writer.hxx>
 
-#include <utility>
-
 using namespace StormByte::Buffer::IO::Backend;
 
-BufferedLocationWriter::BufferedLocationWriter(StormByte::String::String location, const bool probe):
-	m_location(std::move(location)),
+BufferedLocationWriter::BufferedLocationWriter(const bool probe):
 	m_probe(probe) {}
 
 BufferedLocationWriter::~BufferedLocationWriter() = default;
-
-const StormByte::String::String& BufferedLocationWriter::Location() const noexcept {
-	return m_location;
-}
 
 bool BufferedLocationWriter::Probe() const noexcept {
 	return m_probe;

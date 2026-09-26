@@ -64,11 +64,11 @@ namespace {
 }
 
 BufferedFileReader::BufferedFileReader(StormByte::String::String path):
-	BufferedLocationReader(std::move(path), StormByte::ByteSize{0}, DefaultMaxMemory, true) {}
+	BufferedLocationReader(std::move(path), Location::Local, StormByte::ByteSize{0}, DefaultMaxMemory, true) {}
 
 BufferedFileReader::BufferedFileReader(StormByte::String::String path, const StormByte::ByteSize read_ahead,
 		const StormByte::ByteSize max_memory):
-	BufferedLocationReader(std::move(path), read_ahead, max_memory, false) {}
+	BufferedLocationReader(std::move(path), Location::Local, read_ahead, max_memory, false) {}
 
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	BufferedLocationReader(std::move(other)),
@@ -96,7 +96,7 @@ BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) no
 }
 
 StormByte::System::Device BufferedFileReader::OriginDevice() const {
-	return StormByte::System::Device{Location()};
+	return StormByte::System::Device{Path()};
 }
 
 Result BufferedFileReader::OriginOpen() {
