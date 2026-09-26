@@ -88,7 +88,7 @@ namespace StormByte::Buffer {
 
 		protected:
 			/**
-			 * @brief Format under `StormByte.Buffer.<child>`.
+			 * @brief Format under StormByte.Buffer.\<child\>.
 			 * @tparam Args Format argument types.
 			 * @param child Segment under `Buffer`.
 			 * @param fmt Format string.
