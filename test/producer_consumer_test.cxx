@@ -136,7 +136,7 @@ int test_producer_consumer_close_mechanism() {
 	const std::string fn = "test_producer_consumer_close_mechanism";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("BinaryData"));
+	ASSERT_TRUE(fn, producer.Write("Data"));
 	producer.Close();
 	ASSERT_FALSE(fn, producer.Write("MoreData"));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Size());
@@ -192,7 +192,7 @@ int test_producer_consumer_interleaved_operations() {
 int test_producer_consumer_move_semantics() {
 	const std::string fn = "test_producer_consumer_move_semantics";
 	Producer producer1;
-	ASSERT_TRUE(fn, producer1.Write("BinaryData"));
+	ASSERT_TRUE(fn, producer1.Write("Data"));
 	Producer producer2 = std::move(producer1);
 	ASSERT_TRUE(fn, producer2.Write("More"));
 	auto consumer = producer2.Consumer();

@@ -120,7 +120,7 @@ int test_ring_clean_after_seek() {
 int test_ring_close_mechanism() {
 	const std::string fn = "test_ring_close_mechanism";
 	Ring ring;
-	ASSERT_TRUE(fn, ring.Write("BinaryData"));
+	ASSERT_TRUE(fn, ring.Write("Data"));
 	ring.Close();
 	ASSERT_FALSE(fn, ring.Write("More"));
 	ASSERT_EQUAL(fn, ring.Size(), StormByte::ByteSize{4});
@@ -173,7 +173,7 @@ int test_ring_extract_destructive() {
 int test_ring_move_semantics() {
 	const std::string fn = "test_ring_move_semantics";
 	Ring r1;
-	ASSERT_TRUE(fn, r1.Write("BinaryData"));
+	ASSERT_TRUE(fn, r1.Write("Data"));
 	ASSERT_TRUE(fn, r1.Write("More"));
 	Ring r2 = std::move(r1);
 	ASSERT_EQUAL(fn, r2.Size(), StormByte::ByteSize{8});
