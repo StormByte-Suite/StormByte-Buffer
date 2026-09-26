@@ -58,10 +58,10 @@ if(ENABLE_DOC)
 
 	set(DOXYGEN_INCLUDE_PATH
 		"${CMAKE_SOURCE_DIR}/lib/public"
-		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/lib/public"
-		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/string/src/lib/public"
-		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/string/src/thirdparty/StormByte/base/src/lib/public"
 		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/logger/src/lib/public"
+		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/lib/public"
+		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/thirdparty/StormByte/string/src"
+		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/thirdparty/StormByte/string/src/thirdparty/StormByte/base/src"
 	)
 	set(DOXYGEN_STRIP_FROM_PATH "${CMAKE_SOURCE_DIR}")
 	set(DOXYGEN_STRIP_FROM_INC_PATH "${CMAKE_SOURCE_DIR}/lib/public")
