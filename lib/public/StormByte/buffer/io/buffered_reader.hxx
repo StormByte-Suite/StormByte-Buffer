@@ -43,10 +43,13 @@
 
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/parameters.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
+#include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/platform.h>
+#include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 
 #include <chrono>
@@ -89,9 +92,9 @@ namespace StormByte {
 			 *
 			 * Public base for byte origins. Callers take
 			 * @c const BufferedReader&. Leaves implement only the
-			 * @c Origin* hooks and may override @ref Setup. They do not
-			 * override @c Read, @c Peek, @c Seek, @c Open, @c Close or
-			 * @c Rewind.
+			 * @c Origin* hooks and may override @ref Setup and
+			 * @ref CreateTelemetry. They do not override @c Read,
+			 * @c Peek, @c Seek, @c Open, @c Close or @c Rewind.
 			 *
 			 * @par Binary only
 			 * Octets only (@ref StormByte::BinaryData / @ref FIFO / @c std::span<std::byte>). No text mode.
@@ -183,8 +186,12 @@ namespace StormByte {
 			 * an origin pull.
 			 *
 			 * @par Telemetry
-			 * @ref Telemetry copies counters under the coordinator lock.
-			 * Accumulators start at construction and do not reset on Close.
+			 * @ref Telemetry returns a const @c StormByte::Shared of
+			 * @ref StormByte::Buffer::ReadTelemetry. The user cannot reseat
+			 * the handle. The office updates the same object. The dynamic
+			 * type is @ref IO::ReadTelemetry unless a leaf overrides
+			 * @ref CreateTelemetry. Accumulators start at construction
+			 * and do not reset on Close. @ref MeanRate is the caller rate.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. Moved-from is Unavailable.
@@ -206,129 +213,6 @@ namespace StormByte {
 					class Parameters: public ReaderParameters {
 						public:
 							using ReaderParameters::ReaderParameters;
-					};
-
-					/**
-					 * @struct Telemetry
-					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
-					 *
-					 * Byte fields are @ref StormByte::ByteSize. Event counts are
-					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
-					 * Accumulators start at construction and do not reset on
-					 * Close / Rewind / Open. Prefetch is not @ref Delivered.
-					 * @c Peek does not move @ref Delivered, @ref HitAhead,
-					 * @ref HitBack, @ref Miss, @ref Origin or the Seek* counts.
-					 *
-					 * On consuming @c Read:
-					 * @c Delivered == @c HitAhead + @c HitBack + @c Miss.
-					 * @c Origin counts every @ref OriginPull (Serve and worker).
-					 * @c Origin >= @c Miss. Mean wait is
-					 * @c WaitTotal / @c WaitSamples when samples > 0.
-					 *
-					 * @c SeekLogical is each successful public @ref Seek.
-					 * @c SeekOrigin is each @ref OriginSeek that ran.
-					 * @c SeekSavedFull / @c SeekSavedPartial close when the
-					 * next @ref Seek or @ref Close ends the epoch.
-					 */
-					struct Telemetry {
-						/**
-						 * @brief Octets @ref Read delivered to the caller.
-						 */
-						StormByte::ByteSize Delivered {};
-
-						/**
-						 * @brief Of @ref Delivered, cache octets never consumed before
-						 *        (read-ahead / first touch of that offset).
-						 */
-						StormByte::ByteSize HitAhead {};
-
-						/**
-						 * @brief Of @ref Delivered, cache octets at an offset already
-						 *        passed by @ref Tell (page-cache replay after Seek).
-						 */
-						StormByte::ByteSize HitBack {};
-
-						/**
-						 * @brief Of @ref Delivered, octets pulled from the origin in that Read.
-						 */
-						StormByte::ByteSize Miss {};
-
-						/**
-						 * @brief Octets transferred by @ref OriginPull this session.
-						 */
-						StormByte::ByteSize Origin {};
-
-						/**
-						 * @brief Resident cache octets now.
-						 */
-						StormByte::ByteSize Cached {};
-
-						/**
-						 * @brief Maximum @ref Cached since construction.
-						 */
-						StormByte::ByteSize CachedPeak {};
-
-						/**
-						 * @brief @ref MaxMemory at this snapshot.
-						 */
-						StormByte::ByteSize Cap {};
-
-						/**
-						 * @brief Successful public @ref Seek calls.
-						 */
-						std::size_t SeekLogical {0};
-
-						/**
-						 * @brief @ref OriginSeek calls that reached the device.
-						 */
-						std::size_t SeekOrigin {0};
-
-						/**
-						 * @brief Closed Seek epochs that never called @ref OriginSeek
-						 *        after a cache hit at the target.
-						 */
-						std::size_t SeekSavedFull {0};
-
-						/**
-						 * @brief Closed Seek epochs that called @ref OriginSeek
-						 *        after a cache hit at the target.
-						 */
-						std::size_t SeekSavedPartial {0};
-
-						/**
-						 * @brief Times @ref Read / @ref Peek returned TryAgain.
-						 */
-						std::size_t TryAgain {0};
-
-						/**
-						 * @brief Times resident cache reached @ref Cap while Cap > 0.
-						 */
-						std::size_t Saturated {0};
-
-						/**
-						 * @brief Cache spans dropped by MaxMemory eviction.
-						 */
-						std::size_t Evicted {0};
-
-						/**
-						 * @brief Shortest sampled Read/Peek wait. 0 if WaitSamples == 0.
-						 */
-						std::chrono::nanoseconds WaitMin {};
-
-						/**
-						 * @brief Longest sampled Read/Peek wait. 0 if WaitSamples == 0.
-						 */
-						std::chrono::nanoseconds WaitMax {};
-
-						/**
-						 * @brief Sum of sampled waits.
-						 */
-						std::chrono::nanoseconds WaitTotal {};
-
-						/**
-						 * @brief Sampled waits (work or timed-out TryAgain). Not empty no-ops.
-						 */
-						std::size_t WaitSamples {0};
 					};
 
 					/**
@@ -459,7 +343,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Read @p n bytes into @p dest, consuming cache / origin.
-					 * @param n Byte count. Zero serves the current span from @ref Tell.
+					 * @param n Byte count. Zero serves the current cached span from @ref Tell.
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
@@ -566,10 +450,14 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Copy current telemetry.
-					 * @return Snapshot. Does not pull from the origin.
+					 * @brief Shared read counters. Same instance for the life of this reader.
+					 * @return Const handle. Empty if moved-from.
+					 *
+					 * The user cannot reseat the handle. The office updates
+					 * the same object. Survivors keep the last values. A leaf
+					 * may store a wider dynamic type via @ref CreateTelemetry.
 					 */
-					virtual const struct Telemetry Telemetry() const noexcept final;
+					const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
 
 					/**
 					 * @}
@@ -674,6 +562,16 @@ namespace StormByte {
 					 * The most-derived vtable is live.
 					 */
 					virtual void Setup();
+
+					/**
+					 * @brief Allocate the telemetry object this instance will keep.
+					 * @return Shared handle. Default is @ref IO::ReadTelemetry.
+					 *
+					 * Called once, after the most-derived constructor, the
+					 * first time telemetry is needed. A remote leaf returns
+					 * a further-derived type. Must not return empty.
+					 */
+					virtual StormByte::Shared<StormByte::Buffer::ReadTelemetry> CreateTelemetry() const;
 
 					/**
 					 * @name Origin hooks

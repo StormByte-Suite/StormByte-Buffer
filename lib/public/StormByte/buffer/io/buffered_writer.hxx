@@ -43,10 +43,13 @@
 
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/parameters.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
+#include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/platform.h>
+#include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 
 #include <chrono>
@@ -95,9 +98,9 @@ namespace StormByte {
 			 *
 			 * Public base for byte destinations. Leaves implement the
 			 * @c Origin* hooks and may override @ref Setup, @ref Seek,
-			 * @ref Size and @ref WillWrite. They do not override
-			 * @c Write, @c Flush, @c Open, @c Close, @c Rewind or
-			 * @c Truncate.
+			 * @ref Size, @ref WillWrite and @ref CreateTelemetry. They
+			 * do not override @c Write, @c Flush, @c Open, @c Close,
+			 * @c Rewind or @c Truncate.
 			 *
 			 * @par Binary only
 			 * Octets only. No text mode.
@@ -174,6 +177,11 @@ namespace StormByte {
 			 * and calls @ref OriginTruncate. @ref Tell, HighWater and
 			 * Materialized become 0.
 			 *
+			 * Public @ref Flush and the Flush inside @ref Close count
+			 * toward @ref MeanRate. Internal worker / GC drains do not.
+			 * A cache Write can look like GiB/s; that is the caller
+			 * rate. The explicit Flush is what reflects the origin.
+			 *
 			 * @par Seek / Size
 			 * @ref Seek moves only @ref Tell. It does not call
 			 * @ref OriginSeek and does not Flush. Default @ref Seek
@@ -201,9 +209,13 @@ namespace StormByte {
 			 * network filesystem can still make the later @c Write fail.
 			 *
 			 * @par Telemetry
-			 * @ref Telemetry copies counters under the coordinator lock.
+			 * @ref Telemetry returns a const @c StormByte::Shared of
+			 * @ref StormByte::Buffer::WriteTelemetry. The user cannot
+			 * reseat the handle. The office updates the same object.
+			 * Default dynamic type is @ref IO::WriteTelemetry.
 			 * Accumulators start at construction and do not reset on Close.
 			 * @c Materialized and @c HighWater are levels, not accumulators.
+			 * @ref MeanRate is the caller rate, not disk throughput.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
@@ -227,152 +239,6 @@ namespace StormByte {
 					class Parameters: public WriterParameters {
 						public:
 							using WriterParameters::WriterParameters;
-					};
-
-					/**
-					 * @struct Telemetry
-					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
-					 *
-					 * Byte fields are @ref StormByte::ByteSize. Event counts are
-					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
-					 * Accumulators start at construction and do not reset on
-					 * Close / Rewind / Open / Truncate.
-					 *
-					 * @c Accepted == @c Behind + @c Direct.
-					 * Durable progress is @c Materialized / HighWater when
-					 * HighWater > 0. Mean wait is @c WaitTotal / @c WaitSamples
-					 * when samples > 0.
-					 *
-					 * Seek elision uses the same names as
-					 * @ref StormByte::Buffer::IO::BufferedReader::Telemetry.
-					 * An epoch is one logical @ref Seek until the next
-					 * @ref Seek or @ref Close. @ref Flush does not close
-					 * an epoch.
-					 */
-					struct Telemetry {
-						/**
-						 * @brief Octets accepted by a successful @ref Write.
-						 */
-						StormByte::ByteSize Accepted {};
-
-						/**
-						 * @brief Of @ref Accepted, octets that did not hit the origin on the caller thread.
-						 */
-						StormByte::ByteSize Behind {};
-
-						/**
-						 * @brief Of @ref Accepted, octets pushed on the caller thread.
-						 */
-						StormByte::ByteSize Direct {};
-
-						/**
-						 * @brief Octets pushed through @ref OriginPush since construction.
-						 */
-						StormByte::ByteSize Origin {};
-
-						/**
-						 * @brief Durable origin length now. Not an accumulator.
-						 *
-						 * What the device already holds. Overwrites do not
-						 * inflate this. After Flush / Close of a sequential
-						 * session it equals HighWater.
-						 */
-						StormByte::ByteSize Materialized {};
-
-						/**
-						 * @brief Maximum logical @ref Tell since Open / Truncate.
-						 *
-						 * Durable progress is Materialized / HighWater when
-						 * HighWater > 0. Do not divide by Tell.
-						 */
-						StormByte::ByteSize HighWater {};
-
-						/**
-						 * @brief Writes that landed in a resident page at or after the previous high-water.
-						 */
-						StormByte::ByteSize HitAhead {};
-
-						/**
-						 * @brief Writes that landed in a resident page behind the high-water.
-						 */
-						StormByte::ByteSize HitBack {};
-
-						/**
-						 * @brief Writes that created or extended a page (origin hole).
-						 */
-						StormByte::ByteSize Miss {};
-
-						/**
-						 * @brief Octets not yet on the origin (page map plus drain pipe).
-						 */
-						StormByte::ByteSize Dirty {};
-
-						/**
-						 * @brief Maximum @ref Dirty since construction.
-						 */
-						StormByte::ByteSize DirtyPeak {};
-
-						/**
-						 * @brief Ring cap in bytes at this snapshot, or 0 if the ring is off.
-						 *
-						 * Not @ref MaxMemory.
-						 */
-						StormByte::ByteSize Cap {};
-
-						/**
-						 * @brief Logical @ref Seek calls (Tell only).
-						 */
-						std::size_t SeekLogical {0};
-
-						/**
-						 * @brief @ref OriginSeek calls.
-						 */
-						std::size_t SeekOrigin {0};
-
-						/**
-						 * @brief Closed epochs with no @ref OriginSeek.
-						 */
-						std::size_t SeekSavedFull {0};
-
-						/**
-						 * @brief Closed epochs that hit dirty pages and later needed @ref OriginSeek.
-						 */
-						std::size_t SeekSavedPartial {0};
-
-						/**
-						 * @brief Times @ref Write returned TryAgain.
-						 */
-						std::size_t TryAgain {0};
-
-						/**
-						 * @brief Times Dirty reached @ref Cap while Cap > 0.
-						 */
-						std::size_t Saturated {0};
-
-						/**
-						 * @brief Times GC materialised a page because Dirty exceeded MaxMemory.
-						 */
-						std::size_t Evicted {0};
-
-						/**
-						 * @brief Shortest sampled Write wait. 0 if WaitSamples == 0.
-						 */
-						std::chrono::nanoseconds WaitMin {};
-
-						/**
-						 * @brief Longest sampled Write wait. 0 if WaitSamples == 0.
-						 */
-						std::chrono::nanoseconds WaitMax {};
-
-						/**
-						 * @brief Sum of sampled waits.
-						 */
-						std::chrono::nanoseconds WaitTotal {};
-
-						/**
-						 * @brief Sampled waits (accepted Write or timed OriginPush). Not instant TryAgain.
-						 */
-						std::size_t WaitSamples {0};
 					};
 
 					/**
@@ -463,6 +329,7 @@ namespace StormByte {
 					 *
 					 * Idempotent on an already closed instance. Blocking.
 					 * Flush failure leaves @ref State::Fault and returns false.
+					 * The Flush counts toward @ref MeanRate.
 					 */
 					virtual bool Close() final;
 
@@ -483,7 +350,8 @@ namespace StormByte {
 					 * @return @ref Status::Ok, @ref Status::Error or
 					 *         @ref Status::Failed. Never @ref Status::TryAgain.
 					 *
-					 * Blocking. @ref Tell is unchanged.
+					 * Blocking. @ref Tell is unchanged. Counts toward
+					 * @ref MeanRate. Internal worker drains do not.
 					 */
 					virtual Result Flush() final;
 
@@ -580,10 +448,13 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Copy current telemetry.
-					 * @return Snapshot. Does not push to the origin.
+					 * @brief Shared write counters. Same instance for the life of this writer.
+					 * @return Const handle. Empty if moved-from.
+					 *
+					 * The user cannot reseat the handle. The office updates
+					 * the same object. Survivors keep the last values.
 					 */
-					virtual const struct Telemetry Telemetry() const noexcept final;
+					const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Telemetry() const noexcept;
 
 					/**
 					 * @}
@@ -709,6 +580,15 @@ namespace StormByte {
 					 * The most-derived vtable is live.
 					 */
 					virtual void Setup();
+
+					/**
+					 * @brief Allocate the telemetry object this instance will keep.
+					 * @return Shared handle. Default is @ref IO::WriteTelemetry.
+					 *
+					 * Called once, after the most-derived constructor, the
+					 * first time telemetry is needed. Must not return empty.
+					 */
+					virtual StormByte::Shared<StormByte::Buffer::WriteTelemetry> CreateTelemetry() const;
 
 					/**
 					 * @brief Whether @p n more bytes can be accepted now.

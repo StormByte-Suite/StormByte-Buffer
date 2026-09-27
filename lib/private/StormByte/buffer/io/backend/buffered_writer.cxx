@@ -106,6 +106,8 @@ void BufferedWriter::SetTell(const StormByte::ByteSize offset) noexcept {
 	m_tell = offset;
 	if (m_tell > m_high_water)
 		m_high_water = m_tell;
+	if (IO::WriteTelemetry* io = IoTelemetry())
+		io->m_high_water = m_high_water;
 }
 
 bool BufferedWriter::BufferedMode() const noexcept {
@@ -165,35 +167,24 @@ void BufferedWriter::CloseSeekEpoch() noexcept {
 	m_epoch_open = false;
 	m_epoch_hit = false;
 	m_epoch_origin = false;
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_seek_saved_full = m_seek_saved_full;
+		io->m_seek_saved_partial = m_seek_saved_partial;
+	}
 }
 
-struct StormByte::Buffer::IO::BufferedWriter::Telemetry BufferedWriter::Telemetry() const noexcept {
-	std::lock_guard lock(m_mutex);
-	struct StormByte::Buffer::IO::BufferedWriter::Telemetry out;
-	out.Accepted = m_accepted;
-	out.Behind = m_behind;
-	out.Direct = m_direct;
-	out.Origin = m_origin_bytes;
-	out.Materialized = m_materialized;
-	out.HighWater = m_high_water;
-	out.HitAhead = m_hit_ahead;
-	out.HitBack = m_hit_back;
-	out.Miss = m_miss;
-	out.Dirty = TotalDirty();
-	out.DirtyPeak = m_dirty_peak;
-	out.Cap = PendingCap();
-	out.SeekLogical = m_seek_logical;
-	out.SeekOrigin = m_seek_origin;
-	out.SeekSavedFull = m_seek_saved_full;
-	out.SeekSavedPartial = m_seek_saved_partial;
-	out.TryAgain = m_try_again;
-	out.Saturated = m_saturated;
-	out.Evicted = m_evicted;
-	out.WaitMin = m_wait_min;
-	out.WaitMax = m_wait_max;
-	out.WaitTotal = m_wait_total;
-	out.WaitSamples = m_wait_samples;
-	return out;
+void BufferedWriter::BindTelemetry(StormByte::Shared<StormByte::Buffer::WriteTelemetry> telemetry) noexcept {
+	m_telemetry = std::move(telemetry);
+}
+
+const StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
+	return m_telemetry;
+}
+
+StormByte::Buffer::IO::WriteTelemetry* BufferedWriter::IoTelemetry() const noexcept {
+	if (!m_telemetry)
+		return nullptr;
+	return dynamic_cast<StormByte::Buffer::IO::WriteTelemetry*>(&*m_telemetry);
 }
 
 void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noexcept {
@@ -209,6 +200,12 @@ void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noex
 	}
 	m_wait_total += elapsed;
 	++m_wait_samples;
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_wait_min = m_wait_min;
+		io->m_wait_max = m_wait_max;
+		io->m_wait_total = m_wait_total;
+		io->m_wait_samples = m_wait_samples;
+	}
 }
 
 void BufferedWriter::NoteDirty() const noexcept {
@@ -218,6 +215,12 @@ void BufferedWriter::NoteDirty() const noexcept {
 	const StormByte::ByteSize cap = PendingCap();
 	if (cap > StormByte::ByteSize{0} && m_ring && m_ring->Available() >= cap)
 		++m_saturated;
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_dirty = now;
+		io->m_dirty_peak = m_dirty_peak;
+		io->m_cap = cap;
+		io->m_saturated = m_saturated;
+	}
 }
 
 bool BufferedWriter::Open() {
@@ -344,6 +347,8 @@ Result BufferedWriter::EnsureOrigin(const StormByte::ByteSize absolute) {
 	++m_seek_origin;
 	if (m_epoch_open)
 		m_epoch_origin = true;
+	if (IO::WriteTelemetry* io = IoTelemetry())
+		io->m_seek_origin = m_seek_origin;
 	return { Status::Ok, 0 };
 }
 
@@ -493,6 +498,10 @@ Result BufferedWriter::MaterializeFrom(std::unique_lock<std::mutex>& lock,
 	const StormByte::ByteSize end = start + n;
 	if (end > m_materialized)
 		m_materialized = end;
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_origin = m_origin_bytes;
+		io->m_materialized = m_materialized;
+	}
 	return { Status::Ok, n };
 }
 
@@ -514,6 +523,8 @@ Result BufferedWriter::CollectGarbage() {
 			victim = std::prev(m_pages.end());
 
 		++m_evicted;
+		if (IO::WriteTelemetry* io = IoTelemetry())
+			io->m_evicted = m_evicted;
 		const Result evicted = MaterializeFrom(lock, victim);
 		if (evicted.status != Status::Ok)
 			return evicted;
@@ -532,6 +543,7 @@ Result BufferedWriter::MaterializeAll() {
 }
 
 Result BufferedWriter::Flush() {
+	const auto started = std::chrono::steady_clock::now();
 	const Result pages = MaterializeAll();
 	if (pages.status != Status::Ok)
 		return pages;
@@ -573,6 +585,11 @@ Result BufferedWriter::Flush() {
 				m_state = State::Fault;
 			return visible;
 		}
+		if (IO::WriteTelemetry* io = IoTelemetry()) {
+			io->DeltaOperation(StormByte::ByteSize{0},
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - started));
+		}
 	}
 	return { Status::Ok, 0 };
 }
@@ -604,6 +621,11 @@ Result BufferedWriter::Truncate() {
 	m_origin_pos = StormByte::ByteSize{0};
 	m_origin_cursor_dirty = true;
 	m_materialized = StormByte::ByteSize{0};
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_high_water = m_high_water;
+		io->m_materialized = m_materialized;
+		io->m_dirty = StormByte::ByteSize{0};
+	}
 	return { Status::Ok, 0 };
 }
 
@@ -633,6 +655,10 @@ Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
 	m_epoch_hit = false;
 	m_epoch_origin = false;
 	++m_seek_logical;
+	if (IO::WriteTelemetry* io = IoTelemetry()) {
+		io->m_seek_logical = m_seek_logical;
+		io->m_high_water = m_high_water;
+	}
 	return { Status::Ok, 0 };
 }
 
@@ -646,6 +672,8 @@ Result BufferedWriter::Write(const FIFO& src) {
 			return { Status::Failed, 0 };
 		if (!WouldAccept(need)) {
 			++m_try_again;
+			if (IO::WriteTelemetry* io = IoTelemetry())
+				io->m_try_again = m_try_again;
 			return { Status::TryAgain, 0 };
 		}
 	}
@@ -668,6 +696,8 @@ Result BufferedWriter::Write(const std::span<const std::byte> src) {
 			return { Status::Ok, 0 };
 		if (!WouldAccept(StormByte::ByteSize{src.size()})) {
 			++m_try_again;
+			if (IO::WriteTelemetry* io = IoTelemetry())
+				io->m_try_again = m_try_again;
 			return { Status::TryAgain, 0 };
 		}
 	}
@@ -695,6 +725,16 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			m_behind = m_behind + n;
 			NoteDirty();
 			NoteWait(std::chrono::steady_clock::now() - started);
+			if (IO::WriteTelemetry* io = IoTelemetry()) {
+				io->m_accepted = m_accepted;
+				io->m_behind = m_behind;
+				io->m_hit_ahead = m_hit_ahead;
+				io->m_hit_back = m_hit_back;
+				io->m_miss = m_miss;
+				io->m_high_water = m_high_water;
+				io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - started));
+			}
 		}
 		const Result gc = CollectGarbage();
 		if (gc.status != Status::Ok)
@@ -744,6 +784,15 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		m_accepted = m_accepted + n;
 		m_direct = m_direct + n;
 		NoteWait(std::chrono::steady_clock::now() - started);
+		if (IO::WriteTelemetry* io = IoTelemetry()) {
+			io->m_accepted = m_accepted;
+			io->m_direct = m_direct;
+			io->m_origin = m_origin_bytes;
+			io->m_materialized = m_materialized;
+			io->m_high_water = m_high_water;
+			io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - started));
+		}
 		return { Status::Ok, n };
 	}
 
@@ -783,6 +832,13 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		m_behind = m_behind + n;
 		NoteDirty();
 		NoteWait(std::chrono::steady_clock::now() - started);
+		if (IO::WriteTelemetry* io = IoTelemetry()) {
+			io->m_accepted = m_accepted;
+			io->m_behind = m_behind;
+			io->m_high_water = m_high_water;
+			io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - started));
+		}
 	}
 	RequestDrain();
 	return { Status::Ok, n };
@@ -967,6 +1023,10 @@ void BufferedWriter::Worker() {
 				m_origin_bytes = m_origin_bytes + StormByte::ByteSize{front.size()};
 				if (m_origin_pos > m_materialized)
 					m_materialized = m_origin_pos;
+				if (IO::WriteTelemetry* io = IoTelemetry()) {
+					io->m_origin = m_origin_bytes;
+					io->m_materialized = m_materialized;
+				}
 			}
 		}
 

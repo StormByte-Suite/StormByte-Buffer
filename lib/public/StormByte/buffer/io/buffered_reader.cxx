@@ -122,10 +122,16 @@ void BufferedReader::SetState(const enum State state) noexcept {
 
 void BufferedReader::Setup() {}
 
+StormByte::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::CreateTelemetry() const {
+	return StormByte::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<IO::ReadTelemetry>();
+}
+
 bool BufferedReader::Open() {
 	if (!m_io)
 		return false;
 	Setup();
+	if (!m_io->Telemetry())
+		m_io->BindTelemetry(CreateTelemetry());
 	return m_io->Open();
 }
 
@@ -205,9 +211,11 @@ std::optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
 	return m_io->Size();
 }
 
-const struct BufferedReader::Telemetry BufferedReader::Telemetry() const noexcept {
+const StormByte::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Telemetry() const noexcept {
 	if (!m_io)
 		return {};
+	if (!m_io->Telemetry())
+		m_io->BindTelemetry(CreateTelemetry());
 	return m_io->Telemetry();
 }
 

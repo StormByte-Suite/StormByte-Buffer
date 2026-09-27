@@ -41,7 +41,9 @@ If you landed here from a release link and have not read the tree:
 - Reader logical seek. `Seek` updates `Tell` immediately. If the target is already cached, the origin is not moved. When the next `Read` runs off the cached range, one real `OriginSeek` resumes prefetch. Documented on the public reader: `Tell` never lies.
 - `BufferedWriter` `MaxMemory` and a dirty page map. Writes are lazy until `MaxMemory`, `Flush` or `Close`. Typical case is a nearby backward correction plus continue-at-Tell. Far-future islands are supported while RAM lasts; eviction prefers the oldest dirty page behind the origin cursor (a real write, possibly with a real seek).
 - Writer logical seek. Same idea as the reader: `Seek` is logical. A patch that lands on a dirty page does not touch the device. Materializing a page (evict / flush / close) is when the origin moves.
-- `BufferedReader::Telemetry` / `BufferedWriter::Telemetry` and `Telemetry() const`. Snapshot of delivered/accepted bytes, cache hits (ahead/back), misses, dirty/cached occupancy and peak, cap, origin vs logical seeks, seeks saved full/partial, try-again, saturated, evicted, and wait samples (min/max/total). Prefetch is not counted as delivered. Writer `Materialized` is bytes that reached the origin; after `Close`, `Accepted == Materialized` on a clean session.
+- Layered telemetry in `StormByte::Buffer` (`telemetry.hxx`) and `StormByte::Buffer::IO` (`io/telemetry.hxx`). Base `ReadTelemetry` / `WriteTelemetry` hold delivered/written bytes and `MeanRate`. IO types add cache/origin/seek/wait counters. `MeanRate` is the caller-visible effective rate (`ByteSize/s`), including cache hits; it is not device throughput. `DeltaOperation` updates rate without a mutex.
+- `BufferedReader::Telemetry()` / `BufferedWriter::Telemetry()` return `const StormByte::Shared<…>`. Same object for the life of the office; the handle cannot be reseated. A leaf may widen the dynamic type via `CreateTelemetry()`. Accumulators do not reset on Close. Writer public `Flush` (and the Flush inside `Close`) counts toward `MeanRate`; internal worker / GC drains do not.
+- Flatten: `operator StormByte::String::String` (out of line) and `STORMBYTE_FORCE_INLINE operator std::string()` so `Logger << *telemetry` stays on the caller TU.
 
 ### Changed
 
@@ -56,6 +58,7 @@ If you landed here from a release link and have not read the tree:
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
 - Writer contract: lazy write up to `MaxMemory`. More random access needs more `MaxMemory` or islands get evicted (a real write + seek).
+- Nested `BufferedReader::Telemetry` / `BufferedWriter::Telemetry` structs are gone. Counters live on the Shared objects; getters, not public fields.
 - `LockFreeRing::FrontSpan` returns a snapshot copied under the wait mutex so a concurrent `Grow` cannot invalidate the pointer the drain worker is pushing.
 - Origin I/O on the writer (`OriginSeek` / `OriginPush` / `OriginFlush` / `OriginOpen` / `OriginClose` / `OriginTruncate`) is serialized against the drain worker. `Flush` waits until the ring is empty **and** the worker has published the origin cursor (`!m_drain_run`).
 - Dual license layout: `LICENSE` is the short header text; `COPYING.LGPLv3` is the LGPL text.
@@ -73,7 +76,7 @@ If you landed here from a release link and have not read the tree:
 ### Tests
 
 - `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
-- Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints.
+- Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
 
 [2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0

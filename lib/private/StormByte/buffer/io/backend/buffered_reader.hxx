@@ -43,9 +43,11 @@
 
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 
 #include <atomic>
@@ -316,10 +318,16 @@ namespace StormByte {
 						 */
 
 						/**
-						 * @brief Copy current telemetry under @c m_mutex.
-						 * @return Snapshot. Does not pull.
+						 * @brief Attach the telemetry object created by the leaf.
+						 * @param telemetry Shared handle. Must not be empty.
 						 */
-						struct IO::BufferedReader::Telemetry Telemetry() const noexcept;
+						void BindTelemetry(StormByte::Shared<StormByte::Buffer::ReadTelemetry> telemetry) noexcept;
+
+						/**
+						 * @brief Shared read counters.
+						 * @return Handle. Empty until BindTelemetry.
+						 */
+						const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
 
 						/**
 						 * @}
@@ -498,55 +506,63 @@ namespace StormByte {
 						 */
 						void CloseSeekEpoch() const noexcept;
 
-						IO::BufferedReader* m_owner;					///< Public leaf (hooks).
-						StormByte::String::String m_path;				///< Locator. Not changed.
-						IO::Location m_location {IO::Location::Local};	///< Local or remote. Not changed.
+						/**
+						 * @brief IO telemetry when the bound object is that type.
+						 * @return Pointer or null.
+						 */
+						IO::ReadTelemetry* IoTelemetry() const noexcept;
 
-						mutable std::mutex m_mutex;						///< Session + map.
-						mutable std::condition_variable m_cv;			///< Worker / flush waits.
+						IO::BufferedReader* m_owner;							///< Public leaf (hooks).
+						StormByte::String::String m_path;						///< Locator. Not changed.
+						IO::Location m_location {IO::Location::Local};			///< Local or remote. Not changed.
 
-						StormByte::ByteSize m_read_ahead {0};				///< Prefetch target length.
-						StormByte::ByteSize m_max_memory {0};				///< Approximate cache cap.
-						std::chrono::milliseconds m_max_wait {0};		///< Read wait cap. 0 = forever.
+						mutable std::mutex m_mutex;								///< Session + map.
+						mutable std::condition_variable m_cv;					///< Worker / flush waits.
 
-						enum State m_state { State::Unavailable };		///< Session state.
-						bool m_open {false};							///< Session armed (Open until Close).
-						mutable bool m_failed {false};					///< Permanent failure.
-						mutable bool m_origin_exhausted {false};		///< Device EOF (not public EoF).
-						mutable StormByte::ByteSize m_tell {0};				///< Logical cursor. AVIO contract.
-						mutable StormByte::ByteSize m_max_tell {0};			///< High-water of consumed Tell.
-						mutable StormByte::ByteSize m_origin_pos {0};		///< Device cursor. Not updated by Seek.
-						mutable bool m_origin_valid {false};			///< Whether @c m_origin_pos is known.
-						mutable bool m_hold_prefetch {false};			///< Fake seek: prefetch off until catch-up or OriginSeek.
+						StormByte::ByteSize m_read_ahead {0};					///< Prefetch target length.
+						StormByte::ByteSize m_max_memory {0};					///< Approximate cache cap.
+						std::chrono::milliseconds m_max_wait {0};				///< Read wait cap. 0 = forever.
+
+						enum State m_state { State::Unavailable };				///< Session state.
+						bool m_open {false};									///< Session armed (Open until Close).
+						mutable bool m_failed {false};							///< Permanent failure.
+						mutable bool m_origin_exhausted {false};				///< Device EOF (not public EoF).
+						mutable StormByte::ByteSize m_tell {0};					///< Logical cursor. AVIO contract.
+						mutable StormByte::ByteSize m_max_tell {0};				///< High-water of consumed Tell.
+						mutable StormByte::ByteSize m_origin_pos {0};			///< Device cursor. Not updated by Seek.
+						mutable bool m_origin_valid {false};					///< Whether @c m_origin_pos is known.
+						mutable bool m_hold_prefetch {false};					///< Fake seek: prefetch off until catch-up or OriginSeek.
 
 						mutable std::map<StormByte::ByteSize, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
 
-						mutable StormByte::ByteSize m_delivered {0};		///< Telemetry.Delivered.
-						mutable StormByte::ByteSize m_hit_ahead {0};		///< Telemetry.HitAhead.
-						mutable StormByte::ByteSize m_hit_back {0};			///< Telemetry.HitBack.
-						mutable StormByte::ByteSize m_miss {0};				///< Telemetry.Miss.
-						mutable StormByte::ByteSize m_origin {0};			///< Telemetry.Origin.
-						mutable StormByte::ByteSize m_cached_peak {0};		///< Telemetry.CachedPeak.
-						mutable std::size_t m_seek_logical {0};			///< Telemetry.SeekLogical.
-						mutable std::size_t m_seek_origin {0};			///< Telemetry.SeekOrigin.
-						mutable std::size_t m_seek_saved_full {0};		///< Telemetry.SeekSavedFull.
-						mutable std::size_t m_seek_saved_partial {0};	///< Telemetry.SeekSavedPartial.
-						mutable bool m_seek_epoch {false};				///< Epoch open until next Seek/Close.
-						mutable bool m_seek_had_cache {false};			///< CoverageFrom(target) at Seek.
-						mutable bool m_seek_did_origin {false};			///< OriginSeek hook ran in epoch.
-						mutable std::size_t m_try_again {0};			///< Telemetry.TryAgain.
-						mutable std::size_t m_saturated {0};			///< Telemetry.Saturated.
-						mutable std::size_t m_evicted {0};				///< Telemetry.Evicted.
-						mutable std::chrono::nanoseconds m_wait_min {0};	///< Telemetry.WaitMin.
-						mutable std::chrono::nanoseconds m_wait_max {0};	///< Telemetry.WaitMax.
-						mutable std::chrono::nanoseconds m_wait_total {0};	///< Telemetry.WaitTotal.
-						mutable std::size_t m_wait_samples {0};			///< Telemetry.WaitSamples.
+						mutable StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;	///< Session counters.
 
-						mutable std::atomic<bool> m_stop {false};		///< Worker teardown.
-						mutable std::atomic<bool> m_cancel_prefetch {false}; ///< Flush in-flight pull.
-						mutable bool m_prefetch_run {false};			///< Worker has an active target.
-						mutable StormByte::ByteSize m_prefetch_target {0};	///< Desired coverage from Tell.
-						std::thread m_worker;							///< Prefetch thread.
+						mutable StormByte::ByteSize m_delivered {0};			///< Telemetry.Delivered.
+						mutable StormByte::ByteSize m_hit_ahead {0};			///< Telemetry.HitAhead.
+						mutable StormByte::ByteSize m_hit_back {0};				///< Telemetry.HitBack.
+						mutable StormByte::ByteSize m_miss {0};					///< Telemetry.Miss.
+						mutable StormByte::ByteSize m_origin {0};				///< Telemetry.Origin.
+						mutable StormByte::ByteSize m_cached_peak {0};			///< Telemetry.CachedPeak.
+						mutable std::size_t m_seek_logical {0};					///< Telemetry.SeekLogical.
+						mutable std::size_t m_seek_origin {0};					///< Telemetry.SeekOrigin.
+						mutable std::size_t m_seek_saved_full {0};				///< Telemetry.SeekSavedFull.
+						mutable std::size_t m_seek_saved_partial {0};			///< Telemetry.SeekSavedPartial.
+						mutable bool m_seek_epoch {false};						///< Epoch open until next Seek/Close.
+						mutable bool m_seek_had_cache {false};					///< CoverageFrom(target) at Seek.
+						mutable bool m_seek_did_origin {false};					///< OriginSeek hook ran in epoch.
+						mutable std::size_t m_try_again {0};					///< Telemetry.TryAgain.
+						mutable std::size_t m_saturated {0};					///< Telemetry.Saturated.
+						mutable std::size_t m_evicted {0};						///< Telemetry.Evicted.
+						mutable std::chrono::nanoseconds m_wait_min {0};		///< Telemetry.WaitMin.
+						mutable std::chrono::nanoseconds m_wait_max {0};		///< Telemetry.WaitMax.
+						mutable std::chrono::nanoseconds m_wait_total {0};		///< Telemetry.WaitTotal.
+						mutable std::size_t m_wait_samples {0};					///< Telemetry.WaitSamples.
+
+						mutable std::atomic<bool> m_stop {false};				///< Worker teardown.
+						mutable std::atomic<bool> m_cancel_prefetch {false};	///< Flush in-flight pull.
+						mutable bool m_prefetch_run {false};					///< Worker has an active target.
+						mutable StormByte::ByteSize m_prefetch_target {0};		///< Desired coverage from Tell.
+						std::thread m_worker;									///< Prefetch thread.
 				};
 			}
 		}

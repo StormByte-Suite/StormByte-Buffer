@@ -106,10 +106,16 @@ void BufferedWriter::SetTell(const StormByte::ByteSize offset) noexcept {
 
 void BufferedWriter::Setup() {}
 
+StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::CreateTelemetry() const {
+	return StormByte::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<IO::WriteTelemetry>();
+}
+
 bool BufferedWriter::Open() {
 	if (!m_io)
 		return false;
 	Setup();
+	if (!m_io->Telemetry())
+		m_io->BindTelemetry(CreateTelemetry());
 	return m_io->Open();
 }
 
@@ -181,9 +187,11 @@ Result BufferedWriter::OriginSeek(const StormByte::ByteSize) {
 	return { Status::Failed, 0 };
 }
 
-const struct BufferedWriter::Telemetry BufferedWriter::Telemetry() const noexcept {
+const StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
 	if (!m_io)
 		return {};
+	if (!m_io->Telemetry())
+		m_io->BindTelemetry(CreateTelemetry());
 	return m_io->Telemetry();
 }
 
