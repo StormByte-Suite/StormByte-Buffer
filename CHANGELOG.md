@@ -44,6 +44,8 @@ If you landed here from a release link and have not read the tree:
 - Layered telemetry in `StormByte::Buffer` (`telemetry.hxx`) and `StormByte::Buffer::IO` (`io/telemetry.hxx`). Base `ReadTelemetry` / `WriteTelemetry` hold delivered/written bytes and `MeanRate`. IO types add cache/origin/seek/wait counters. `MeanRate` is the caller-visible effective rate (`ByteSize/s`), including cache hits; it is not device throughput. `DeltaOperation` updates rate without a mutex.
 - `BufferedReader::Telemetry()` / `BufferedWriter::Telemetry()` return `const StormByte::Shared<…>`. Same object for the life of the office; the handle cannot be reseated. A leaf may widen the dynamic type via `CreateTelemetry()`. Accumulators do not reset on Close. Writer public `Flush` (and the Flush inside `Close`) counts toward `MeanRate`; internal worker / GC drains do not.
 - Flatten: `operator StormByte::String::String` (out of line) and `STORMBYTE_FORCE_INLINE operator std::string()` so `Logger << *telemetry` stays on the caller TU.
+- `BufferedReader::Available()`. Contiguous cached bytes at `Tell`. Does not call `OriginPull` / `OriginSeek` and does not wait for prefetch.
+- `StormByte::Buffer::Pumper`. Takes a `Bridge` by move and runs `Passthrough` on a worker until EoF or failure. Starts in the constructor; the destructor joins. Nested `Parameters` with knobs `Chunk` and `HighWater`. `Chunk` `0` is automatic cycle size, not Bridge “current contents”. `HighWater` applies to the **input** only: omitted = `0` if the source is IO, otherwise the backend default (constexpr in the PIMPL `.cxx`); explicit `0` = no Pumper cap (intended when the IO source already limits itself). Non-IO sources are unbounded by design. `Toggle` pauses/resumes. `Cancel` is terminal (`Failed`, no restart). Telemetry is forwarded from the owned Bridge.
 
 ### Changed
 
@@ -55,6 +57,7 @@ If you landed here from a release link and have not read the tree:
 - **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local`. A socket on the lower layer can pass `Location::Remote`.
 - **Breaking:** IO constructors no longer take positional windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`). One constructor per leaf: path plus that class’s `Parameters` (default `{}` = probe). Explicit zeros stay zeros; they do not probe.
 - **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`. `ReadError` is `StormByte.Buffer.Read`. `WriteError` is `StormByte.Buffer.Write`. `Component` is gone. Destructors are defined in this module.
+- **Breaking:** `Bridge` is a manual transfer again, not a worker. There is no `high_water` constructor, no `Drainer`, no Bridge `Flush` / `FlushAndClose`. Public `Passthrough(ByteSize, Operation)` is the only transfer; `Operation::{Blocking, NonBlocking}` applies to the **read** tip; write `TryAgain` is retried until that call completes. `n == 0` is current contents (`Available()`). Non-IO tips are `ReadOnly&` / `WriteOnly&` (Bridge owns the External adapters). IO tips are stolen by move as the concrete leaf. `Failed()` is sticky. Continuous pumping is `Pumper`.
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
 - Writer contract: lazy write up to `MaxMemory`. More random access needs more `MaxMemory` or islands get evicted (a real write + seek).
@@ -78,8 +81,6 @@ If you landed here from a release link and have not read the tree:
 - `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
-
-[2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0
 
 ## [1.4.0] - 2026-09-23
 

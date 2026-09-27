@@ -7,7 +7,6 @@
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 #include <StormByte/safe_pointers.hxx>
 
 #include <memory>
@@ -154,6 +153,12 @@ namespace StormByte {
 				 * @return Sticky flag. @ref Passthrough is then a no-op.
 				 */
 				bool Failed() const noexcept;
+
+				/**
+				 * @brief Whether the read tip is a stolen IO leaf.
+				 * @return @c true if the source is IO. Used by @ref Pumper HighWater default.
+				 */
+				bool InputIsIO() const noexcept;
 
 				/**
 				 * @brief Move bytes from the read tip to the write tip.

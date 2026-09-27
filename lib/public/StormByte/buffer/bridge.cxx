@@ -64,6 +64,11 @@ bool Bridge::Failed() const noexcept {
 	return m_failed;
 }
 
+bool Bridge::InputIsIO() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return static_cast<bool>(m_io_in);
+}
+
 const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
 	std::lock_guard lock(m_mutex);
 	if (m_io_in)
@@ -179,9 +184,13 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 
 	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
 		std::chrono::steady_clock::now() - started);
-	if (m_owned_read)
+	if (m_owned_read) {
 		m_owned_read->DeltaOperation(got, elapsed);
-	if (m_owned_write)
+		m_owned_read->m_delivered = m_owned_read->m_delivered + got;
+	}
+	if (m_owned_write) {
 		m_owned_write->DeltaOperation(got, elapsed);
+		m_owned_write->m_accepted = m_owned_write->m_accepted + got;
+	}
 	return got;
 }
