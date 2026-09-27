@@ -1,4 +1,46 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer original source is dual-licensed:
+ *
+ * 1. GNU Lesser General Public License v3.0 (or later)
+ *    You may redistribute and/or modify this file under the terms of the
+ *    GNU Lesser General Public License as published by the Free Software
+ *    Foundation, either version 3 of the License, or (at your option)
+ *    any later version.
+ *
+ * 2. Commercial license
+ *    Alternatively, this file may be used under the terms of a commercial
+ *    license agreement with the copyright holder
+ *    (David C. Manuelda <StormByte@gmail.com>).
+ *
+ * Both licenses apply only to original StormByte-Buffer source in this
+ * repository. They do not cover other StormByte modules or any third-party
+ * material shipped with this repository (including everything under
+ * thirdparty/, and in particular the bundled StormByte-Logger tree and
+ * the rest of the StormByte suite it vendors), which remains under its own
+ * license.
+ *
+ * Neither license grants any patent rights. Any patent licenses required
+ * to use this software or third-party components must be obtained separately
+ * from the patent holders.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3 along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
+ */
+
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/external.hxx>
 
 #include <chrono>
 #include <utility>
@@ -15,11 +57,42 @@ namespace {
 	}
 }
 
+void ExternalReaderDeleter::operator()(ExternalBufferReader* ptr) const noexcept {
+	if (!ptr)
+		return;
+	std::unique_ptr<ExternalBufferReader, StormByte::Heap::ObjectDeleter> reclaim {ptr};
+}
+
+void ExternalWriterDeleter::operator()(ExternalBufferWriter* ptr) const noexcept {
+	if (!ptr)
+		return;
+	std::unique_ptr<ExternalBufferWriter, StormByte::Heap::ObjectDeleter> reclaim {ptr};
+}
+
 Bridge::Bridge(ReadOnly& in, WriteOnly& out) noexcept:
-	m_ext_in(std::make_unique<ExternalBufferReader>(in)),
-	m_ext_out(std::make_unique<ExternalBufferWriter>(out)),
 	m_owned_read(MakeReadTelemetry()),
-	m_owned_write(MakeWriteTelemetry()) {}
+	m_owned_write(MakeWriteTelemetry()) {
+	AttachNonIoIn(in);
+	AttachNonIoOut(out);
+}
+
+void Bridge::AttachNonIoIn(ReadOnly& in) noexcept {
+	StormByte::Unique<ExternalBufferReader> owned =
+		StormByte::Unique<ExternalBufferReader>::MakePointer<ExternalBufferReader>(in);
+	std::unique_ptr<ExternalBufferReader, StormByte::Heap::ObjectDeleter> heap {std::move(owned)};
+	m_ext_in.reset(heap.release());
+	if (!m_owned_read)
+		m_owned_read = MakeReadTelemetry();
+}
+
+void Bridge::AttachNonIoOut(WriteOnly& out) noexcept {
+	StormByte::Unique<ExternalBufferWriter> owned =
+		StormByte::Unique<ExternalBufferWriter>::MakePointer<ExternalBufferWriter>(out);
+	std::unique_ptr<ExternalBufferWriter, StormByte::Heap::ObjectDeleter> heap {std::move(owned)};
+	m_ext_out.reset(heap.release());
+	if (!m_owned_write)
+		m_owned_write = MakeWriteTelemetry();
+}
 
 Bridge::Bridge(Bridge&& other) noexcept {
 	std::lock_guard lock(other.m_mutex);

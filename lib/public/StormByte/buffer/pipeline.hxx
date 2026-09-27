@@ -1,3 +1,44 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer original source is dual-licensed:
+ *
+ * 1. GNU Lesser General Public License v3.0 (or later)
+ *    You may redistribute and/or modify this file under the terms of the
+ *    GNU Lesser General Public License as published by the Free Software
+ *    Foundation, either version 3 of the License, or (at your option)
+ *    any later version.
+ *
+ * 2. Commercial license
+ *    Alternatively, this file may be used under the terms of a commercial
+ *    license agreement with the copyright holder
+ *    (David C. Manuelda <StormByte@gmail.com>).
+ *
+ * Both licenses apply only to original StormByte-Buffer source in this
+ * repository. They do not cover other StormByte modules or any third-party
+ * material shipped with this repository (including everything under
+ * thirdparty/, and in particular the bundled StormByte-Logger tree and
+ * the rest of the StormByte suite it vendors), which remains under its own
+ * license.
+ *
+ * Neither license grants any patent rights. Any patent licenses required
+ * to use this software or third-party components must be obtained separately
+ * from the patent holders.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3 along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
+ */
+
 #pragma once
 
 #include <StormByte/buffer/consumer.hxx>
@@ -6,7 +47,7 @@
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/clonable.hxx>
-#include <StormByte/platform.h>
+#include <StormByte/logger/log.hxx>
 #include <StormByte/safe_pointers.hxx>
 
 #include <memory>
@@ -18,18 +59,6 @@
  */
 namespace StormByte {
 	/**
-	 * @namespace StormByte::Logger
-	 * @brief Forward declaration only. Full type lives in StormByte-Logger.
-	 */
-	namespace Logger {
-		/**
-		 * @class Log
-		 * @brief Logger handle forwarded so Pipeline does not include Logger headers.
-		 */
-		class Log;
-	}
-
-	/**
 	 * @namespace StormByte::Buffer
 	 * @brief Buffer module of the StormByte suite.
 	 */
@@ -40,7 +69,10 @@ namespace StormByte {
 		 *
 		 * Each stage receives @ref ReadOnly / @ref WriteOnly. Intermediate
 		 * stages use a private SPSC ring; the last writes a public
-		 * @ref Producer. Stages are owned here after @ref AddPipe.
+		 * @ref Producer. After @ref AddPipe the Pipeline owns a
+		 * @c Unique copy allocated on Base's heap. A const add leaves
+		 * the caller's @ref Stage untouched; that object is destroyed
+		 * in the caller's translation unit.
 		 *
 		 * @par Execution modes
 		 * Flags combine with @c operator|:
@@ -55,21 +87,20 @@ namespace StormByte {
 			public:
 				/**
 				 * @class Stage
-				 * @brief One transformation. Owned by the Pipeline after @ref AddPipe.
+				 * @brief One transformation. Copyable and movable.
 				 *
-				 * Copy is deleted (avoids slicing). Move is out of line so the
-				 * DLL boundary has a single definition. @c Clone is private:
-				 * only Pipeline copy may duplicate a stage. Hand a stage in
-				 * with @ref Move (or @c AddPipe of a callable).
+				 * A leaf implements @ref Run, @ref Clone and @ref Move.
+				 * Copying a @c Stage by value slices; copy the leaf type
+				 * or call @ref Clone. Pipeline stores the @c Unique that
+				 * @ref Clone / @ref Move return.
 				 */
 				class STORMBYTE_BUFFER_PUBLIC Stage: public Clonable<Stage, StormByte::Unique<Stage>> {
-					friend class Pipeline;
-
 					public:
 						/**
-						 * @brief Copy constructor is deleted.
+						 * @brief Copy constructor. Defined in this module.
+						 * @param other Instance to copy.
 						 */
-						Stage(const Stage&) = delete;
+						Stage(const Stage& other);
 
 						/**
 						 * @brief Move constructor. Defined in this module.
@@ -83,9 +114,11 @@ namespace StormByte {
 						virtual ~Stage() noexcept;
 
 						/**
-						 * @brief Copy assignment is deleted.
+						 * @brief Copy assignment. Defined in this module.
+						 * @param other Instance to copy.
+						 * @return *this.
 						 */
-						Stage& operator=(const Stage&) = delete;
+						Stage& operator=(const Stage& other);
 
 						/**
 						 * @brief Move assignment. Defined in this module.
@@ -98,13 +131,21 @@ namespace StormByte {
 						 * @brief Run this stage.
 						 * @param in Source. Lives for the call.
 						 * @param out Sink. Lives for the call. Close or SetError before return.
-						 * @param log May be null. Already scoped Buffer/Pipeline when set.
+						 * @param log Shared handle. Empty if the caller passed none.
+						 *        Already scoped Buffer/Pipeline when set.
 						 */
-						virtual void Run(ReadOnly& in, WriteOnly& out, Logger::Log* log) = 0;
+						virtual void Run(ReadOnly& in, WriteOnly& out,
+							const StormByte::Shared<StormByte::Logger::Log>& log) = 0;
 
 						/**
-						 * @brief Polymorphic move. The source must not be used afterwards.
-						 * @return Owned handle.
+						 * @brief Polymorphic copy. Allocated on Base's heap.
+						 * @return Owned handle. The source is not touched.
+						 */
+						PointerType Clone() const noexcept override = 0;
+
+						/**
+						 * @brief Polymorphic move. Allocated on Base's heap.
+						 * @return Owned handle. The source must not be used afterwards.
 						 */
 						PointerType Move() noexcept override = 0;
 
@@ -113,13 +154,6 @@ namespace StormByte {
 						 * @brief Construct an abstract stage.
 						 */
 						Stage() noexcept = default;
-
-					private:
-						/**
-						 * @brief Polymorphic copy. Only Pipeline may call this.
-						 * @return Owned handle.
-						 */
-						PointerType Clone() const noexcept override = 0;
 				};
 
 				/**
@@ -173,97 +207,16 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Take ownership of a stage.
-				 * @param stage Handle from @ref Stage::Move. Empty is ignored.
+				 * @brief Clone @p stage into this Pipeline. @p stage is not touched.
+				 * @param stage Caller stage. Destroyed in the caller's TU.
 				 */
-				void AddPipe(StormByte::Unique<Stage> stage);
+				void AddPipe(const Stage& stage);
 
 				/**
-				 * @brief Box a callable in this TU and take ownership.
-				 * @tparam F Invocable as @c void(ReadOnly&, WriteOnly&, Logger::Log*).
-				 * @param fn Callable. Moved-from is empty.
+				 * @brief Take @p stage by move into this Pipeline.
+				 * @param stage Caller stage. Moved-from must not be used.
 				 */
-				template<typename F>
-				STORMBYTE_FORCE_INLINE void AddPipe(F&& fn) {
-					/**
-					 * @class Box
-					 * @brief Caller-TU wrapper around @p F. Not a DLL type.
-					 */
-					class Box final: public Stage {
-						public:
-							/**
-							 * @brief Take the callable by move.
-							 * @param fn Callable.
-							 */
-							STORMBYTE_FORCE_INLINE explicit Box(F&& fn) noexcept:
-								m_fn(std::forward<F>(fn)) {}
-
-							/**
-							 * @brief Copy constructor is deleted.
-							 */
-							STORMBYTE_FORCE_INLINE Box(const Box&) = delete;
-
-							/**
-							 * @brief Move constructor.
-							 * @param other Instance to take from.
-							 */
-							STORMBYTE_FORCE_INLINE Box(Box&& other) noexcept = default;
-
-							/**
-							 * @brief Destructor.
-							 */
-							STORMBYTE_FORCE_INLINE ~Box() noexcept override = default;
-
-							/**
-							 * @brief Copy assignment is deleted.
-							 */
-							STORMBYTE_FORCE_INLINE Box& operator=(const Box&) = delete;
-
-							/**
-							 * @brief Move assignment.
-							 * @param other Instance to take from.
-							 * @return *this.
-							 */
-							STORMBYTE_FORCE_INLINE Box& operator=(Box&& other) noexcept = default;
-
-							/**
-							 * @brief Invoke the boxed callable.
-							 * @param in Source.
-							 * @param out Sink.
-							 * @param log May be null.
-							 */
-							STORMBYTE_FORCE_INLINE void Run(ReadOnly& in, WriteOnly& out, Logger::Log* log) override {
-								m_fn(in, out, log);
-							}
-
-							/**
-							 * @brief Polymorphic move of this box.
-							 * @return Owned handle.
-							 */
-							STORMBYTE_FORCE_INLINE PointerType Move() noexcept override {
-								return StormByte::Unique<Stage>::MakePointer<Box>(std::move(*this));
-							}
-
-						private:
-							/**
-							 * @brief Copy the callable for @ref Clone.
-							 * @param fn Callable.
-							 */
-							STORMBYTE_FORCE_INLINE explicit Box(const F& fn) noexcept:
-								m_fn(fn) {}
-
-							/**
-							 * @brief Polymorphic copy of this box.
-							 * @return Owned handle.
-							 */
-							STORMBYTE_FORCE_INLINE PointerType Clone() const noexcept override {
-								return StormByte::Unique<Stage>::MakePointer<Box>(m_fn);
-							}
-
-							F m_fn;	///< Caller callable.
-					};
-					AddPipe(StormByte::Unique<Stage>::MakePointer<Box>(std::forward<F>(fn)));
-				}
+				void AddPipe(Stage&& stage);
 
 				/**
 				 * @}
@@ -283,11 +236,11 @@ namespace StormByte {
 				 * @brief Run the stages.
 				 * @param buffer First-stage input.
 				 * @param mode @ref ExecutionMode flags.
-				 * @param log Optional. Stages receive Scope("Buffer/Pipeline") when set.
+				 * @param log Optional. Stages receive a scoped shared handle.
 				 * @return Consumer of the last stage.
 				 */
 				Consumer Process(Consumer buffer, const ExecutionMode& mode,
-					std::shared_ptr<Logger::Log> log) const noexcept;
+					const StormByte::Shared<StormByte::Logger::Log>& log) const noexcept;
 
 				/**
 				 * @}

@@ -1,6 +1,46 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer original source is dual-licensed:
+ *
+ * 1. GNU Lesser General Public License v3.0 (or later)
+ *    You may redistribute and/or modify this file under the terms of the
+ *    GNU Lesser General Public License as published by the Free Software
+ *    Foundation, either version 3 of the License, or (at your option)
+ *    any later version.
+ *
+ * 2. Commercial license
+ *    Alternatively, this file may be used under the terms of a commercial
+ *    license agreement with the copyright holder
+ *    (David C. Manuelda <StormByte@gmail.com>).
+ *
+ * Both licenses apply only to original StormByte-Buffer source in this
+ * repository. They do not cover other StormByte modules or any third-party
+ * material shipped with this repository (including everything under
+ * thirdparty/, and in particular the bundled StormByte-Logger tree and
+ * the rest of the StormByte suite it vendors), which remains under its own
+ * license.
+ *
+ * Neither license grants any patent rights. Any patent licenses required
+ * to use this software or third-party components must be obtained separately
+ * from the patent holders.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3 along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
+ */
+
 #pragma once
 
-#include <StormByte/buffer/external.hxx>
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
@@ -24,6 +64,33 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
+		class ExternalBufferReader;
+		class ExternalBufferWriter;
+
+		/**
+		 * @struct ExternalReaderDeleter
+		 * @brief Destroys a non-IO read adapter in this module.
+		 */
+		struct STORMBYTE_BUFFER_PUBLIC ExternalReaderDeleter {
+			/**
+			 * @brief Destroy @p ptr. No-op if null.
+			 * @param ptr Adapter or null.
+			 */
+			void operator()(ExternalBufferReader* ptr) const noexcept;
+		};
+
+		/**
+		 * @struct ExternalWriterDeleter
+		 * @brief Destroys a non-IO write adapter in this module.
+		 */
+		struct STORMBYTE_BUFFER_PUBLIC ExternalWriterDeleter {
+			/**
+			 * @brief Destroy @p ptr. No-op if null.
+			 * @param ptr Adapter or null.
+			 */
+			void operator()(ExternalBufferWriter* ptr) const noexcept;
+		};
+
 		/**
 		 * @class Bridge
 		 * @brief Manual bridge between two StormByte-Buffer ends.
@@ -34,11 +101,10 @@ namespace StormByte {
 		 *
 		 * @par Ownership
 		 * Non-IO tips are @ref ReadOnly / @ref WriteOnly references. The
-		 * buffers must outlive the Bridge. The Bridge builds and owns the
-		 * @ref ExternalBufferReader / @ref ExternalBufferWriter adapters;
-		 * that layer is not part of the public contract. IO tips are taken
-		 * by move as the concrete leaf so a second reader or writer cannot
-		 * race @ref Passthrough.
+		 * buffers must outlive the Bridge. Adapters over those tips are
+		 * owned here and are not part of the public contract. IO tips are
+		 * taken by move as the concrete leaf so a second reader or writer
+		 * cannot race @ref Passthrough.
 		 *
 		 * @par Passthrough
 		 * One call is one atomic transfer. @c TryAgain on the write tip
@@ -47,9 +113,8 @@ namespace StormByte {
 		 * Blocking applies only to the read side.
 		 *
 		 * @p n == 0 is the current contents of the read tip
-		 * (@ref ReadOnly occupancy via the adapter, or
-		 * @ref IO::BufferedReader::Available). Available on IO does not
-		 * touch the origin.
+		 * (non-IO occupancy, or @ref IO::BufferedReader::Available).
+		 * Available on IO does not touch the origin.
 		 *
 		 * If @ref Failed is already true, @ref Passthrough returns 0 and
 		 * does nothing.
@@ -103,9 +168,9 @@ namespace StormByte {
 				template<typename Out>
 				STORMBYTE_FORCE_INLINE Bridge(ReadOnly& in, Out&& out) noexcept
 					requires std::is_base_of_v<IO::BufferedWriter, std::decay_t<Out>>:
-					m_ext_in(std::make_unique<ExternalBufferReader>(in)),
-					m_io_out(std::make_unique<std::decay_t<Out>>(std::forward<Out>(out))),
-					m_owned_read(StormByte::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<StormByte::Buffer::ReadTelemetry>()) {}
+					m_io_out(std::make_unique<std::decay_t<Out>>(std::forward<Out>(out))) {
+					AttachNonIoIn(in);
+				}
 
 				/**
 				 * @brief IO source stolen, non-IO sink.
@@ -116,9 +181,9 @@ namespace StormByte {
 				template<typename In>
 				STORMBYTE_FORCE_INLINE Bridge(In&& in, WriteOnly& out) noexcept
 					requires std::is_base_of_v<IO::BufferedReader, std::decay_t<In>>:
-					m_ext_out(std::make_unique<ExternalBufferWriter>(out)),
-					m_io_in(std::make_unique<std::decay_t<In>>(std::forward<In>(in))),
-					m_owned_write(StormByte::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<StormByte::Buffer::WriteTelemetry>()) {}
+					m_io_in(std::make_unique<std::decay_t<In>>(std::forward<In>(in))) {
+					AttachNonIoOut(out);
+				}
 
 				Bridge(const Bridge&) = delete;
 
@@ -183,6 +248,18 @@ namespace StormByte {
 
 			private:
 				/**
+				 * @brief Own an adapter over a non-IO source. Defined in this module.
+				 * @param in Source. Must outlive *this.
+				 */
+				void AttachNonIoIn(ReadOnly& in) noexcept;
+
+				/**
+				 * @brief Own an adapter over a non-IO sink. Defined in this module.
+				 * @param out Sink. Must outlive *this.
+				 */
+				void AttachNonIoOut(WriteOnly& out) noexcept;
+
+				/**
 				 * @brief Pull up to @p n into @p dest according to @p operation.
 				 */
 				IO::Result Pull(StormByte::ByteSize n, FIFO& dest, Operation operation);
@@ -192,8 +269,8 @@ namespace StormByte {
 				 */
 				IO::Result Push(FIFO& src);
 
-				std::unique_ptr<ExternalBufferReader> m_ext_in;		///< Adapter over a ReadOnly tip. Owned.
-				std::unique_ptr<ExternalBufferWriter> m_ext_out;	///< Adapter over a WriteOnly tip. Owned.
+				std::unique_ptr<ExternalBufferReader, ExternalReaderDeleter> m_ext_in;	///< Non-IO read adapter. Owned.
+				std::unique_ptr<ExternalBufferWriter, ExternalWriterDeleter> m_ext_out;	///< Non-IO write adapter. Owned.
 				std::unique_ptr<IO::BufferedReader> m_io_in;		///< Stolen IO source (concrete leaf).
 				std::unique_ptr<IO::BufferedWriter> m_io_out;		///< Stolen IO sink (concrete leaf).
 				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;	///< When in is not IO.

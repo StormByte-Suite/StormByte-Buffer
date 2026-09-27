@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-09-27
+## [2.0.0] - 2026-09-28
 
 ### Added
 
@@ -46,20 +46,20 @@ If you landed here from a release link and have not read the tree:
 - Flatten: `operator StormByte::String::String` (out of line) and `STORMBYTE_FORCE_INLINE operator std::string()` so `Logger << *telemetry` stays on the caller TU.
 - `BufferedReader::Available()`. Contiguous cached bytes at `Tell`. Does not call `OriginPull` / `OriginSeek` and does not wait for prefetch.
 - `StormByte::Buffer::Pumper`. Takes a `Bridge` by move and runs `Passthrough` on a worker until EoF or failure. Starts in the constructor; the destructor joins. Nested `Parameters` with knobs `Chunk` and `HighWater`. `Chunk` `0` is automatic cycle size, not Bridge “current contents”. `HighWater` applies to the **input** only: omitted = `0` if the source is IO, otherwise the backend default (constexpr in the PIMPL `.cxx`); explicit `0` = no Pumper cap (intended when the IO source already limits itself). Non-IO sources are unbounded by design. `Toggle` pauses/resumes. `Cancel` is terminal (`Failed`, no restart). Telemetry is forwarded from the owned Bridge.
-- `Pipeline::Stage`. Abstract owned stage (`Clonable` + `Unique<Stage>`). Copy is deleted; move is out of line. `Clone` is private (Pipeline copy only). `AddPipe(Unique<Stage>)` takes ownership. `AddPipe(F&&)` boxes the callable in the caller TU with `STORMBYTE_FORCE_INLINE` and `Unique::MakePointer` (no raw `new`).
+- `Pipeline::Stage`. Abstract stage (`Clonable` + `Unique<Stage>`). Copyable and movable (out of line). `Run(ReadOnly&, WriteOnly&, const Shared<Logger::Log>&)`. `Clone` and `Move` are public. `AddPipe(const Stage&)` clones on Base's heap and does not touch the caller object. `AddPipe(Stage&&)` takes `Move()`. No boxing of callables.
 
 ### Changed
 
 - **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
 - **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
 - **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
-- **Breaking:** `ExternalReader`, `ExternalWriter`, `ExternalBufferReader` and `ExternalBufferWriter` are private (`STORMBYTE_BUFFER_PRIVATE`). They are not installed. Bridge and Pumper own the adapters; callers use `ReadOnly` / `WriteOnly` or IO leaves.
-- **Breaking:** `Pipeline::PipeFunction` (`std::function` over `ExternalReader` / `ExternalWriter`) is gone. Stages are `Pipeline::Stage` (`Run(ReadOnly&, WriteOnly&, Logger::Log*)`) or a callable boxed by `AddPipe`.
+- **Breaking:** `ExternalReader`, `ExternalWriter`, `ExternalBufferReader` and `ExternalBufferWriter` are private (`STORMBYTE_BUFFER_PRIVATE`). They are not installed. Public headers do not include them. Bridge and Pumper own the adapters; callers use `ReadOnly` / `WriteOnly` or IO leaves.
+- **Breaking:** `Pipeline::PipeFunction` (`std::function` over `ExternalReader` / `ExternalWriter`) is gone. A stage is a user leaf of `Pipeline::Stage`. There is no `AddPipe` of a raw callable and no `Unique<Stage>` in the public add API.
 - **Breaking:** `BufferedLocationReader` and `BufferedLocationWriter` sit between the engines and the file leaves. A location is file-like: named by `Location()` (`StormByte::String::String`, owned in this module), always seekable and sized. `Device()` returns `System::Device` by value from pure `OriginDevice()`. Path-only `Setup()` lives here.
 - **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local`. A socket on the lower layer can pass `Location::Remote`.
 - **Breaking:** IO constructors no longer take positional windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`). One constructor per leaf: path plus that class’s `Parameters` (default `{}` = probe). Explicit zeros stay zeros; they do not probe.
 - **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`. `ReadError` is `StormByte.Buffer.Read`. `WriteError` is `StormByte.Buffer.Write`. `Component` is gone. Destructors are defined in this module.
-- **Breaking:** `Bridge` is a manual transfer again, not a worker. There is no `high_water` constructor, no `Drainer`, no Bridge `Flush` / `FlushAndClose`. Public `Passthrough(ByteSize, Operation)` is the only transfer; `Operation::{Blocking, NonBlocking}` applies to the **read** tip; write `TryAgain` is retried until that call completes. `n == 0` is current contents (`Available()`). Non-IO tips are `ReadOnly&` / `WriteOnly&` (Bridge owns the External adapters). IO tips are stolen by move as the concrete leaf. `Failed()` is sticky. Continuous pumping is `Pumper`.
+- **Breaking:** `Bridge` is a manual transfer again, not a worker. There is no `high_water` constructor, no `Drainer`, no Bridge `Flush` / `FlushAndClose`. Public `Passthrough(ByteSize, Operation)` is the only transfer; `Operation::{Blocking, NonBlocking}` applies to the **read** tip; write `TryAgain` is retried until that call completes. `n == 0` is current contents (`Available()`). Non-IO tips are `ReadOnly&` / `WriteOnly&` (Bridge owns the adapters). IO tips are stolen by move as the concrete leaf. `Failed()` is sticky. Continuous pumping is `Pumper`.
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
 - Writer contract: lazy write up to `MaxMemory`. More random access needs more `MaxMemory` or islands get evicted (a real write + seek).

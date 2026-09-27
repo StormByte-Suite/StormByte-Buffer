@@ -1,3 +1,44 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer original source is dual-licensed:
+ *
+ * 1. GNU Lesser General Public License v3.0 (or later)
+ *    You may redistribute and/or modify this file under the terms of the
+ *    GNU Lesser General Public License as published by the Free Software
+ *    Foundation, either version 3 of the License, or (at your option)
+ *    any later version.
+ *
+ * 2. Commercial license
+ *    Alternatively, this file may be used under the terms of a commercial
+ *    license agreement with the copyright holder
+ *    (David C. Manuelda <StormByte@gmail.com>).
+ *
+ * Both licenses apply only to original StormByte-Buffer source in this
+ * repository. They do not cover other StormByte modules or any third-party
+ * material shipped with this repository (including everything under
+ * thirdparty/, and in particular the bundled StormByte-Logger tree and
+ * the rest of the StormByte suite it vendors), which remains under its own
+ * license.
+ *
+ * Neither license grants any patent rights. Any patent licenses required
+ * to use this software or third-party components must be obtained separately
+ * from the patent holders.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3 along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
+ */
+
 #include <StormByte/buffer/lockfree_ring.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
@@ -7,11 +48,15 @@
 
 using namespace StormByte::Buffer;
 
+Pipeline::Stage::Stage(const Stage&) = default;
+
 Pipeline::Stage::Stage(Stage&&) noexcept = default;
 
-Pipeline::Stage& Pipeline::Stage::operator=(Stage&&) noexcept = default;
-
 Pipeline::Stage::~Stage() noexcept = default;
+
+Pipeline::Stage& Pipeline::Stage::operator=(const Stage&) = default;
+
+Pipeline::Stage& Pipeline::Stage::operator=(Stage&&) noexcept = default;
 
 struct Pipeline::Backend {
 	std::vector<StormByte::Unique<Pipeline::Stage>> pipes;
@@ -74,9 +119,12 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 	return *this;
 }
 
-void Pipeline::AddPipe(StormByte::Unique<Stage> stage) {
-	if (stage)
-		m_io->pipes.push_back(std::move(stage));
+void Pipeline::AddPipe(const Stage& stage) {
+	m_io->pipes.push_back(stage.Clone());
+}
+
+void Pipeline::AddPipe(Stage&& stage) {
+	m_io->pipes.push_back(stage.Move());
 }
 
 void Pipeline::SetError() const noexcept {
@@ -88,13 +136,13 @@ void Pipeline::SetError() const noexcept {
 }
 
 Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode,
-		std::shared_ptr<Logger::Log> log) const noexcept {
+		const StormByte::Shared<StormByte::Logger::Log>& log) const noexcept {
 	m_io->WaitForCompletion();
 
 	if (m_io->pipes.empty())
 		return buffer;
 
-	const std::shared_ptr<Logger::Log> stage_log =
+	const StormByte::Shared<StormByte::Logger::Log> stage_log =
 		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
 
 	const std::size_t num_stages = m_io->pipes.size();
@@ -117,7 +165,7 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode,
 		WriteOnly& out = (i + 1 == num_stages)
 			? static_cast<WriteOnly&>(m_io->final_producer)
 			: static_cast<WriteOnly&>(*m_io->intermediates[i]);
-		m_io->pipes[i]->Run(in, out, stage_log.get());
+		m_io->pipes[i]->Run(in, out, stage_log);
 	};
 
 	auto run_stages_sequential =
