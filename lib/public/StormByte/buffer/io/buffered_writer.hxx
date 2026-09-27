@@ -42,15 +42,18 @@
 #pragma once
 
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/parameters.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 #include <StormByte/string/string.hxx>
 
 #include <chrono>
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -213,6 +216,19 @@ namespace StormByte {
 				friend class Backend::Bridge;
 
 				public:
+					/**
+					 * @class Parameters
+					 * @brief Writer knobs. A missing field keeps the base default (0 / 0 ms).
+					 *
+					 * Header-only. The variadic list is applied in the caller
+					 * (@c STORMBYTE_FORCE_INLINE). This module never
+					 * instantiates @c Parameters.
+					 */
+					class Parameters: public WriterParameters {
+						public:
+							using WriterParameters::WriterParameters;
+					};
+
 					/**
 					 * @struct Telemetry
 					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
@@ -649,15 +665,30 @@ namespace StormByte {
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
 					 * @param path Locator. Stored once.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
+					 * @param parameters Omitted knobs are 0 / 0 ms. Resolved in the caller.
+					 */
+					STORMBYTE_FORCE_INLINE BufferedWriter(StormByte::String::String path, enum Location location,
+							Parameters parameters = {}):
+						BufferedWriter(std::move(path), location,
+							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
+							parameters.BackPressure().value_or(0),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0})) {}
+
+					/**
+					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
+					 * @param path Locator. Stored once.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunk units.
 					 * @param max_wait Initial @ref MaxWait.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
+					 *
+					 * DLL boundary. Children that already resolved knobs call this.
 					 */
 					BufferedWriter(StormByte::String::String path, enum Location location,
-						StormByte::ByteSize write_chunk = 0, std::size_t back_pressure = 0,
-						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0},
-						StormByte::ByteSize max_memory = 0);
+						StormByte::ByteSize write_chunk, std::size_t back_pressure,
+						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory);
 
 					/**
 					 * @brief Publish session state from a leaf hook.

@@ -115,20 +115,6 @@ namespace {
 	}
 }
 
-BufferedFileWriter::BufferedFileWriter(StormByte::String::String path):
-	BufferedLocationWriter(std::move(path), Location::Local, StormByte::ByteSize{0}, 0,
-		std::chrono::milliseconds{0}, StormByte::ByteSize{0}, true) {}
-
-BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
-		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(std::move(path), Location::Local, write_chunk, back_pressure, max_wait,
-		StormByte::ByteSize{0}, false) {}
-
-BufferedFileWriter::BufferedFileWriter(StormByte::String::String path, const StormByte::ByteSize write_chunk,
-		const StormByte::ByteSize max_memory, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait):
-	BufferedLocationWriter(std::move(path), Location::Local, write_chunk, back_pressure, max_wait, max_memory, false) {}
-
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedLocationWriter(std::move(other)),
 	m_file(std::move(other.m_file)) {}

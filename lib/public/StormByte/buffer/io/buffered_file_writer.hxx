@@ -43,9 +43,12 @@
 
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 
+#include <chrono>
 #include <fstream>
 #include <mutex>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -72,16 +75,22 @@ namespace StormByte {
 			 * not create parent directories.
 			 *
 			 * The device does not change after construction. Chunk,
-			 * backpressure and @ref MaxMemory for the path-only constructor
-			 * come from @ref BufferedLocationWriter::Setup.
+			 * backpressure and @ref MaxMemory come from
+			 * @ref BufferedLocationWriter::Setup when those knobs are
+			 * omitted.
 			 *
 			 * @par Constructors
-			 * @c BufferedFileWriter(path) asks the location layer to probe.
-			 * @c BufferedFileWriter(path, write_chunk, back_pressure, max_wait)
+			 * @c BufferedFileWriter(path) and @c BufferedFileWriter(path, {})
+			 * ask the location layer to probe.
+			 * @c BufferedFileWriter(path, { WriteChunk(n), BackPressure(k) })
 			 * stores those values and leaves @ref MaxMemory at 0.
-			 * @c BufferedFileWriter(path, write_chunk, max_memory, back_pressure, max_wait)
-			 * stores the page budget too. A zero chunk or backpressure disables
-			 * the ring. A zero @ref MaxMemory stores no pages.
+			 * Adding @c MaxMemory(m) stores the page budget too.
+			 * A zero chunk or backpressure disables the ring.
+			 * A zero @ref MaxMemory stores no pages.
+			 *
+			 * @c Parameters is resolved in the caller
+			 * (@c STORMBYTE_FORCE_INLINE). The DLL sees only numbers
+			 * and the probe flag.
 			 *
 			 * This leaf only opens, writes, flushes, truncates, seeks and
 			 * reports the file length. @ref OriginDevice builds a
@@ -92,41 +101,40 @@ namespace StormByte {
 			class STORMBYTE_BUFFER_PUBLIC BufferedFileWriter final: public BufferedLocationWriter {
 				public:
 					/**
+					 * @class Parameters
+					 * @brief File-writer knobs. Same fields as @ref BufferedLocationWriter::Parameters.
+					 */
+					class Parameters: public BufferedLocationWriter::Parameters {
+						public:
+							using BufferedLocationWriter::Parameters::Parameters;
+					};
+
+					/**
 					 * @name Lifecycle
 					 * @{
 					 */
 
 					/**
-					 * @brief Store the path. Chunk, backpressure and MaxMemory come from @ref Setup.
+					 * @brief Store the path and optional knobs. Does not open.
 					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
-					 */
-					explicit BufferedFileWriter(StormByte::String::String path);
-
-					/**
-					 * @brief Store the path and explicit ring knobs. Does not open.
-					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
-					 * @param write_chunk Initial @ref WriteChunk in bytes.
-					 * @param back_pressure Initial @ref BackPressure in chunks.
-					 * @param max_wait Initial @ref MaxWait.
+					 * @param parameters Omitted knobs keep the current file defaults.
 					 *
-					 * @ref MaxMemory stays 0.
+					 * All of @ref WriteChunk, @ref BackPressure and @ref MaxMemory
+					 * omitted → @ref Setup probes the device.
+					 * Any of those set → explicit: omitted @ref MaxMemory is 0,
+					 * omitted chunk / backpressure is 0.
+					 * Omitted @ref MaxWait → 0 ms.
 					 */
-					BufferedFileWriter(StormByte::String::String path,
-						StormByte::ByteSize write_chunk, std::size_t back_pressure,
-						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
-
-					/**
-					 * @brief Store the path, page budget and ring knobs. Does not open.
-					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
-					 * @param write_chunk Initial @ref WriteChunk in bytes.
-					 * @param max_memory Initial @ref MaxMemory in bytes.
-					 * @param back_pressure Initial @ref BackPressure in chunks.
-					 * @param max_wait Initial @ref MaxWait.
-					 */
-					BufferedFileWriter(StormByte::String::String path,
-						StormByte::ByteSize write_chunk, StormByte::ByteSize max_memory,
-						std::size_t back_pressure,
-						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
+					STORMBYTE_FORCE_INLINE explicit BufferedFileWriter(StormByte::String::String path,
+							Parameters parameters = {}):
+						BufferedLocationWriter(std::move(path), Location::Local,
+							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
+							parameters.BackPressure().value_or(0),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							!parameters.WriteChunk().has_value()
+								&& !parameters.BackPressure().has_value()
+								&& !parameters.MaxMemory().has_value()) {}
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -187,26 +195,26 @@ namespace StormByte {
 					 * @brief Close the file stream.
 					 * @return @ref Status::Ok.
 					 */
-					virtual Result OriginClose() override;
+					Result OriginClose() override;
 
 					/**
 					 * @brief Write @p data to the file.
 					 * @param data Contiguous octets.
 					 * @return Ok with bytes written, Error or Failed.
 					 */
-					virtual Result OriginPush(std::span<const std::byte> data) override;
+					Result OriginPush(std::span<const std::byte> data) override;
 
 					/**
 					 * @brief Make written bytes visible to later readers of the path.
 					 * @return @ref Status::Ok, Error or Failed.
 					 */
-					virtual Result OriginFlush() override;
+					Result OriginFlush() override;
 
 					/**
 					 * @brief Resize the file to zero bytes.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginTruncate() override;
+					Result OriginTruncate() override;
 
 					/**
 					 * @brief Seek the file stream to an absolute byte offset.
@@ -220,7 +228,7 @@ namespace StormByte {
 					 * @param n Candidate write.
 					 * @return false when the base writer refuses or free space is short.
 					 */
-					virtual bool WillWrite(StormByte::ByteSize n) const override;
+					bool WillWrite(StormByte::ByteSize n) const override;
 
 				private:
 					std::ofstream m_file;					///< Binary output stream.

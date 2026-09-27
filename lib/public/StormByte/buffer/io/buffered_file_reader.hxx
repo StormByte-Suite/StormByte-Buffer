@@ -43,10 +43,13 @@
 
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 
+#include <chrono>
 #include <fstream>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -71,14 +74,21 @@ namespace StormByte {
 			 * Does not open in the constructor.
 			 *
 			 * The device does not change after construction: @ref ReadAhead
-			 * is chosen once by @ref BufferedLocationReader::Setup.
-			 * Cache size (@ref MaxMemory) stays dynamic.
+			 * is chosen once by @ref BufferedLocationReader::Setup when the
+			 * caller omitted that knob. Cache size (@ref MaxMemory) stays
+			 * dynamic.
 			 *
 			 * @par Constructors
-			 * @c BufferedFileReader(path) asks the location layer to probe
-			 * @ref Device at @ref Setup. Initial @ref MaxMemory is 1 MiB.
-			 * @c BufferedFileReader(path, read_ahead, max_memory) stores
-			 * those values. @c read_ahead 0 disables prefetch.
+			 * @c BufferedFileReader(path) and @c BufferedFileReader(path, {})
+			 * ask the location layer to probe @ref Device at @ref Setup.
+			 * Initial @ref MaxMemory is 1 MiB.
+			 * @c BufferedFileReader(path, { ReadAhead(n), MaxMemory(m) })
+			 * stores those values and does not probe. @c ReadAhead 0 disables
+			 * prefetch. @c MaxMemory 0 stores no cache.
+			 *
+			 * @c Parameters is resolved in the caller
+			 * (@c STORMBYTE_FORCE_INLINE). The DLL sees only numbers
+			 * and the probe flag.
 			 *
 			 * This leaf only opens, reads, seeks and reports the file length.
 			 * @ref OriginDevice builds a @ref StormByte::System::Device from
@@ -89,24 +99,35 @@ namespace StormByte {
 			class STORMBYTE_BUFFER_PUBLIC BufferedFileReader final: public BufferedLocationReader {
 				public:
 					/**
+					 * @class Parameters
+					 * @brief File-reader knobs. Same fields as @ref BufferedLocationReader::Parameters.
+					 */
+					class Parameters: public BufferedLocationReader::Parameters {
+						public:
+							using BufferedLocationReader::Parameters::Parameters;
+					};
+
+					/**
 					 * @name Lifecycle
 					 * @{
 					 */
 
 					/**
-					 * @brief Store the path. @ref ReadAhead comes from @ref Setup.
+					 * @brief Store the path and optional knobs. Does not open.
 					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
+					 * @param parameters Omitted knobs keep the current file defaults.
+					 *
+					 * Omitted @ref ReadAhead → @ref Setup probes @ref Device.
+					 * Omitted @ref MaxMemory → 1 MiB.
+					 * Omitted @ref MaxWait → 0 ms.
 					 */
-					explicit BufferedFileReader(StormByte::String::String path);
-
-					/**
-					 * @brief Store the path and explicit knobs. Does not open.
-					 * @param path Local filesystem path. Stored once. @ref Location is @ref Location::Local.
-					 * @param read_ahead Prefetch length. 0 disables prefetch.
-					 * @param max_memory Cache cap. 0 stores no cache.
-					 */
-					BufferedFileReader(StormByte::String::String path,
-						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory);
+					STORMBYTE_FORCE_INLINE explicit BufferedFileReader(StormByte::String::String path,
+							Parameters parameters = {}):
+						BufferedLocationReader(std::move(path), Location::Local,
+							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{1024ull * 1024ull}),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							!parameters.ReadAhead().has_value()) {}
 
 					/**
 					 * @brief Copy constructor is deleted.

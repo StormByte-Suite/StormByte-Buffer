@@ -34,12 +34,14 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
+- `option(BUILD_SHARED_LIBS "Build shared libraries" ON)` in `lib/`. Shared is the default so a consumer can redistribute without triggering LGPL static-link obligations. Static is opt-in (`-DBUILD_SHARED_LIBS=OFF`). Third-party StormByte pins pass `ENABLE_TEST=OFF`.
+- Nested `Parameters` on `BufferedReader`, `BufferedLocationReader`, `BufferedFileReader`, `BufferedWriter`, `BufferedLocationWriter` and `BufferedFileWriter`. Each level declares its own type (leaves inherit the parent and add nothing). Knobs are optional: omitted means the previous default; all device knobs omitted means `Setup()` probes. Brace-init and a named `Parameters` object are both valid. Variadic knobs resolve in the caller under `STORMBYTE_FORCE_INLINE`; the DLL sees only numbers and a probe flag.
+- Knob types `ReadAhead`, `MaxMemory`, `MaxWait`, `WriteChunk`, `BackPressure` in `parameters.hxx`.
 - `BufferedReader` page cache. Consumed bytes can stay in RAM up to `MaxMemory`. CollectGarbage evicts farthest from `Tell`. Readahead and the page map work together; a later `Seek` into a live page is served from cache.
 - Reader logical seek. `Seek` updates `Tell` immediately. If the target is already cached, the origin is not moved. When the next `Read` runs off the cached range, one real `OriginSeek` resumes prefetch. Documented on the public reader: `Tell` never lies.
 - `BufferedWriter` `MaxMemory` and a dirty page map. Writes are lazy until `MaxMemory`, `Flush` or `Close`. Typical case is a nearby backward correction plus continue-at-Tell. Far-future islands are supported while RAM lasts; eviction prefers the oldest dirty page behind the origin cursor (a real write, possibly with a real seek).
 - Writer logical seek. Same idea as the reader: `Seek` is logical. A patch that lands on a dirty page does not touch the device. Materializing a page (evict / flush / close) is when the origin moves.
 - `BufferedReader::Telemetry` / `BufferedWriter::Telemetry` and `Telemetry() const`. Snapshot of delivered/accepted bytes, cache hits (ahead/back), misses, dirty/cached occupancy and peak, cap, origin vs logical seeks, seeks saved full/partial, try-again, saturated, evicted, and wait samples (min/max/total). Prefetch is not counted as delivered. Writer `Materialized` is bytes that reached the origin; after `Close`, `Accepted == Materialized` on a clean session.
-- `BufferedFileWriter` constructors that forward `MaxMemory` to the base.
 
 ### Changed
 
@@ -48,7 +50,8 @@ If you landed here from a release link and have not read the tree:
 - **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
 - **Breaking:** `ExternalReader` and `ExternalWriter` are `Clonable` with `StormByte::Unique`. `std::unique_ptr` is not a `PointerType`.
 - **Breaking:** `BufferedLocationReader` and `BufferedLocationWriter` sit between the engines and the file leaves. A location is file-like: named by `Location()` (`StormByte::String::String`, owned in this module), always seekable and sized. `Device()` returns `System::Device` by value from pure `OriginDevice()`. Path-only `Setup()` lives here.
-- **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. Leaf constructors still take the windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`) and forward them. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local` and its path is a local filesystem path. A socket on the lower layer can pass `Location::Remote`.
+- **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local`. A socket on the lower layer can pass `Location::Remote`.
+- **Breaking:** IO constructors no longer take positional windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`). One constructor per leaf: path plus that class’s `Parameters` (default `{}` = probe). Explicit zeros stay zeros; they do not probe.
 - **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`. `ReadError` is `StormByte.Buffer.Read`. `WriteError` is `StormByte.Buffer.Write`. `Component` is gone. Destructors are defined in this module.
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
@@ -56,7 +59,6 @@ If you landed here from a release link and have not read the tree:
 - `LockFreeRing::FrontSpan` returns a snapshot copied under the wait mutex so a concurrent `Grow` cannot invalidate the pointer the drain worker is pushing.
 - Origin I/O on the writer (`OriginSeek` / `OriginPush` / `OriginFlush` / `OriginOpen` / `OriginClose` / `OriginTruncate`) is serialized against the drain worker. `Flush` waits until the ring is empty **and** the worker has published the origin cursor (`!m_drain_run`).
 - Dual license layout: `LICENSE` is the short header text; `COPYING.LGPLv3` is the LGPL text.
-- README documents reader/writer page cache, logical seek, telemetry and `MaxMemory`.
 
 ### Fixed
 
@@ -66,11 +68,13 @@ If you landed here from a release link and have not read the tree:
 - Origin cursor after `OriginFlush` treated as untrusted until the next `EnsureOrigin` (Darwin). Sequential drain after that first realign does not seek again.
 - `LockFreeRing` `Close`, `SetError`, `Clean`, `Drop` and `Consume` publish under the wait mutex. A parallel pipeline stage waiting on an intermediate ring could miss the wake and leave `Process` spinning on `IsWritable()`.
 - Doxygen: broken `\ref` on the public reader header; private storage types not listed as public API.
+- Missing virtual destructors on `BufferedLocationReader` / `BufferedLocationWriter`. Leaves stay `final` and do not declare `virtual` on the destructor.
 
 ### Tests
 
-- `BufferedFileReaderTests`. Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints (no asserts on racy counters except identities such as delivered vs hit+miss where stable).
-- `BufferedFileWriterTests`. Close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs, first-mismatch dump on the patch-evict stress. Telemetry prints on the seek and pressure paths.
+- `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
+- Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints.
+- Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
 
 [2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0
 

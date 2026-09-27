@@ -43,10 +43,13 @@
 
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 #include <StormByte/string/string.hxx>
 #include <StormByte/system/device.hxx>
 
+#include <chrono>
 #include <memory>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -89,7 +92,7 @@ namespace StormByte {
 			 *
 			 * @ref Device is not virtual. @ref OriginDevice is pure.
 			 * @ref Setup applies @ref StormByte::System::Device::Window when
-			 * the constructor did not pass windows.
+			 * the caller omitted @ref ReadAhead.
 			 *
 			 * The leaf implements @ref OriginOpen, @ref OriginClose,
 			 * @ref OriginPull, @ref OriginSeek, @ref OriginSize and
@@ -99,6 +102,15 @@ namespace StormByte {
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedLocationReader: public BufferedReader {
 				public:
+					/**
+					 * @class Parameters
+					 * @brief Location-reader knobs. Same fields as @ref BufferedReader::Parameters.
+					 */
+					class Parameters: public BufferedReader::Parameters {
+						public:
+							using BufferedReader::Parameters::Parameters;
+					};
+
 					/**
 					 * @brief Copy constructor is deleted.
 					 */
@@ -113,7 +125,7 @@ namespace StormByte {
 					/**
 					 * @brief Destructor. Releases the location in this module.
 					 */
-					~BufferedLocationReader() noexcept override;
+					virtual ~BufferedLocationReader() noexcept override;
 
 					/**
 					 * @brief Copy assignment is deleted.
@@ -136,15 +148,34 @@ namespace StormByte {
 
 				protected:
 					/**
+					 * @brief Store the locator and resolve knobs in the caller.
+					 * @param path Locator. Forwarded. Stored once on @ref BufferedReader.
+					 * @param location @ref Location::Local or @ref Location::Remote. Forwarded.
+					 * @param parameters Omitted @ref ReadAhead → @ref Setup probes @ref Device.
+					 *        Omitted @ref MaxMemory / @ref MaxWait → 0 / 0 ms.
+					 */
+					STORMBYTE_FORCE_INLINE BufferedLocationReader(StormByte::String::String path,
+							enum Location location, Parameters parameters = {}):
+						BufferedLocationReader(std::move(path), location,
+							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							!parameters.ReadAhead().has_value()) {}
+
+					/**
 					 * @brief Store the locator and forward the cache knobs.
 					 * @param path Locator. Forwarded. Stored once on @ref BufferedReader.
 					 * @param location @ref Location::Local or @ref Location::Remote. Forwarded.
 					 * @param read_ahead Initial @ref ReadAhead. Ignored when @p probe is true.
 					 * @param max_memory Initial @ref MaxMemory.
+					 * @param max_wait Initial @ref MaxWait.
 					 * @param probe When true, @ref Setup replaces @ref ReadAhead from @ref Device.
+					 *
+					 * DLL boundary. @c m_io is created here.
 					 */
 					BufferedLocationReader(StormByte::String::String path, enum Location location,
-						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory, bool probe);
+						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
+						std::chrono::milliseconds max_wait, bool probe);
 
 					/**
 					 * @brief Leaf measurement. Not a filesystem type.

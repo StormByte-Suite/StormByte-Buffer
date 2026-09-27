@@ -43,11 +43,13 @@
 
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 #include <StormByte/string/string.hxx>
 #include <StormByte/system/device.hxx>
 
 #include <chrono>
 #include <memory>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -87,8 +89,8 @@ namespace StormByte {
 			 *
 			 * @ref Device is not virtual. @ref OriginDevice is pure.
 			 * @ref Setup applies @ref StormByte::System::Device::Window,
-			 * backpressure 4 and 1 MiB of @ref MaxMemory when the constructor
-			 * did not pass windows.
+			 * backpressure 4 and 1 MiB of @ref MaxMemory when the caller
+			 * omitted @ref WriteChunk, @ref BackPressure and @ref MaxMemory.
 			 *
 			 * The leaf implements @ref OriginOpen, @ref OriginClose,
 			 * @ref OriginPush, @ref OriginFlush, @ref OriginTruncate,
@@ -98,6 +100,15 @@ namespace StormByte {
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedLocationWriter: public BufferedWriter {
 				public:
+					/**
+					 * @class Parameters
+					 * @brief Location-writer knobs. Same fields as @ref BufferedWriter::Parameters.
+					 */
+					class Parameters: public BufferedWriter::Parameters {
+						public:
+							using BufferedWriter::Parameters::Parameters;
+					};
+
 					/**
 					 * @brief Copy constructor is deleted.
 					 */
@@ -112,7 +123,7 @@ namespace StormByte {
 					/**
 					 * @brief Destructor. Releases the location in this module.
 					 */
-					~BufferedLocationWriter() noexcept override;
+					virtual ~BufferedLocationWriter() noexcept override;
 
 					/**
 					 * @brief Copy assignment is deleted.
@@ -153,6 +164,25 @@ namespace StormByte {
 
 				protected:
 					/**
+					 * @brief Store the locator and resolve knobs in the caller.
+					 * @param path Locator. Stored once on @ref BufferedWriter.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
+					 * @param parameters Omitted @ref WriteChunk, @ref BackPressure and
+					 *        @ref MaxMemory → @ref Setup probes the device.
+					 *        Omitted @ref MaxWait → 0 ms.
+					 */
+					STORMBYTE_FORCE_INLINE BufferedLocationWriter(StormByte::String::String path,
+							enum Location location, Parameters parameters = {}):
+						BufferedLocationWriter(std::move(path), location,
+							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
+							parameters.BackPressure().value_or(0),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							!parameters.WriteChunk().has_value()
+								&& !parameters.BackPressure().has_value()
+								&& !parameters.MaxMemory().has_value()) {}
+
+					/**
 					 * @brief Forward the locator and the sink knobs.
 					 * @param path Locator. Stored once on @ref BufferedWriter.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
@@ -161,6 +191,8 @@ namespace StormByte {
 					 * @param max_wait Initial @ref MaxWait.
 					 * @param max_memory Initial @ref MaxMemory. Ignored when @p probe is true.
 					 * @param probe When true, @ref Setup replaces chunk, backpressure and MaxMemory.
+					 *
+					 * DLL boundary. @c m_io is created here.
 					 */
 					BufferedLocationWriter(StormByte::String::String path, enum Location location,
 						StormByte::ByteSize write_chunk, std::size_t back_pressure,

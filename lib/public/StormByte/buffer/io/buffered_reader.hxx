@@ -42,9 +42,11 @@
 #pragma once
 
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/parameters.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/platform.h>
 #include <StormByte/string/string.hxx>
 
 #include <chrono>
@@ -52,6 +54,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -192,6 +195,19 @@ namespace StormByte {
 				friend class Backend::BufferedReader;
 
 				public:
+					/**
+					 * @class Parameters
+					 * @brief Reader knobs. A missing field keeps the base default (0 / 0 ms).
+					 *
+					 * Header-only. The variadic list is applied in the caller
+					 * (@c STORMBYTE_FORCE_INLINE). This module never
+					 * instantiates @c Parameters.
+					 */
+					class Parameters: public ReaderParameters {
+						public:
+							using ReaderParameters::ReaderParameters;
+					};
+
 					/**
 					 * @struct Telemetry
 					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
@@ -619,13 +635,28 @@ namespace StormByte {
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
 					 * @param path Locator. Stored once.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
+					 * @param parameters Omitted knobs are 0 / 0 ms. Resolved in the caller.
+					 */
+					STORMBYTE_FORCE_INLINE BufferedReader(StormByte::String::String path, enum Location location,
+							Parameters parameters = {}):
+						BufferedReader(std::move(path), location,
+							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							parameters.MaxWait().value_or(std::chrono::milliseconds{0})) {}
+
+					/**
+					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
+					 * @param path Locator. Stored once.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param read_ahead Initial @ref ReadAhead in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
+					 *
+					 * DLL boundary. Children that already resolved knobs call this.
 					 */
 					BufferedReader(StormByte::String::String path, enum Location location,
-						StormByte::ByteSize read_ahead = 0, StormByte::ByteSize max_memory = 0,
-						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
+						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
+						std::chrono::milliseconds max_wait);
 
 					/**
 					 * @brief Publish session state from a leaf hook.

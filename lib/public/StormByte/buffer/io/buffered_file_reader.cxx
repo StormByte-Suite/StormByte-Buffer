@@ -51,8 +51,6 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
-
 	std::filesystem::path ToPath(const StormByte::String::String& location) {
 #ifdef WINDOWS
 		const StormByte::String::WString wide(location);
@@ -62,13 +60,6 @@ namespace {
 #endif
 	}
 }
-
-BufferedFileReader::BufferedFileReader(StormByte::String::String path):
-	BufferedLocationReader(std::move(path), Location::Local, StormByte::ByteSize{0}, DefaultMaxMemory, true) {}
-
-BufferedFileReader::BufferedFileReader(StormByte::String::String path, const StormByte::ByteSize read_ahead,
-		const StormByte::ByteSize max_memory):
-	BufferedLocationReader(std::move(path), Location::Local, read_ahead, max_memory, false) {}
 
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	BufferedLocationReader(std::move(other)),
