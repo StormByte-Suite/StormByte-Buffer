@@ -1,116 +1,187 @@
-/*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer original source is dual-licensed:
- *
- * 1. GNU Lesser General Public License v3.0 (or later)
- *    You may redistribute and/or modify this file under the terms of the
- *    GNU Lesser General Public License as published by the Free Software
- *    Foundation, either version 3 of the License, or (at your option)
- *    any later version.
- *
- * 2. Commercial license
- *    Alternatively, this file may be used under the terms of a commercial
- *    license agreement with the copyright holder
- *    (David C. Manuelda <StormByte@gmail.com>).
- *
- * Both licenses apply only to original StormByte-Buffer source in this
- * repository. They do not cover other StormByte modules or any third-party
- * material shipped with this repository (including everything under
- * thirdparty/, and in particular the bundled StormByte-Logger tree and
- * the rest of the StormByte suite it vendors), which remains under its own
- * license.
- *
- * Neither license grants any patent rights. Any patent licenses required
- * to use this software or third-party components must be obtained separately
- * from the patent holders.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * version 3 along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- *
- * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
- */
-
-#include <StormByte/buffer/backend/bridge.hxx>
 #include <StormByte/buffer/bridge.hxx>
+
+#include <chrono>
+#include <utility>
 
 using namespace StormByte::Buffer;
 
-Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
+namespace {
+	StormByte::Shared<StormByte::Buffer::ReadTelemetry> MakeReadTelemetry() {
+		return StormByte::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<StormByte::Buffer::ReadTelemetry>();
+	}
 
-Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
+	StormByte::Shared<StormByte::Buffer::WriteTelemetry> MakeWriteTelemetry() {
+		return StormByte::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<StormByte::Buffer::WriteTelemetry>();
+	}
+}
 
-Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
-	Bridge(in, out, StormByte::ByteSize{0}) {}
+Bridge::Bridge(ReadOnly& in, WriteOnly& out) noexcept:
+	m_ext_in(std::make_unique<ExternalBufferReader>(in)),
+	m_ext_out(std::make_unique<ExternalBufferWriter>(out)),
+	m_owned_read(MakeReadTelemetry()),
+	m_owned_write(MakeWriteTelemetry()) {}
 
-Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
-
-Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
-	Bridge(in, out, StormByte::ByteSize{0}) {}
-
-Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
-
-Bridge::Bridge(Bridge&& other) noexcept:
-	m_backend(std::move(other.m_backend)) {}
+Bridge::Bridge(Bridge&& other) noexcept {
+	std::lock_guard lock(other.m_mutex);
+	m_ext_in = std::move(other.m_ext_in);
+	m_ext_out = std::move(other.m_ext_out);
+	m_io_in = std::move(other.m_io_in);
+	m_io_out = std::move(other.m_io_out);
+	m_owned_read = std::move(other.m_owned_read);
+	m_owned_write = std::move(other.m_owned_write);
+	m_failed = other.m_failed;
+	other.m_failed = true;
+}
 
 Bridge::~Bridge() noexcept = default;
 
 Bridge& Bridge::operator=(Bridge&& other) noexcept {
-	if (this != &other)
-		m_backend = std::move(other.m_backend);
+	if (this == &other)
+		return *this;
+	std::scoped_lock lock(m_mutex, other.m_mutex);
+	m_ext_in = std::move(other.m_ext_in);
+	m_ext_out = std::move(other.m_ext_out);
+	m_io_in = std::move(other.m_io_in);
+	m_io_out = std::move(other.m_io_out);
+	m_owned_read = std::move(other.m_owned_read);
+	m_owned_write = std::move(other.m_owned_write);
+	m_failed = other.m_failed;
+	other.m_failed = true;
 	return *this;
 }
 
 bool Bridge::EoF() const noexcept {
-	return m_backend && m_backend->EoF();
+	std::lock_guard lock(m_mutex);
+	if (m_ext_in)
+		return m_ext_in->EoF();
+	if (m_io_in)
+		return m_io_in->EoF();
+	return true;
 }
 
-bool Bridge::IsReadable() const noexcept {
-	return m_backend && m_backend->IsReadable();
+bool Bridge::Failed() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_failed;
 }
 
-bool Bridge::IsWritable() const noexcept {
-	return m_backend && m_backend->IsWritable();
+const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
+	std::lock_guard lock(m_mutex);
+	if (m_io_in)
+		return m_io_in->Telemetry();
+	return m_owned_read;
 }
 
-StormByte::ByteSize Bridge::HighWater() const noexcept {
-	return m_backend ? m_backend->HighWater() : StormByte::ByteSize{0};
+const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Bridge::WriteTelemetry() const noexcept {
+	std::lock_guard lock(m_mutex);
+	if (m_io_out)
+		return m_io_out->Telemetry();
+	return m_owned_write;
 }
 
-void Bridge::HighWater(const StormByte::ByteSize high_water) noexcept {
-	if (m_backend)
-		m_backend->HighWater(high_water);
+IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation operation) {
+	dest.Clear();
+
+	if (m_ext_in) {
+		if (!m_ext_in->IsReadable() && m_ext_in->Available() == StormByte::ByteSize{0})
+			return { IO::Status::Failed, 0 };
+
+		StormByte::ByteSize want = n;
+		if (want == StormByte::ByteSize{0} || operation == Operation::NonBlocking) {
+			const StormByte::ByteSize now = m_ext_in->Available();
+			if (want == StormByte::ByteSize{0})
+				want = now;
+			else if (now < want)
+				want = now;
+		}
+		if (want == StormByte::ByteSize{0})
+			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+
+		BinaryData chunk;
+		if (!m_ext_in->Extract(want, chunk)) {
+			if (m_ext_in->EoF())
+				return { IO::Status::End, 0 };
+			if (operation == Operation::NonBlocking)
+				return { IO::Status::Ok, 0 };
+			return { IO::Status::Failed, 0 };
+		}
+		if (chunk.empty())
+			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+		if (!dest.Write(std::move(chunk)))
+			return { IO::Status::Failed, 0 };
+		return { IO::Status::Ok, dest.Available() };
+	}
+
+	if (m_io_in) {
+		StormByte::ByteSize want = n;
+		if (want == StormByte::ByteSize{0} || operation == Operation::NonBlocking) {
+			const StormByte::ByteSize now = m_io_in->Available();
+			if (want == StormByte::ByteSize{0})
+				want = now;
+			else if (now < want)
+				want = now;
+			if (want == StormByte::ByteSize{0})
+				return { m_io_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+		}
+		return m_io_in->Read(want, dest);
+	}
+
+	return { IO::Status::Failed, 0 };
 }
 
-IO::Drainer::Status Bridge::Drainer() const noexcept {
-	return m_backend ? m_backend->Drainer() : IO::Drainer::Status::Stopped;
+IO::Result Bridge::Push(FIFO& src) {
+	const StormByte::ByteSize n = src.Available();
+	if (n == StormByte::ByteSize{0})
+		return { IO::Status::Ok, 0 };
+
+	if (m_ext_out) {
+		BinaryData chunk;
+		if (!src.Extract(n, chunk))
+			return { IO::Status::Failed, 0 };
+		if (!m_ext_out->Write(std::move(chunk)))
+			return { IO::Status::Failed, 0 };
+		return { IO::Status::Ok, n };
+	}
+
+	if (m_io_out) {
+		for (;;) {
+			const IO::Result pushed = m_io_out->Write(src);
+			if (pushed.status == IO::Status::TryAgain)
+				continue;
+			return pushed;
+		}
+	}
+
+	return { IO::Status::Failed, 0 };
 }
 
-bool Bridge::Drainer(const IO::Drainer::Operation operation) noexcept {
-	return m_backend && m_backend->Drainer(operation);
-}
+StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Operation operation) {
+	std::lock_guard lock(m_mutex);
+	if (m_failed)
+		return StormByte::ByteSize{0};
 
-bool Bridge::Flush() noexcept {
-	return m_backend && m_backend->BarrierFlush();
-}
+	const auto started = std::chrono::steady_clock::now();
+	FIFO work;
+	const IO::Result pulled = Pull(n, work, operation);
+	if (pulled.status == IO::Status::Failed || pulled.status == IO::Status::Error) {
+		m_failed = true;
+		return StormByte::ByteSize{0};
+	}
 
-bool Bridge::FlushAndClose() noexcept {
-	return m_backend && m_backend->FlushAndClose();
-}
+	const StormByte::ByteSize got = work.Available();
+	if (got == StormByte::ByteSize{0})
+		return StormByte::ByteSize{0};
 
-void Bridge::SetError() noexcept {
-	if (m_backend)
-		m_backend->SetError();
+	const IO::Result pushed = Push(work);
+	if (pushed.status != IO::Status::Ok) {
+		m_failed = true;
+		return StormByte::ByteSize{0};
+	}
+
+	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+		std::chrono::steady_clock::now() - started);
+	if (m_owned_read)
+		m_owned_read->DeltaOperation(got, elapsed);
+	if (m_owned_write)
+		m_owned_write->DeltaOperation(got, elapsed);
+	return got;
 }
