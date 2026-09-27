@@ -39,7 +39,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/backend/buffered_reader.hxx>
+#include <StormByte/buffer/backend/io/buffered_reader.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
 
 #include <algorithm>
@@ -71,7 +71,7 @@ namespace {
 BufferedReader::BufferedReader(StormByte::String::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<Backend::BufferedReader>(*this, std::move(path), location, read_ahead, max_memory, max_wait)) {}
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedReader>(*this, std::move(path), location, read_ahead, max_memory, max_wait)) {}
 
 BufferedReader::BufferedReader(BufferedReader&& other) noexcept:
 	m_io(std::move(other.m_io)) {

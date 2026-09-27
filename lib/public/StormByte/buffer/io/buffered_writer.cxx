@@ -39,7 +39,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/backend/buffered_writer.hxx>
+#include <StormByte/buffer/backend/io/buffered_writer.hxx>
 #include <StormByte/buffer/io/buffered_writer.hxx>
 
 using namespace StormByte::Buffer::IO;
@@ -54,7 +54,7 @@ namespace {
 BufferedWriter::BufferedWriter(StormByte::String::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory):
-	m_io(std::make_unique<Backend::BufferedWriter>(*this, std::move(path), location, write_chunk, back_pressure, max_wait, max_memory)) {}
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedWriter>(*this, std::move(path), location, write_chunk, back_pressure, max_wait, max_memory)) {}
 
 BufferedWriter::BufferedWriter(BufferedWriter&& other) noexcept:
 	m_io(std::move(other.m_io)) {

@@ -69,15 +69,15 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
+			 * @namespace StormByte::Buffer::Backend::IO
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
-			namespace Backend {
+			namespace IO {
 				/**
 				 * @class BufferedReader
 				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedReader.
@@ -109,8 +109,8 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedReader(IO::BufferedReader& owner, StormByte::String::String path,
-							IO::Location location, StormByte::ByteSize read_ahead,
+						BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::String::String path,
+							StormByte::Buffer::IO::Location location, StormByte::ByteSize read_ahead,
 							StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait);
 
 						/**
@@ -146,7 +146,7 @@ namespace StormByte {
 						 * @brief Point hooks at a new public instance after a move.
 						 * @param owner Destination public object.
 						 */
-						void Rebind(IO::BufferedReader& owner) noexcept;
+						void Rebind(StormByte::Buffer::IO::BufferedReader& owner) noexcept;
 
 						/**
 						 * @brief Locator stored at construction.
@@ -158,7 +158,7 @@ namespace StormByte {
 						 * @brief Kind stored at construction.
 						 * @return Local or remote.
 						 */
-						IO::Location Location() const noexcept;
+						StormByte::Buffer::IO::Location Location() const noexcept;
 
 						/**
 						 * @brief Cancel the in-flight pull and wait until the worker is idle.
@@ -178,13 +178,13 @@ namespace StormByte {
 						 * @brief Session state.
 						 * @return Current @ref State.
 						 */
-						enum State State() const noexcept;
+						StormByte::Buffer::IO::State State() const noexcept;
 
 						/**
 						 * @brief Publish session state from a leaf hook.
 						 * @param state New @ref State.
 						 */
-						void SetState(enum State state) noexcept;
+						void SetState(StormByte::Buffer::IO::State state) noexcept;
 
 						/**
 						 * @name Session
@@ -201,7 +201,7 @@ namespace StormByte {
 						 * @brief Flush prefetch, drop caches, close the origin.
 						 * @return @ref Status::Ok. Idempotent. State → Unavailable.
 						 */
-						Result Close();
+						StormByte::Buffer::IO::Result Close();
 
 						/**
 						 * @brief Join the worker and drop caches. Does not call Origin*.
@@ -248,7 +248,7 @@ namespace StormByte {
 						 * @param dest Caller FIFO.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Read(StormByte::ByteSize n, FIFO& dest) const;
+						StormByte::Buffer::IO::Result Read(StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @brief Copy @p n bytes into @p dest without consuming.
@@ -256,7 +256,7 @@ namespace StormByte {
 						 * @param dest Caller FIFO.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Peek(StormByte::ByteSize n, FIFO& dest) const;
+						StormByte::Buffer::IO::Result Peek(StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @}
@@ -273,7 +273,7 @@ namespace StormByte {
 						 * @param mode Absolute or relative.
 						 * @return @ref Status::Ok or @ref Status::Failed.
 						 */
-						Result Seek(std::ptrdiff_t offset, Position mode) const;
+						StormByte::Buffer::IO::Result Seek(std::ptrdiff_t offset, Position mode) const;
 
 						/**
 						 * @brief Logical read offset in the stream.
@@ -462,7 +462,7 @@ namespace StormByte {
 						 *
 						 * Must not run under @c m_mutex.
 						 */
-						Result EnsureOrigin(StormByte::ByteSize pos) const;
+						StormByte::Buffer::IO::Result EnsureOrigin(StormByte::ByteSize pos) const;
 
 						/**
 						 * @brief @c OriginPull at @p at into @p dest and optionally cache.
@@ -473,7 +473,7 @@ namespace StormByte {
 						 *
 						 * Must not run under @c m_mutex.
 						 */
-						Result PullAt(StormByte::ByteSize at, StormByte::ByteSize n, FIFO& dest) const;
+						StormByte::Buffer::IO::Result PullAt(StormByte::ByteSize at, StormByte::ByteSize n, FIFO& dest) const;
 
 						/**
 						 * @brief Shared @c Read / @c Peek implementation.
@@ -482,7 +482,7 @@ namespace StormByte {
 						 * @param consume @c true for Read, @c false for Peek.
 						 * @return Status and bytes written to @p dest.
 						 */
-						Result Serve(StormByte::ByteSize n, FIFO& dest, bool consume) const;
+						StormByte::Buffer::IO::Result Serve(StormByte::ByteSize n, FIFO& dest, bool consume) const;
 
 						/**
 						 * @brief Record a wait sample. Caller holds @c m_mutex.
@@ -510,11 +510,11 @@ namespace StormByte {
 						 * @brief IO telemetry when the bound object is that type.
 						 * @return Pointer or null.
 						 */
-						IO::ReadTelemetry* IoTelemetry() const noexcept;
+						StormByte::Buffer::IO::ReadTelemetry* IoTelemetry() const noexcept;
 
-						IO::BufferedReader* m_owner;							///< Public leaf (hooks).
+						StormByte::Buffer::IO::BufferedReader* m_owner;							///< Public leaf (hooks).
 						StormByte::String::String m_path;						///< Locator. Not changed.
-						IO::Location m_location {IO::Location::Local};			///< Local or remote. Not changed.
+						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};			///< Local or remote. Not changed.
 
 						mutable std::mutex m_mutex;								///< Session + map.
 						mutable std::condition_variable m_cv;					///< Worker / flush waits.
@@ -523,7 +523,7 @@ namespace StormByte {
 						StormByte::ByteSize m_max_memory {0};					///< Approximate cache cap.
 						std::chrono::milliseconds m_max_wait {0};				///< Read wait cap. 0 = forever.
 
-						enum State m_state { State::Unavailable };				///< Session state.
+						StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };				///< Session state.
 						bool m_open {false};									///< Session armed (Open until Close).
 						mutable bool m_failed {false};							///< Permanent failure.
 						mutable bool m_origin_exhausted {false};				///< Device EOF (not public EoF).

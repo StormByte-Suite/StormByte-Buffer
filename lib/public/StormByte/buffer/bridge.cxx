@@ -39,78 +39,78 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/backend/bridge.hxx>
 #include <StormByte/buffer/bridge.hxx>
-#include <StormByte/buffer/io/backend/bridge.hxx>
 
 using namespace StormByte::Buffer;
 
 Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
+	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
+	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
 	Bridge(in, out, StormByte::ByteSize{0}) {}
 
 Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
+	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
 	Bridge(in, out, StormByte::ByteSize{0}) {}
 
 Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
+	m_backend(std::make_unique<Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(Bridge&& other) noexcept:
-	m_io(std::move(other.m_io)) {}
+	m_backend(std::move(other.m_backend)) {}
 
 Bridge::~Bridge() noexcept = default;
 
 Bridge& Bridge::operator=(Bridge&& other) noexcept {
 	if (this != &other)
-		m_io = std::move(other.m_io);
+		m_backend = std::move(other.m_backend);
 	return *this;
 }
 
 bool Bridge::EoF() const noexcept {
-	return m_io && m_io->EoF();
+	return m_backend && m_backend->EoF();
 }
 
 bool Bridge::IsReadable() const noexcept {
-	return m_io && m_io->IsReadable();
+	return m_backend && m_backend->IsReadable();
 }
 
 bool Bridge::IsWritable() const noexcept {
-	return m_io && m_io->IsWritable();
+	return m_backend && m_backend->IsWritable();
 }
 
 StormByte::ByteSize Bridge::HighWater() const noexcept {
-	return m_io ? m_io->HighWater() : StormByte::ByteSize{0};
+	return m_backend ? m_backend->HighWater() : StormByte::ByteSize{0};
 }
 
 void Bridge::HighWater(const StormByte::ByteSize high_water) noexcept {
-	if (m_io)
-		m_io->HighWater(high_water);
+	if (m_backend)
+		m_backend->HighWater(high_water);
 }
 
 IO::Drainer::Status Bridge::Drainer() const noexcept {
-	return m_io ? m_io->Drainer() : IO::Drainer::Status::Stopped;
+	return m_backend ? m_backend->Drainer() : IO::Drainer::Status::Stopped;
 }
 
 bool Bridge::Drainer(const IO::Drainer::Operation operation) noexcept {
-	return m_io && m_io->Drainer(operation);
+	return m_backend && m_backend->Drainer(operation);
 }
 
 bool Bridge::Flush() noexcept {
-	return m_io && m_io->BarrierFlush();
+	return m_backend && m_backend->BarrierFlush();
 }
 
 bool Bridge::FlushAndClose() noexcept {
-	return m_io && m_io->FlushAndClose();
+	return m_backend && m_backend->FlushAndClose();
 }
 
 void Bridge::SetError() noexcept {
-	if (m_io)
-		m_io->SetError();
+	if (m_backend)
+		m_backend->SetError();
 }

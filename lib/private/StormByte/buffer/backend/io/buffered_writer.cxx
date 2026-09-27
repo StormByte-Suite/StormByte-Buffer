@@ -39,22 +39,21 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/backend/buffered_writer.hxx>
+#include <StormByte/buffer/backend/io/buffered_writer.hxx>
 #include <StormByte/buffer/lockfree_ring.hxx>
 
 #include <algorithm>
 #include <mutex>
 #include <vector>
 
-using namespace StormByte::Buffer::IO::Backend;
+using namespace StormByte::Buffer::Backend::IO;
 using Result = StormByte::Buffer::IO::Result;
-using State = StormByte::Buffer::IO::State;
 using Status = StormByte::Buffer::IO::Status;
 using BinaryData = StormByte::BinaryData;
 using Position = StormByte::Buffer::Position;
 
-BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, StormByte::String::String path,
-		const IO::Location location, const StormByte::ByteSize write_chunk,
+BufferedWriter::BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::String::String path,
+		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
 		const StormByte::ByteSize max_memory):
 	m_owner(&owner),
@@ -64,7 +63,7 @@ BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, StormByte::String::Str
 	m_back_pressure(back_pressure),
 	m_max_memory(max_memory),
 	m_max_wait(max_wait),
-	m_state(State::Unavailable) {
+	m_state(StormByte::Buffer::IO::State::Unavailable) {
 	if (BufferedMode())
 		m_ring = std::make_unique<LockFreeRing>(PendingCap());
 	StartWorker();
@@ -74,7 +73,7 @@ BufferedWriter::~BufferedWriter() {
 	Shutdown();
 }
 
-void BufferedWriter::Rebind(IO::BufferedWriter& owner) noexcept {
+void BufferedWriter::Rebind(StormByte::Buffer::IO::BufferedWriter& owner) noexcept {
 	m_owner = &owner;
 }
 
@@ -88,15 +87,15 @@ StormByte::Buffer::IO::Location BufferedWriter::Location() const noexcept {
 
 BufferedWriter::operator bool() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_state == State::Idle;
+	return m_state == StormByte::Buffer::IO::State::Idle;
 }
 
-State BufferedWriter::State() const noexcept {
+StormByte::Buffer::IO::State BufferedWriter::State() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_state;
 }
 
-void BufferedWriter::SetState(const enum State state) noexcept {
+void BufferedWriter::SetState(const StormByte::Buffer::IO::State state) noexcept {
 	std::lock_guard lock(m_mutex);
 	m_state = state;
 }
@@ -106,7 +105,7 @@ void BufferedWriter::SetTell(const StormByte::ByteSize offset) noexcept {
 	m_tell = offset;
 	if (m_tell > m_high_water)
 		m_high_water = m_tell;
-	if (IO::WriteTelemetry* io = IoTelemetry())
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
 		io->m_high_water = m_high_water;
 }
 
@@ -167,7 +166,7 @@ void BufferedWriter::CloseSeekEpoch() noexcept {
 	m_epoch_open = false;
 	m_epoch_hit = false;
 	m_epoch_origin = false;
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_seek_saved_full = m_seek_saved_full;
 		io->m_seek_saved_partial = m_seek_saved_partial;
 	}
@@ -200,7 +199,7 @@ void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noex
 	}
 	m_wait_total += elapsed;
 	++m_wait_samples;
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_wait_min = m_wait_min;
 		io->m_wait_max = m_wait_max;
 		io->m_wait_total = m_wait_total;
@@ -215,7 +214,7 @@ void BufferedWriter::NoteDirty() const noexcept {
 	const StormByte::ByteSize cap = PendingCap();
 	if (cap > StormByte::ByteSize{0} && m_ring && m_ring->Available() >= cap)
 		++m_saturated;
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_dirty = now;
 		io->m_dirty_peak = m_dirty_peak;
 		io->m_cap = cap;
@@ -262,7 +261,7 @@ bool BufferedWriter::Open() {
 	m_epoch_origin = false;
 	if (m_ring)
 		m_ring->Clear();
-	return m_state == State::Idle;
+	return m_state == StormByte::Buffer::IO::State::Idle;
 }
 
 bool BufferedWriter::Close() {
@@ -284,16 +283,16 @@ bool BufferedWriter::Close() {
 	m_open = false;
 	if (flushed.status == Status::Error) {
 		m_failed = true;
-		m_state = State::Fault;
+		m_state = StormByte::Buffer::IO::State::Fault;
 		return false;
 	}
 	if (flushed.status == Status::Failed && was_open) {
 		m_failed = true;
-		m_state = State::Fault;
+		m_state = StormByte::Buffer::IO::State::Fault;
 		return false;
 	}
 	m_failed = false;
-	m_state = State::Unavailable;
+	m_state = StormByte::Buffer::IO::State::Unavailable;
 	ClearPages();
 	if (m_ring)
 		m_ring->Clear();
@@ -306,7 +305,7 @@ void BufferedWriter::Shutdown() {
 	StopWorker();
 	std::lock_guard lock(m_mutex);
 	m_open = false;
-	m_state = State::Unavailable;
+	m_state = StormByte::Buffer::IO::State::Unavailable;
 }
 
 bool BufferedWriter::Rewind() {
@@ -347,7 +346,7 @@ Result BufferedWriter::EnsureOrigin(const StormByte::ByteSize absolute) {
 	++m_seek_origin;
 	if (m_epoch_open)
 		m_epoch_origin = true;
-	if (IO::WriteTelemetry* io = IoTelemetry())
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
 		io->m_seek_origin = m_seek_origin;
 	return { Status::Ok, 0 };
 }
@@ -487,8 +486,8 @@ Result BufferedWriter::MaterializeFrom(std::unique_lock<std::mutex>& lock,
 		back.bytes = std::move(payload);
 		m_pages.emplace(static_cast<std::size_t>(start), std::move(back));
 		m_failed = true;
-		if (m_state == State::Idle)
-			m_state = State::Fault;
+		if (m_state == StormByte::Buffer::IO::State::Idle)
+			m_state = StormByte::Buffer::IO::State::Fault;
 		return pushed;
 	}
 
@@ -498,7 +497,7 @@ Result BufferedWriter::MaterializeFrom(std::unique_lock<std::mutex>& lock,
 	const StormByte::ByteSize end = start + n;
 	if (end > m_materialized)
 		m_materialized = end;
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_origin = m_origin_bytes;
 		io->m_materialized = m_materialized;
 	}
@@ -523,7 +522,7 @@ Result BufferedWriter::CollectGarbage() {
 			victim = std::prev(m_pages.end());
 
 		++m_evicted;
-		if (IO::WriteTelemetry* io = IoTelemetry())
+		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
 			io->m_evicted = m_evicted;
 		const Result evicted = MaterializeFrom(lock, victim);
 		if (evicted.status != Status::Ok)
@@ -581,11 +580,11 @@ Result BufferedWriter::Flush() {
 		m_origin_cursor_dirty = true;
 		if (visible.status != Status::Ok) {
 			m_failed = true;
-			if (m_state == State::Idle)
-				m_state = State::Fault;
+			if (m_state == StormByte::Buffer::IO::State::Idle)
+				m_state = StormByte::Buffer::IO::State::Fault;
 			return visible;
 		}
-		if (IO::WriteTelemetry* io = IoTelemetry()) {
+		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 			io->DeltaOperation(StormByte::ByteSize{0},
 				std::chrono::duration_cast<std::chrono::microseconds>(
 					std::chrono::steady_clock::now() - started));
@@ -613,7 +612,7 @@ Result BufferedWriter::Truncate() {
 	std::lock_guard lock(m_mutex);
 	if (truncated.status != Status::Ok) {
 		m_failed = true;
-		m_state = State::Fault;
+		m_state = StormByte::Buffer::IO::State::Fault;
 		return { Status::Failed, 0 };
 	}
 	m_tell = StormByte::ByteSize{0};
@@ -621,7 +620,7 @@ Result BufferedWriter::Truncate() {
 	m_origin_pos = StormByte::ByteSize{0};
 	m_origin_cursor_dirty = true;
 	m_materialized = StormByte::ByteSize{0};
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_high_water = m_high_water;
 		io->m_materialized = m_materialized;
 		io->m_dirty = StormByte::ByteSize{0};
@@ -631,7 +630,7 @@ Result BufferedWriter::Truncate() {
 
 Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
 	std::lock_guard lock(m_mutex);
-	if (!m_open || m_failed || m_state != State::Idle || !m_owner)
+	if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle || !m_owner)
 		return { Status::Failed, 0 };
 
 	StormByte::ByteSize abs = m_tell;
@@ -655,7 +654,7 @@ Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
 	m_epoch_hit = false;
 	m_epoch_origin = false;
 	++m_seek_logical;
-	if (IO::WriteTelemetry* io = IoTelemetry()) {
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 		io->m_seek_logical = m_seek_logical;
 		io->m_high_water = m_high_water;
 	}
@@ -668,11 +667,11 @@ Result BufferedWriter::Write(const FIFO& src) {
 		return { Status::Ok, 0 };
 	{
 		std::lock_guard lock(m_mutex);
-		if (!m_open || m_failed || m_state != State::Idle)
+		if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle)
 			return { Status::Failed, 0 };
 		if (!WouldAccept(need)) {
 			++m_try_again;
-			if (IO::WriteTelemetry* io = IoTelemetry())
+			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
 				io->m_try_again = m_try_again;
 			return { Status::TryAgain, 0 };
 		}
@@ -690,13 +689,13 @@ Result BufferedWriter::Write(FIFO& src) {
 Result BufferedWriter::Write(const std::span<const std::byte> src) {
 	{
 		std::lock_guard lock(m_mutex);
-		if (!m_open || m_failed || m_state != State::Idle)
+		if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle)
 			return { Status::Failed, 0 };
 		if (src.empty())
 			return { Status::Ok, 0 };
 		if (!WouldAccept(StormByte::ByteSize{src.size()})) {
 			++m_try_again;
-			if (IO::WriteTelemetry* io = IoTelemetry())
+			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
 				io->m_try_again = m_try_again;
 			return { Status::TryAgain, 0 };
 		}
@@ -725,7 +724,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			m_behind = m_behind + n;
 			NoteDirty();
 			NoteWait(std::chrono::steady_clock::now() - started);
-			if (IO::WriteTelemetry* io = IoTelemetry()) {
+			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 				io->m_accepted = m_accepted;
 				io->m_behind = m_behind;
 				io->m_hit_ahead = m_hit_ahead;
@@ -759,16 +758,16 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		if (pushed.status != Status::Ok) {
 			std::lock_guard lock(m_mutex);
 			m_failed = true;
-			if (m_state == State::Idle)
-				m_state = State::Fault;
+			if (m_state == StormByte::Buffer::IO::State::Idle)
+				m_state = StormByte::Buffer::IO::State::Fault;
 			NoteWait(std::chrono::steady_clock::now() - started);
 			return pushed;
 		}
 		if (visible.status != Status::Ok) {
 			std::lock_guard lock(m_mutex);
 			m_failed = true;
-			if (m_state == State::Idle)
-				m_state = State::Fault;
+			if (m_state == StormByte::Buffer::IO::State::Idle)
+				m_state = StormByte::Buffer::IO::State::Fault;
 			NoteWait(std::chrono::steady_clock::now() - started);
 			return visible;
 		}
@@ -784,7 +783,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		m_accepted = m_accepted + n;
 		m_direct = m_direct + n;
 		NoteWait(std::chrono::steady_clock::now() - started);
-		if (IO::WriteTelemetry* io = IoTelemetry()) {
+		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 			io->m_accepted = m_accepted;
 			io->m_direct = m_direct;
 			io->m_origin = m_origin_bytes;
@@ -832,7 +831,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		m_behind = m_behind + n;
 		NoteDirty();
 		NoteWait(std::chrono::steady_clock::now() - started);
-		if (IO::WriteTelemetry* io = IoTelemetry()) {
+		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 			io->m_accepted = m_accepted;
 			io->m_behind = m_behind;
 			io->m_high_water = m_high_water;
@@ -1003,16 +1002,16 @@ void BufferedWriter::Worker() {
 			if (aligned.status != Status::Ok) {
 				std::lock_guard inner(m_mutex);
 				m_failed = true;
-				if (m_state == State::Idle)
-					m_state = State::Fault;
+				if (m_state == StormByte::Buffer::IO::State::Idle)
+					m_state = StormByte::Buffer::IO::State::Fault;
 				m_cv.notify_all();
 				break;
 			}
 			if (pushed.status != Status::Ok) {
 				std::lock_guard inner(m_mutex);
 				m_failed = true;
-				if (m_state == State::Idle)
-					m_state = State::Fault;
+				if (m_state == StormByte::Buffer::IO::State::Idle)
+					m_state = StormByte::Buffer::IO::State::Fault;
 				m_cv.notify_all();
 				break;
 			}
@@ -1023,7 +1022,7 @@ void BufferedWriter::Worker() {
 				m_origin_bytes = m_origin_bytes + StormByte::ByteSize{front.size()};
 				if (m_origin_pos > m_materialized)
 					m_materialized = m_origin_pos;
-				if (IO::WriteTelemetry* io = IoTelemetry()) {
+				if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 					io->m_origin = m_origin_bytes;
 					io->m_materialized = m_materialized;
 				}

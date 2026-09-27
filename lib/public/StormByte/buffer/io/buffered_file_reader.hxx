@@ -43,7 +43,6 @@
 
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 
 #include <chrono>
 #include <fstream>
@@ -204,9 +203,9 @@ namespace StormByte {
 					std::optional<StormByte::ByteSize> OriginSize() const noexcept override;
 
 				private:
-					std::ifstream m_file;					///< Binary input stream.
+					std::ifstream m_file;						///< Binary input stream.
 					std::optional<StormByte::ByteSize> m_size;	///< Size after OriginOpen.
-					mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
+					mutable std::mutex m_file_mutex;			///< Serialises ifstream access.
 			};
 		}
 	}

@@ -48,7 +48,6 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 #include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 
@@ -70,22 +69,28 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
+			 * @namespace StormByte::Buffer::Backend::IO
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
-			namespace Backend {
+			namespace IO {
 				/**
 				 * @class BufferedReader
 				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedReader.
 				 */
 				class BufferedReader;
 			}
+		}
 
+		/**
+		 * @namespace StormByte::Buffer::IO
+		 * @brief Buffered binary sources and sinks.
+		 */
+		namespace IO {
 			/**
 			 * @class BufferedReader
 			 * @brief Coordinated binary read source with optional prefetch and cache.
@@ -199,7 +204,7 @@ namespace StormByte {
 			 * @see IO::Status, State, Result, FIFO
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedReader {
-				friend class Backend::BufferedReader;
+				friend class StormByte::Buffer::Backend::IO::BufferedReader;
 
 				public:
 					/**
@@ -636,7 +641,7 @@ namespace StormByte {
 					 */
 
 				private:
-					std::unique_ptr<Backend::BufferedReader> m_io;	///< Private coordinator state.
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedReader> m_io;	///< Private coordinator state.
 			};
 		}
 	}

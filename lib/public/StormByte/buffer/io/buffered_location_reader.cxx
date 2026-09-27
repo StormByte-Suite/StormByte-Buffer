@@ -39,8 +39,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/backend/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
-#include <StormByte/buffer/io/backend/buffered_location_reader.hxx>
 
 #include <utility>
 
@@ -50,7 +50,7 @@ BufferedLocationReader::BufferedLocationReader(StormByte::String::String path, c
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait, const bool probe):
 	BufferedReader(std::move(path), location, read_ahead, max_memory, max_wait),
-	m_io(std::make_unique<Backend::BufferedLocationReader>(probe)) {}
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationReader>(probe)) {}
 
 BufferedLocationReader::BufferedLocationReader(BufferedLocationReader&& other) noexcept:
 	BufferedReader(std::move(other)),

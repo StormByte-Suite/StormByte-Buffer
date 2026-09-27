@@ -54,20 +54,20 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
+			 * @namespace StormByte::Buffer::Backend::IO
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
-			namespace Backend {
+			namespace IO {
 				/**
 				 * @class BufferedLocationWriter
 				 * @brief Private state of @ref StormByte::Buffer::IO::BufferedLocationWriter.
 				 *
-				 * Owns the probe flag. The locator lives on @ref IO::BufferedWriter.
+				 * Owns the probe flag. The locator lives on @ref StormByte::Buffer::IO::BufferedWriter.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedLocationWriter {
 					public:

@@ -39,15 +39,15 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/backend/buffered_location_writer.hxx>
+#include <StormByte/buffer/backend/io/buffered_location_reader.hxx>
 
-using namespace StormByte::Buffer::IO::Backend;
+using namespace StormByte::Buffer::Backend::IO;
 
-BufferedLocationWriter::BufferedLocationWriter(const bool probe):
+BufferedLocationReader::BufferedLocationReader(const bool probe):
 	m_probe(probe) {}
 
-BufferedLocationWriter::~BufferedLocationWriter() = default;
+BufferedLocationReader::~BufferedLocationReader() = default;
 
-bool BufferedLocationWriter::Probe() const noexcept {
+bool BufferedLocationReader::Probe() const noexcept {
 	return m_probe;
 }

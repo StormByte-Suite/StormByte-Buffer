@@ -76,15 +76,15 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
+			 * @namespace StormByte::Buffer::Backend::IO
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
-			namespace Backend {
+			namespace IO {
 				/**
 				 * @class BufferedWriter
 				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedWriter.
@@ -119,8 +119,8 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedWriter(IO::BufferedWriter& owner, StormByte::String::String path,
-							IO::Location location, StormByte::ByteSize write_chunk,
+						BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::String::String path,
+							StormByte::Buffer::IO::Location location, StormByte::ByteSize write_chunk,
 							std::size_t back_pressure, std::chrono::milliseconds max_wait,
 							StormByte::ByteSize max_memory);
 
@@ -159,7 +159,7 @@ namespace StormByte {
 						 * @brief Point hooks at a new public instance after a move.
 						 * @param owner Destination public object.
 						 */
-						void Rebind(IO::BufferedWriter& owner) noexcept;
+						void Rebind(StormByte::Buffer::IO::BufferedWriter& owner) noexcept;
 
 						/**
 						 * @brief Locator stored at construction.
@@ -171,7 +171,7 @@ namespace StormByte {
 						 * @brief Kind stored at construction.
 						 * @return Local or remote.
 						 */
-						IO::Location Location() const noexcept;
+						StormByte::Buffer::IO::Location Location() const noexcept;
 
 						/**
 						 * @brief Whether the sink is prepared to write.
@@ -183,13 +183,13 @@ namespace StormByte {
 						 * @brief Session state.
 						 * @return Current @ref State.
 						 */
-						enum State State() const noexcept;
+						enum StormByte::Buffer::IO::State State() const noexcept;
 
 						/**
 						 * @brief Publish session state from a leaf hook.
 						 * @param state New @ref State.
 						 */
-						void SetState(enum State state) noexcept;
+						void SetState(enum StormByte::Buffer::IO::State state) noexcept;
 
 						/**
 						 * @brief Publish the logical write offset from a leaf Seek.
@@ -238,13 +238,13 @@ namespace StormByte {
 						 *
 						 * Counts toward MeanRate.
 						 */
-						Result Flush();
+						StormByte::Buffer::IO::Result Flush();
 
 						/**
 						 * @brief Drop the map and the ring without pushing, truncate the origin.
 						 * @return @ref Status::Ok or @ref Status::Failed.
 						 */
-						Result Truncate();
+						StormByte::Buffer::IO::Result Truncate();
 
 						/**
 						 * @}
@@ -260,21 +260,21 @@ namespace StormByte {
 						 * @param src Source FIFO. Read from the current position.
 						 * @return Status and bytes accepted. Source untouched unless Ok.
 						 */
-						Result Write(const FIFO& src);
+						StormByte::Buffer::IO::Result Write(const FIFO& src);
 
 						/**
 						 * @brief Write every unread byte of @p src.
 						 * @param src Source FIFO. Read from the current position.
 						 * @return Status and bytes accepted. Source untouched unless Ok.
 						 */
-						Result Write(FIFO& src);
+						StormByte::Buffer::IO::Result Write(FIFO& src);
 
 						/**
 						 * @brief Write the whole span.
 						 * @param src Octets to copy.
 						 * @return Status and bytes accepted. Source untouched unless Ok.
 						 */
-						Result Write(std::span<const std::byte> src);
+						StormByte::Buffer::IO::Result Write(std::span<const std::byte> src);
 
 						/**
 						 * @}
@@ -298,7 +298,7 @@ namespace StormByte {
 						 * @param mode Absolute or Relative.
 						 * @return Ok or Failed. Does not OriginSeek.
 						 */
-						Result Seek(std::ptrdiff_t offset, Position mode);
+						StormByte::Buffer::IO::Result Seek(std::ptrdiff_t offset, Position mode);
 
 						/**
 						 * @name Telemetry
@@ -449,21 +449,21 @@ namespace StormByte {
 						 *
 						 * Caller already holds @c m_origin_io.
 						 */
-						Result PushAll(std::span<const std::byte> data) const;
+						StormByte::Buffer::IO::Result PushAll(std::span<const std::byte> data) const;
 
 						/**
 						 * @brief Shared implementation of the public Write overloads.
 						 * @param src Octets to accept.
 						 * @return Status and bytes accepted.
 						 */
-						Result WriteSpan(std::span<const std::byte> src);
+						StormByte::Buffer::IO::Result WriteSpan(std::span<const std::byte> src);
 
 						/**
 						 * @brief Place @p src into the page map at @c m_tell.
 						 * @param src Octets.
 						 * @return Ok or Failed.
 						 */
-						Result StorePages(std::span<const std::byte> src);
+						StormByte::Buffer::IO::Result StorePages(std::span<const std::byte> src);
 
 						/**
 						 * @brief Merge overlap / abut around @p offset.
@@ -477,7 +477,7 @@ namespace StormByte {
 						 *
 						 * Internal. Does not count toward MeanRate.
 						 */
-						Result CollectGarbage();
+						StormByte::Buffer::IO::Result CollectGarbage();
 
 						/**
 						 * @brief Materialise every page in offset order.
@@ -485,7 +485,7 @@ namespace StormByte {
 						 *
 						 * Used by public Flush. The Flush wrapper times MeanRate.
 						 */
-						Result MaterializeAll();
+						StormByte::Buffer::IO::Result MaterializeAll();
 
 						/**
 						 * @brief Push one page to the origin.
@@ -493,7 +493,7 @@ namespace StormByte {
 						 * @param it Page to start from. Invalidated on success.
 						 * @return Ok, Error or Failed.
 						 */
-						Result MaterializeFrom(std::unique_lock<std::mutex>& lock,
+						StormByte::Buffer::IO::Result MaterializeFrom(std::unique_lock<std::mutex>& lock,
 							std::map<std::size_t, Page>::iterator it);
 
 						/**
@@ -504,7 +504,7 @@ namespace StormByte {
 						 * Skips OriginSeek when @c m_origin_pos equals @p absolute
 						 * and @c m_origin_cursor_dirty is false.
 						 */
-						Result EnsureOrigin(StormByte::ByteSize absolute);
+						StormByte::Buffer::IO::Result EnsureOrigin(StormByte::ByteSize absolute);
 
 						/**
 						 * @brief Close the current seek epoch if one is open.
@@ -531,11 +531,11 @@ namespace StormByte {
 						 * @brief IO telemetry when the bound object is that type.
 						 * @return Pointer or null.
 						 */
-						IO::WriteTelemetry* IoTelemetry() const noexcept;
+						StormByte::Buffer::IO::WriteTelemetry* IoTelemetry() const noexcept;
 
-						IO::BufferedWriter* m_owner;						///< Public leaf (hooks).
+						StormByte::Buffer::IO::BufferedWriter* m_owner;						///< Public leaf (hooks).
 						StormByte::String::String m_path;					///< Locator
-						IO::Location m_location {IO::Location::Local};		///< Local or remote
+						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};		///< Local or remote
 
 						mutable std::mutex m_mutex;							///< Session + knobs.
 						mutable std::mutex m_origin_io;						///< Serialises every Origin* hook.
@@ -546,7 +546,7 @@ namespace StormByte {
 						StormByte::ByteSize m_max_memory {0};				///< Page-map budget.
 						std::chrono::milliseconds m_max_wait {0};			///< OriginPush wait cap.
 
-						enum State m_state { State::Unavailable };			///< Session state.
+						enum StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };			///< Session state.
 						bool m_open {false};								///< Session armed.
 						mutable bool m_failed {false};						///< Permanent failure.
 						mutable StormByte::ByteSize m_tell {0};				///< Logical cursor.

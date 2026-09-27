@@ -60,7 +60,13 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
-		class Bridge;
+		/**
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
+		 */
+		namespace Backend {
+			class Bridge;
+		}
 
 		/**
 		 * @class Telemetry
@@ -127,7 +133,7 @@ namespace StormByte {
 				void DeltaOperation(StormByte::ByteSize bytes, std::chrono::microseconds elapsed) noexcept;
 
 			private:
-				friend class Bridge;
+				friend class Backend::Bridge;
 
 				std::atomic<std::uint64_t> m_rate_bytes;	///< Octets counted toward MeanRate.
 				std::atomic<std::uint64_t> m_op_us;		///< Sum of operation durations (us).
@@ -169,7 +175,7 @@ namespace StormByte {
 				operator StormByte::String::String() const override;
 
 			protected:
-				friend class Bridge;
+				friend class Backend::Bridge;
 
 				StormByte::ByteSize m_delivered;	///< Octets delivered.
 		};
@@ -209,7 +215,7 @@ namespace StormByte {
 				operator StormByte::String::String() const override;
 
 			protected:
-				friend class Bridge;
+				friend class Backend::Bridge;
 
 				StormByte::ByteSize m_accepted;	///< Octets accepted.
 		};

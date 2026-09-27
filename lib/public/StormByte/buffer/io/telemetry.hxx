@@ -42,8 +42,6 @@
 #pragma once
 
 #include <StormByte/buffer/telemetry.hxx>
-#include <StormByte/buffer/visibility.h>
-#include <StormByte/byte_size.hxx>
 
 #include <chrono>
 #include <cstddef>
@@ -59,26 +57,32 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
+		 */
+		namespace Backend {
+			/**
+			 * @namespace StormByte::Buffer::Backend::IO
+			 * @brief PIMPL coordinators for the public IO types.
+			 */
+			namespace IO {
+				class BufferedReader;
+				class BufferedWriter;
+			}
+		}
+
+		/**
 		 * @namespace StormByte::Buffer::IO
 		 * @brief Buffered binary sources and sinks.
 		 */
 		namespace IO {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
-			 * @brief PIMPL coordinators for the public IO types.
-			 */
-			namespace Backend {
-				class BufferedReader;
-				class BufferedWriter;
-			}
-
-			/**
 			 * @class ReadTelemetry
 			 * @brief Reader counters on top of @ref StormByte::Buffer::ReadTelemetry.
 			 *
 			 * Same fields as @c BufferedReader::Telemetry in SHA c1d44cb.
-			 * @ref Backend::BufferedReader writes them. MeanRate is the
-			 * caller rate, not the origin rate.
+			 * @ref StormByte::Buffer::Backend::IO::BufferedReader writes them.
+			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC ReadTelemetry: public StormByte::Buffer::ReadTelemetry {
 				public:
@@ -229,7 +233,7 @@ namespace StormByte {
 					operator StormByte::String::String() const override;
 
 				protected:
-					friend class Backend::BufferedReader;
+					friend class StormByte::Buffer::Backend::IO::BufferedReader;
 
 					StormByte::ByteSize m_hit_ahead;		///< First-touch cache octets.
 					StormByte::ByteSize m_hit_back;			///< Replay after Seek.
@@ -256,8 +260,8 @@ namespace StormByte {
 			 * @brief Writer counters on top of @ref StormByte::Buffer::WriteTelemetry.
 			 *
 			 * Same fields as @c BufferedWriter::Telemetry in SHA c1d44cb.
-			 * @ref Backend::BufferedWriter writes them. MeanRate is the
-			 * caller rate, not the origin rate.
+			 * @ref StormByte::Buffer::Backend::IO::BufferedWriter writes them.
+			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC WriteTelemetry: public StormByte::Buffer::WriteTelemetry {
 				public:
@@ -432,7 +436,7 @@ namespace StormByte {
 					operator StormByte::String::String() const override;
 
 				protected:
-					friend class Backend::BufferedWriter;
+					friend class StormByte::Buffer::Backend::IO::BufferedWriter;
 
 					StormByte::ByteSize m_behind;			///< Accepted not pushed on the caller thread.
 					StormByte::ByteSize m_direct;			///< Accepted pushed on the caller thread.

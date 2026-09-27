@@ -43,7 +43,6 @@
 
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 
 #include <chrono>
 #include <fstream>

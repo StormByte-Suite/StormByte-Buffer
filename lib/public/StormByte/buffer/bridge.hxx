@@ -61,21 +61,15 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
-			 * @brief PIMPL coordinators for the public IO types.
+			 * @class Bridge
+			 * @brief Private pump for @ref StormByte::Buffer::Bridge.
 			 */
-			namespace Backend {
-				/**
-				 * @class Bridge
-				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
-				 */
-				class Bridge;
-			}
+			class Bridge;
 		}
 
 		/**
@@ -253,7 +247,7 @@ namespace StormByte {
 				void SetError() noexcept;
 
 			private:
-				std::unique_ptr<IO::Backend::Bridge> m_io;	///< Pump.
+				std::unique_ptr<Backend::Bridge> m_backend;	///< Pump.
 		};
 	}
 }

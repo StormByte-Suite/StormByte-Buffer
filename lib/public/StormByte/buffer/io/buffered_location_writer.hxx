@@ -43,7 +43,6 @@
 
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 #include <StormByte/string/string.hxx>
 #include <StormByte/system/device.hxx>
 
@@ -62,14 +61,28 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
+		 */
+		namespace Backend {
+			/**
+			 * @namespace StormByte::Buffer::Backend::IO
+			 * @brief PIMPL coordinators for the public IO types.
+			 */
+			namespace IO {
+				/**
+				 * @class BufferedLocationWriter
+				 * @brief Private state of @ref StormByte::Buffer::IO::BufferedLocationWriter.
+				 */
+				class BufferedLocationWriter;
+			}
+		}
+
+		/**
 		 * @namespace StormByte::Buffer::IO
 		 * @brief Buffered binary sources and sinks.
 		 */
 		namespace IO {
-			namespace Backend {
-				class BufferedLocationWriter;
-			}
-
 			/**
 			 * @class BufferedLocationWriter
 			 * @brief File-like @ref BufferedWriter.
@@ -223,7 +236,7 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
-					std::unique_ptr<Backend::BufferedLocationWriter> m_io;	///< Location string and probe flag.
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedLocationWriter> m_io;	///< Location string and probe flag.
 			};
 		}
 	}

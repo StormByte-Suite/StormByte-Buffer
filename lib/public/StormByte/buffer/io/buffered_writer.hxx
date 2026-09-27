@@ -48,7 +48,6 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/platform.h>
 #include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 
@@ -69,28 +68,34 @@ namespace StormByte {
 	 */
 	namespace Buffer {
 		/**
-		 * @namespace StormByte::Buffer::IO
-		 * @brief Buffered binary sources and sinks.
+		 * @namespace StormByte::Buffer::Backend
+		 * @brief PIMPL coordinators for public Buffer types that are not IO.
 		 */
-		namespace IO {
+		namespace Backend {
 			/**
-			 * @namespace StormByte::Buffer::IO::Backend
+			 * @class Bridge
+			 * @brief Private pump for @ref StormByte::Buffer::Bridge.
+			 */
+			class Bridge;
+
+			/**
+			 * @namespace StormByte::Buffer::Backend::IO
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
-			namespace Backend {
+			namespace IO {
 				/**
 				 * @class BufferedWriter
 				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedWriter.
 				 */
 				class BufferedWriter;
-
-				/**
-				 * @class Bridge
-				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
-				 */
-				class Bridge;
 			}
+		}
 
+		/**
+		 * @namespace StormByte::Buffer::IO
+		 * @brief Buffered binary sources and sinks.
+		 */
+		namespace IO {
 			/**
 			 * @class BufferedWriter
 			 * @brief Coordinated binary write sink with optional chunked write-behind
@@ -203,8 +208,8 @@ namespace StormByte {
 			 * Setting @c MaxWait does not abort an in-flight push.
 			 *
 			 * @par WillWrite
-			 * Protected probe used by @c Backend::Bridge. Default asks
-			 * the ring cap. Leaves may tighten it (disk space, socket).
+			 * Protected probe used by @c StormByte::Buffer::Backend::Bridge.
+			 * Default asks the ring cap. Leaves may tighten it (disk space, socket).
 			 * The answer is indicative: another process, quotas or a
 			 * network filesystem can still make the later @c Write fail.
 			 *
@@ -221,11 +226,11 @@ namespace StormByte {
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
 			 * is Unavailable.
 			 *
-			 * @see Status, State, Result, FIFO, Backend::BufferedWriter
+			 * @see Status, State, Result, FIFO, StormByte::Buffer::Backend::IO::BufferedWriter
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedWriter {
-				friend class Backend::BufferedWriter;
-				friend class Backend::Bridge;
+				friend class StormByte::Buffer::Backend::IO::BufferedWriter;
+				friend class StormByte::Buffer::Backend::Bridge;
 
 				public:
 					/**
@@ -597,7 +602,7 @@ namespace StormByte {
 					 *
 					 * Indicative. Another writer, quotas or the filesystem can
 					 * still reject the later @c Write. Override to tighten
-					 * (disk space, socket window). Used by @c Backend::Bridge.
+					 * (disk space, socket window). Used by @c StormByte::Buffer::Backend::Bridge.
 					 */
 					virtual bool WillWrite(StormByte::ByteSize n) const;
 
@@ -656,7 +661,7 @@ namespace StormByte {
 					 */
 
 				private:
-					std::unique_ptr<Backend::BufferedWriter> m_io;	///< Private coordinator state.
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedWriter> m_io;	///< Private coordinator state.
 			};
 		}
 	}

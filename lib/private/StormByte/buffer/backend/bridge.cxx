@@ -39,46 +39,44 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/backend/bridge.hxx>
+#include <StormByte/buffer/backend/bridge.hxx>
 
 #include <algorithm>
 #include <chrono>
 
-using namespace StormByte::Buffer;
-
-IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
+StormByte::Buffer::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
 	m_ext_in(&in),
 	m_ext_out(&out),
 	m_high_water(static_cast<std::size_t>(high_water)),
-	m_status(IO::Drainer::Status::Started) {
+	m_status(StormByte::Buffer::IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
+StormByte::Buffer::Backend::Bridge::Bridge(const StormByte::Buffer::IO::BufferedReader& in, StormByte::Buffer::IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
 	m_io_in(&in),
 	m_io_out(&out),
 	m_high_water(static_cast<std::size_t>(high_water)),
-	m_status(IO::Drainer::Status::Started) {
+	m_status(StormByte::Buffer::IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
+StormByte::Buffer::Backend::Bridge::Bridge(ExternalReader& in, StormByte::Buffer::IO::BufferedWriter& out, const StormByte::ByteSize high_water) noexcept:
 	m_ext_in(&in),
 	m_io_out(&out),
 	m_high_water(static_cast<std::size_t>(high_water)),
-	m_status(IO::Drainer::Status::Started) {
+	m_status(StormByte::Buffer::IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
+StormByte::Buffer::Backend::Bridge::Bridge(const StormByte::Buffer::IO::BufferedReader& in, ExternalWriter& out, const StormByte::ByteSize high_water) noexcept:
 	m_ext_out(&out),
 	m_io_in(&in),
 	m_high_water(static_cast<std::size_t>(high_water)),
-	m_status(IO::Drainer::Status::Started) {
+	m_status(StormByte::Buffer::IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::~Bridge() noexcept {
+StormByte::Buffer::Backend::Bridge::~Bridge() noexcept {
 	{
 		std::lock_guard lock(m_mutex);
 		m_stop = true;
@@ -88,11 +86,11 @@ IO::Backend::Bridge::~Bridge() noexcept {
 		m_worker.join();
 }
 
-void IO::Backend::Bridge::Launch() noexcept {
+void StormByte::Buffer::Backend::Bridge::Launch() noexcept {
 	m_worker = std::thread([this] { Worker(); });
 }
 
-bool IO::Backend::Bridge::EoF() const noexcept {
+bool StormByte::Buffer::Backend::Bridge::EoF() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->EoF();
 	if (m_io_in)
@@ -100,7 +98,7 @@ bool IO::Backend::Bridge::EoF() const noexcept {
 	return true;
 }
 
-bool IO::Backend::Bridge::IsReadable() const noexcept {
+bool StormByte::Buffer::Backend::Bridge::IsReadable() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->IsReadable();
 	if (m_io_in)
@@ -108,7 +106,7 @@ bool IO::Backend::Bridge::IsReadable() const noexcept {
 	return false;
 }
 
-bool IO::Backend::Bridge::IsWritable() const noexcept {
+bool StormByte::Buffer::Backend::Bridge::IsWritable() const noexcept {
 	if (m_ext_out)
 		return m_ext_out->IsWritable();
 	if (m_io_out)
@@ -116,34 +114,34 @@ bool IO::Backend::Bridge::IsWritable() const noexcept {
 	return false;
 }
 
-StormByte::ByteSize IO::Backend::Bridge::HighWater() const noexcept {
+StormByte::ByteSize StormByte::Buffer::Backend::Bridge::HighWater() const noexcept {
 	return StormByte::ByteSize{m_high_water.load()};
 }
 
-void IO::Backend::Bridge::HighWater(const StormByte::ByteSize high_water) noexcept {
+void StormByte::Buffer::Backend::Bridge::HighWater(const StormByte::ByteSize high_water) noexcept {
 	m_high_water.store(static_cast<std::size_t>(high_water));
 	m_cv.notify_all();
 }
 
-IO::Drainer::Status IO::Backend::Bridge::Drainer() const noexcept {
+StormByte::Buffer::IO::Drainer::Status StormByte::Buffer::Backend::Bridge::Drainer() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_status;
 }
 
-bool IO::Backend::Bridge::Drainer(const IO::Drainer::Operation operation) noexcept {
+bool StormByte::Buffer::Backend::Bridge::Drainer(const StormByte::Buffer::IO::Drainer::Operation operation) noexcept {
 	std::unique_lock lock(m_mutex);
-	if (operation == IO::Drainer::Operation::Toggle) {
-		if (m_status == IO::Drainer::Status::Started)
-			m_status = IO::Drainer::Status::Paused;
-		else if (m_status == IO::Drainer::Status::Paused)
-			m_status = IO::Drainer::Status::Started;
+	if (operation == StormByte::Buffer::IO::Drainer::Operation::Toggle) {
+		if (m_status == StormByte::Buffer::IO::Drainer::Status::Started)
+			m_status = StormByte::Buffer::IO::Drainer::Status::Paused;
+		else if (m_status == StormByte::Buffer::IO::Drainer::Status::Paused)
+			m_status = StormByte::Buffer::IO::Drainer::Status::Started;
 		else
 			return false;
 		m_cv.notify_all();
 		return true;
 	}
 
-	if (operation != IO::Drainer::Operation::Flush)
+	if (operation != StormByte::Buffer::IO::Drainer::Operation::Flush)
 		return false;
 
 	m_hurry = true;
@@ -152,7 +150,7 @@ bool IO::Backend::Bridge::Drainer(const IO::Drainer::Operation operation) noexce
 	return !m_failed;
 }
 
-bool IO::Backend::Bridge::BarrierFlush() noexcept {
+bool StormByte::Buffer::Backend::Bridge::BarrierFlush() noexcept {
 	std::unique_lock lock(m_mutex);
 	m_barrier = true;
 	m_cv.notify_all();
@@ -160,19 +158,19 @@ bool IO::Backend::Bridge::BarrierFlush() noexcept {
 	return !m_failed;
 }
 
-bool IO::Backend::Bridge::FlushAndClose() noexcept {
+bool StormByte::Buffer::Backend::Bridge::FlushAndClose() noexcept {
 	const bool ok = BarrierFlush();
 	if (m_ext_out)
 		m_ext_out->Close();
 	return ok;
 }
 
-void IO::Backend::Bridge::SetError() noexcept {
+void StormByte::Buffer::Backend::Bridge::SetError() noexcept {
 	if (m_ext_out)
 		m_ext_out->SetError();
 }
 
-bool IO::Backend::Bridge::SourceDone() const noexcept {
+bool StormByte::Buffer::Backend::Bridge::SourceDone() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->EoF() && m_ext_in->Available() == StormByte::ByteSize{0};
 	if (m_io_in)
@@ -180,13 +178,13 @@ bool IO::Backend::Bridge::SourceDone() const noexcept {
 	return true;
 }
 
-StormByte::ByteSize IO::Backend::Bridge::AvailableNow() const noexcept {
+StormByte::ByteSize StormByte::Buffer::Backend::Bridge::AvailableNow() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->Available();
 	return StormByte::ByteSize{0};
 }
 
-StormByte::ByteSize IO::Backend::Bridge::OccupiedNow() const noexcept {
+StormByte::ByteSize StormByte::Buffer::Backend::Bridge::OccupiedNow() const noexcept {
 	if (m_ext_out)
 		return m_ext_out->Occupied();
 	if (m_io_out)
@@ -194,13 +192,13 @@ StormByte::ByteSize IO::Backend::Bridge::OccupiedNow() const noexcept {
 	return StormByte::ByteSize{0};
 }
 
-bool IO::Backend::Bridge::DestFlush() noexcept {
+bool StormByte::Buffer::Backend::Bridge::DestFlush() noexcept {
 	if (!m_io_out)
 		return true;
-	return m_io_out->Flush().status == IO::Status::Ok;
+	return m_io_out->Flush().status == StormByte::Buffer::IO::Status::Ok;
 }
 
-bool IO::Backend::Bridge::Pull(const StormByte::ByteSize n, FIFO& dest) noexcept {
+bool StormByte::Buffer::Backend::Bridge::Pull(const StormByte::ByteSize n, FIFO& dest) noexcept {
 	dest.Clear();
 	if (n == StormByte::ByteSize{0})
 		return true;
@@ -217,8 +215,8 @@ bool IO::Backend::Bridge::Pull(const StormByte::ByteSize n, FIFO& dest) noexcept
 	}
 
 	if (m_io_in) {
-		const IO::Result pulled = m_io_in->Read(n, dest);
-		if (pulled.status == IO::Status::Ok || pulled.status == IO::Status::End)
+		const StormByte::Buffer::IO::Result pulled = m_io_in->Read(n, dest);
+		if (pulled.status == StormByte::Buffer::IO::Status::Ok || pulled.status == StormByte::Buffer::IO::Status::End)
 			return true;
 		return m_io_in->EoF();
 	}
@@ -226,7 +224,7 @@ bool IO::Backend::Bridge::Pull(const StormByte::ByteSize n, FIFO& dest) noexcept
 	return false;
 }
 
-bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
+bool StormByte::Buffer::Backend::Bridge::Push(FIFO& src) noexcept {
 	if (src.Available() == StormByte::ByteSize{0})
 		return true;
 
@@ -241,10 +239,10 @@ bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
 
 	if (m_io_out) {
 		for (;;) {
-			const IO::Result pushed = m_io_out->Write(src);
-			if (pushed.status == IO::Status::Ok)
+			const StormByte::Buffer::IO::Result pushed = m_io_out->Write(src);
+			if (pushed.status == StormByte::Buffer::IO::Status::Ok)
 				return true;
-			if (pushed.status != IO::Status::TryAgain)
+			if (pushed.status != StormByte::Buffer::IO::Status::TryAgain)
 				return false;
 			static_cast<void>(m_io_out->Flush());
 		}
@@ -253,7 +251,7 @@ bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
 	return false;
 }
 
-bool IO::Backend::Bridge::Passthrough(const StormByte::ByteSize bytes) noexcept {
+bool StormByte::Buffer::Backend::Bridge::Passthrough(const StormByte::ByteSize bytes) noexcept {
 	if (bytes == StormByte::ByteSize{0})
 		return true;
 	if (!IsWritable())
@@ -261,7 +259,7 @@ bool IO::Backend::Bridge::Passthrough(const StormByte::ByteSize bytes) noexcept 
 
 	if (m_io_out) {
 		while (!m_io_out->WillWrite(bytes)) {
-			if (m_io_out->Flush().status != IO::Status::Ok)
+			if (m_io_out->Flush().status != StormByte::Buffer::IO::Status::Ok)
 				return false;
 			if (!m_io_out->WillWrite(bytes))
 				return false;
@@ -274,11 +272,11 @@ bool IO::Backend::Bridge::Passthrough(const StormByte::ByteSize bytes) noexcept 
 	return Push(work);
 }
 
-void IO::Backend::Bridge::Worker() noexcept {
+void StormByte::Buffer::Backend::Bridge::Worker() noexcept {
 	for (;;) {
 		std::unique_lock lock(m_mutex);
 		m_cv.wait(lock, [this] {
-			return m_stop || m_barrier || m_hurry || m_status == IO::Drainer::Status::Started;
+			return m_stop || m_barrier || m_hurry || m_status == StormByte::Buffer::IO::Drainer::Status::Started;
 		});
 		if (m_stop)
 			break;
@@ -305,7 +303,7 @@ void IO::Backend::Bridge::Worker() noexcept {
 			}
 			m_cv.wait(lock, [this] {
 				return m_stop || m_barrier || m_hurry ||
-					(m_status == IO::Drainer::Status::Started && !SourceDone());
+					(m_status == StormByte::Buffer::IO::Drainer::Status::Started && !SourceDone());
 			});
 			continue;
 		}
@@ -333,7 +331,7 @@ void IO::Backend::Bridge::Worker() noexcept {
 			m_busy = false;
 			m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
 				return m_stop || m_barrier || m_hurry ||
-					m_status != IO::Drainer::Status::Started ||
+					m_status != StormByte::Buffer::IO::Drainer::Status::Started ||
 					m_high_water.load() == 0 ||
 					(StormByte::ByteSize{m_high_water.load()} > OccupiedNow());
 			});
@@ -362,7 +360,7 @@ void IO::Backend::Bridge::Worker() noexcept {
 					m_busy = false;
 					m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
 						return m_stop || m_barrier || m_hurry ||
-							m_status != IO::Drainer::Status::Started ||
+							m_status != StormByte::Buffer::IO::Drainer::Status::Started ||
 							AvailableNow() > StormByte::ByteSize{0} || SourceDone();
 					});
 					continue;
