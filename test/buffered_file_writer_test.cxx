@@ -39,7 +39,9 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/string/wstring.hxx>
 #include <StormByte/system/file.hxx>
 #include <StormByte/test_handlers.h>
@@ -49,6 +51,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -159,32 +162,19 @@ namespace {
 	}
 
 	void DumpTelemetry(const char* tag, const BufferedFileWriter& out) {
-		const struct BufferedFileWriter::Telemetry t = out.Telemetry();
-		std::cout << "[telemetry " << tag << "]"
-			<< " Accepted=" << static_cast<std::size_t>(t.Accepted)
-			<< " Behind=" << static_cast<std::size_t>(t.Behind)
-			<< " Direct=" << static_cast<std::size_t>(t.Direct)
-			<< " Origin=" << static_cast<std::size_t>(t.Origin)
-			<< " Materialized=" << static_cast<std::size_t>(t.Materialized)
-			<< " HighWater=" << static_cast<std::size_t>(t.HighWater)
-			<< " HitAhead=" << static_cast<std::size_t>(t.HitAhead)
-			<< " HitBack=" << static_cast<std::size_t>(t.HitBack)
-			<< " Miss=" << static_cast<std::size_t>(t.Miss)
-			<< " Dirty=" << static_cast<std::size_t>(t.Dirty)
-			<< " DirtyPeak=" << static_cast<std::size_t>(t.DirtyPeak)
-			<< " Cap=" << static_cast<std::size_t>(t.Cap)
-			<< " SeekLogical=" << t.SeekLogical
-			<< " SeekOrigin=" << t.SeekOrigin
-			<< " SeekSavedFull=" << t.SeekSavedFull
-			<< " SeekSavedPartial=" << t.SeekSavedPartial
-			<< " TryAgain=" << t.TryAgain
-			<< " Saturated=" << t.Saturated
-			<< " Evicted=" << t.Evicted
-			<< " WaitMin_ns=" << t.WaitMin.count()
-			<< " WaitMax_ns=" << t.WaitMax.count()
-			<< " WaitTotal_ns=" << t.WaitTotal.count()
-			<< " WaitSamples=" << t.WaitSamples
-			<< std::endl;
+		const auto tel = out.Telemetry();
+		if (!tel) {
+			std::cout << "[telemetry " << tag << "] empty" << std::endl;
+			return;
+		}
+		std::cout << "[telemetry " << tag << "] " << static_cast<std::string>(*tel) << std::endl;
+	}
+
+	const StormByte::Buffer::IO::WriteTelemetry* IoW(const BufferedFileWriter& out) {
+		const auto tel = out.Telemetry();
+		if (!tel)
+			return nullptr;
+		return dynamic_cast<const StormByte::Buffer::IO::WriteTelemetry*>(tel.get());
 	}
 
 	void DumpMismatch(const char* tag, const std::string& expect, const std::string& got) {
@@ -321,8 +311,10 @@ int test_hex_seq_matches_pattern() {
 	DumpTelemetry("hex-seq-before-close", out);
 	ASSERT_TRUE(fn, out.Close());
 	ASSERT_EQUAL(fn, body, Slurp(path));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{65536}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{65536}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -344,8 +336,10 @@ int test_hex_fake_seek_patch() {
 	std::string expect = HexSlice(0, 65536);
 	expect.replace(16, 4, "ZZZZ");
 	ASSERT_EQUAL(fn, expect, Slurp(path));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{65536}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{65536}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -396,8 +390,10 @@ int test_hex_island_1m_zeros() {
 			break;
 		}
 	}
-	ASSERT_EQUAL(fn, StormByte::ByteSize{1024ull * 1024ull + 8ull}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{1024ull * 1024ull + 8ull}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -431,7 +427,9 @@ int test_hex_evict_keeps_pattern() {
 	const std::string body = HexSlice(0, 16384);
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, body));
 	DumpTelemetry("evict-after-fill", out);
-	ASSERT_TRUE(fn, out.Telemetry().Evicted > 0);
+	const auto* io_fill = IoW(out);
+	ASSERT_TRUE(fn, io_fill != nullptr);
+	ASSERT_TRUE(fn, io_fill->Evicted() > 0);
 	ASSERT_EQUAL(fn, 0, SeekExpectTell(fn, out, 32, Position::Absolute, 32));
 	ASSERT_EQUAL(fn, 0, WriteExpect(fn, out, std::string("EVICTOK!")));
 	DumpTelemetry("evict-after-patch", out);
@@ -440,8 +438,10 @@ int test_hex_evict_keeps_pattern() {
 	std::string expect = body;
 	expect.replace(32, 8, "EVICTOK!");
 	ASSERT_EQUAL(fn, expect, Slurp(path));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{16384}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{16384}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -925,8 +925,10 @@ int test_stress_evict_multi_page() {
 		ASSERT_EQUAL(fn, 0, WriteAll(fn, out, std::string("DDDDDDDD")));
 		DumpTelemetry((std::string("evictm-") + k.tag).c_str(), out);
 		ASSERT_TRUE(fn, out.Close());
-		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Dirty);
-		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Dirty());
+		ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 		const std::string got = Slurp(path);
 		ASSERT_EQUAL(fn, static_cast<std::size_t>(16392), got.size());
 		ASSERT_EQUAL(fn, std::string("AAAAAAAA"), got.substr(0, 8));
@@ -960,8 +962,10 @@ int test_stress_patch_evicted_and_dirty() {
 		const std::string got = Slurp(path);
 		DumpMismatch((std::string("patev-") + k.tag).c_str(), expect, got);
 		ASSERT_EQUAL(fn, expect, got);
-		ASSERT_EQUAL(fn, StormByte::ByteSize{16384}, out.Telemetry().HighWater);
-		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{16384}, io->HighWater());
+		ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 		std::filesystem::remove(path);
 	}
 	RETURN_TEST(fn, 0);
@@ -989,8 +993,10 @@ int test_stress_far_future_hole() {
 		ASSERT_EQUAL(fn, std::string("TAILTAIL"), got.substr(kGap, 8));
 		ASSERT_EQUAL(fn, '\0', got[8]);
 		ASSERT_EQUAL(fn, '\0', got[kGap - 1]);
-		ASSERT_EQUAL(fn, StormByte::ByteSize{kGap + 8}, out.Telemetry().HighWater);
-		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{kGap + 8}, io->HighWater());
+		ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 		std::filesystem::remove(path);
 	}
 	RETURN_TEST(fn, 0);
@@ -1010,8 +1016,10 @@ int test_stress_double_flush_seek_back() {
 		ASSERT_EQUAL(fn, 0, WriteAll(fn, out, std::string("XXXX")));
 		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
 		DumpTelemetry((std::string("dflush-") + k.tag).c_str(), out);
-		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Dirty);
-		ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, out.Telemetry().HighWater);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Dirty());
+		ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, io->HighWater());
 		ASSERT_TRUE(fn, out.Close());
 		std::string expect = body;
 		expect.replace(16, 4, "XXXX");
@@ -1040,8 +1048,10 @@ int test_stress_ring_seek_no_flush() {
 		DumpTelemetry((std::string("rseek-") + k.tag).c_str(), out);
 		ASSERT_TRUE(fn, out.Close());
 		ASSERT_EQUAL(fn, std::string("0123xxxxyyyyCDEF"), Slurp(path));
-		ASSERT_EQUAL(fn, StormByte::ByteSize{16}, out.Telemetry().HighWater);
-		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{16}, io->HighWater());
+		ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 		std::filesystem::remove(path);
 	}
 	RETURN_TEST(fn, 0);
@@ -1059,12 +1069,14 @@ int test_stress_close_after_evict_seek() {
 		ASSERT_EQUAL(fn, 0, WriteAll(fn, out, std::string("ZZ")));
 		DumpTelemetry((std::string("clsev-") + k.tag).c_str(), out);
 		ASSERT_TRUE(fn, out.Close());
-		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Dirty);
+		const auto* io = IoW(out);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Dirty());
 		std::string expect = HexSlice(0, 8192);
 		expect.replace(100, 2, "ZZ");
 		ASSERT_EQUAL(fn, expect, Slurp(path));
-		ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, out.Telemetry().HighWater);
-		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, io->HighWater());
+		ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 		std::filesystem::remove(path);
 	}
 	RETURN_TEST(fn, 0);
@@ -1108,10 +1120,14 @@ int test_telemetry_ctor_is_zero() {
 	std::filesystem::remove(path);
 	BufferedFileWriter out(Loc(path), P(StormByte::ByteSize{0}, 0));
 	DumpTelemetry("ctor", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Accepted);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Materialized);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.Telemetry().SeekLogical);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, tel->Accepted());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Materialized());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->HighWater());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), io->SeekLogical());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -1125,11 +1141,15 @@ int test_telemetry_direct_write_counts_accepted() {
 	FIFO src = FromText("HELLO");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
 	DumpTelemetry("direct", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, out.Telemetry().Accepted);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, out.Telemetry().Direct);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, tel->Accepted());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, io->Direct());
 	ASSERT_TRUE(fn, out.Close());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, out.Telemetry().Materialized);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, out.Telemetry().HighWater);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, io->Materialized());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, io->HighWater());
 	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(path));
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
@@ -1151,10 +1171,14 @@ int test_telemetry_fake_seek_epoch() {
 	DumpTelemetry("tel-front", out);
 	ASSERT_TRUE(fn, out.Close());
 	DumpTelemetry("tel-closed", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Dirty);
-	ASSERT_EQUAL(fn, out.Telemetry().Accepted, out.Telemetry().Behind + out.Telemetry().Direct);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Dirty());
+	ASSERT_EQUAL(fn, tel->Accepted(), io->Behind() + io->Direct());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{8192}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::string expect = HexSlice(0, 8192);
 	expect.replace(16, 4, "WWWW");
 	ASSERT_EQUAL(fn, expect, Slurp(path));
@@ -1178,8 +1202,10 @@ int test_telemetry_island_and_hole() {
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(4098), got.size());
 	ASSERT_EQUAL(fn, std::string("AA"), got.substr(0, 2));
 	ASSERT_EQUAL(fn, std::string("BB"), got.substr(4096, 2));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4098}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4098}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -1251,12 +1277,15 @@ int test_telemetry_pressure_mixed_seeks() {
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
 	DumpTelemetry("after-flush", out);
 
-	const struct BufferedFileWriter::Telemetry t = out.Telemetry();
-	ASSERT_EQUAL(fn, t.Accepted, t.Behind + t.Direct);
-	ASSERT_TRUE(fn, t.Accepted >= StormByte::ByteSize{kBytes});
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4096u * 8u}, t.Cap);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{kBytes}, t.HighWater);
-	ASSERT_EQUAL(fn, t.Materialized, t.HighWater);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Accepted(), io->Behind() + io->Direct());
+	ASSERT_TRUE(fn, tel->Accepted() >= StormByte::ByteSize{kBytes});
+	ASSERT_EQUAL(fn, StormByte::ByteSize{4096u * 8u}, io->Cap());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kBytes}, io->HighWater());
+	ASSERT_EQUAL(fn, io->Materialized(), io->HighWater());
 	ASSERT_TRUE(fn, out.Close());
 
 	std::string expect = blob;
@@ -1279,8 +1308,12 @@ int test_telemetry_ring_counts_behind_and_tryagain() {
 	FIFO second = FromText("CDEFGH");
 	ASSERT_EQUAL(fn, ToString(Status::TryAgain), ToString(out.Write(second).status));
 	DumpTelemetry("ring-bp", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, out.Telemetry().Accepted);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), out.Telemetry().TryAgain);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, tel->Accepted());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), io->TryAgain());
 	ASSERT_TRUE(fn, out.Close());
 	ASSERT_EQUAL(fn, std::string("AB"), Slurp(path));
 	std::filesystem::remove(path);
@@ -1297,12 +1330,16 @@ int test_telemetry_survives_close_and_truncate() {
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Truncate().status));
 	DumpTelemetry("after-truncate", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, out.Telemetry().Accepted);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().HighWater);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, out.Telemetry().Materialized);
+	const auto tel = out.Telemetry();
+	const auto* io = IoW(out);
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, tel->Accepted());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->HighWater());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Materialized());
 	ASSERT_TRUE(fn, out.Close());
 	DumpTelemetry("after-close", out);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, out.Telemetry().Accepted);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, tel->Accepted());
 	ASSERT_EQUAL(fn, std::string(""), Slurp(path));
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);

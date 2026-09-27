@@ -125,7 +125,8 @@ void Pumper::Worker() {
 		}
 
 		const StormByte::ByteSize want = CycleRequest();
-		const StormByte::ByteSize got = m_bridge.Passthrough(want, StormByte::Buffer::Bridge::Operation::Blocking);
+		const StormByte::ByteSize got = m_bridge.Passthrough(want,
+			StormByte::Buffer::Bridge::Operation::NonBlocking);
 		if (m_bridge.Failed()) {
 			std::lock_guard lock(m_mutex);
 			m_failed = true;
@@ -133,5 +134,13 @@ void Pumper::Worker() {
 		}
 		if (got == StormByte::ByteSize{0} && m_bridge.EoF())
 			return;
+		if (got == StormByte::ByteSize{0}) {
+			std::unique_lock lock(m_mutex);
+			if (m_stop.load() || m_failed || m_paused)
+				continue;
+			m_cv.wait_for(lock, std::chrono::milliseconds(1), [this] {
+				return m_stop.load() || m_failed || m_paused || m_bridge.Failed();
+			});
+		}
 	}
 }

@@ -164,18 +164,26 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 			return { IO::Status::Failed, 0 };
 
 		StormByte::ByteSize want = n;
+		const StormByte::ByteSize now = m_ext_in->Available();
 		if (want == StormByte::ByteSize{0} || operation == Operation::NonBlocking) {
-			const StormByte::ByteSize now = m_ext_in->Available();
 			if (want == StormByte::ByteSize{0})
 				want = now;
 			else if (now < want)
 				want = now;
 		}
+
 		if (want == StormByte::ByteSize{0})
 			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
 
 		BinaryData chunk;
 		if (!m_ext_in->Extract(want, chunk)) {
+			const StormByte::ByteSize left = m_ext_in->Available();
+			if (left > StormByte::ByteSize{0} && left < want
+					&& m_ext_in->Extract(left, chunk) && !chunk.empty()) {
+				if (!dest.Write(std::move(chunk)))
+					return { IO::Status::Failed, 0 };
+				return { IO::Status::Ok, dest.Available() };
+			}
 			if (m_ext_in->EoF())
 				return { IO::Status::End, 0 };
 			if (operation == Operation::NonBlocking)

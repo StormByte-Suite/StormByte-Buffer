@@ -167,7 +167,14 @@ Result BufferedFileReader::OriginPull(const StormByte::ByteSize n, FIFO& dest) {
 		return { IO::Status::Error, 0 };
 	}
 
-	if (got < n || m_file.eof())
+	bool ended = (got < n) || m_file.eof();
+	if (!ended && m_size.has_value()) {
+		const auto pos = m_file.tellg();
+		if (pos != std::streampos(-1)
+				&& StormByte::ByteSize{static_cast<std::size_t>(pos)} >= *m_size)
+			ended = true;
+	}
+	if (ended)
 		return { IO::Status::End, got };
 	return { IO::Status::Ok, got };
 }

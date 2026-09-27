@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/string/wstring.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -160,29 +161,19 @@ namespace {
 	}
 
 	void DumpTelemetry(const char* tag, const BufferedFileReader& in) {
-		const struct BufferedFileReader::Telemetry t = in.Telemetry();
-		std::cout
-			<< "[telemetry " << tag << "]"
-			<< " Delivered=" << static_cast<std::size_t>(t.Delivered)
-			<< " HitAhead=" << static_cast<std::size_t>(t.HitAhead)
-			<< " HitBack=" << static_cast<std::size_t>(t.HitBack)
-			<< " Miss=" << static_cast<std::size_t>(t.Miss)
-			<< " Origin=" << static_cast<std::size_t>(t.Origin)
-			<< " Cached=" << static_cast<std::size_t>(t.Cached)
-			<< " CachedPeak=" << static_cast<std::size_t>(t.CachedPeak)
-			<< " Cap=" << static_cast<std::size_t>(t.Cap)
-			<< " SeekLogical=" << t.SeekLogical
-			<< " SeekOrigin=" << t.SeekOrigin
-			<< " SeekSavedFull=" << t.SeekSavedFull
-			<< " SeekSavedPartial=" << t.SeekSavedPartial
-			<< " TryAgain=" << t.TryAgain
-			<< " Saturated=" << t.Saturated
-			<< " Evicted=" << t.Evicted
-			<< " WaitMin_ns=" << t.WaitMin.count()
-			<< " WaitMax_ns=" << t.WaitMax.count()
-			<< " WaitTotal_ns=" << t.WaitTotal.count()
-			<< " WaitSamples=" << t.WaitSamples
-			<< std::endl;
+		const auto tel = in.Telemetry();
+		if (!tel) {
+			std::cout << "[telemetry " << tag << "] empty" << std::endl;
+			return;
+		}
+		std::cout << "[telemetry " << tag << "] " << static_cast<std::string>(*tel) << std::endl;
+	}
+
+	const StormByte::Buffer::IO::ReadTelemetry* IoTel(const BufferedFileReader& in) {
+		const auto tel = in.Telemetry();
+		if (!tel)
+			return nullptr;
+		return dynamic_cast<const StormByte::Buffer::IO::ReadTelemetry*>(tel.get());
 	}
 }
 
@@ -463,10 +454,13 @@ int test_hex_seek_saved_partial_disjoint_spans() {
 	ASSERT_EQUAL(fn, ToString(Status::Ok),
 		ToString(in.Seek(0, Position::Absolute).status));
 	DumpTelemetry("partial-island-epoch-closed", in);
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
-	ASSERT_TRUE(fn, t.SeekOrigin > 0);
-	ASSERT_TRUE(fn, t.SeekSavedPartial > 0);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
+	ASSERT_TRUE(fn, io->SeekOrigin() > 0);
+	ASSERT_TRUE(fn, io->SeekSavedPartial() > 0);
 	RETURN_TEST(fn, 0);
 }
 
@@ -1186,11 +1180,14 @@ int test_telemetry_ctor_is_zero() {
 	const std::string fn = "test_telemetry_ctor_is_zero";
 	BufferedFileReader in(Loc(File("five.bin")), P(0, 0));
 	DumpTelemetry("ctor", in);
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.Delivered);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.HitAhead + t.HitBack);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, t.Miss);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), t.SeekLogical);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, tel->Delivered());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->HitAhead() + io->HitBack());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, io->Miss());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), io->SeekLogical());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1215,8 +1212,11 @@ int test_telemetry_fake_seek_epoch() {
 	if (SeekExpectTell(fn, in, 0) != 0)
 		return 1;
 	DumpTelemetry("tel-fake-epoch-closed", in);
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1236,8 +1236,11 @@ int test_telemetry_cold_seek_epoch() {
 	if (SeekExpectTell(fn, in, 0) != 0)
 		return 1;
 	DumpTelemetry("tel-cold-epoch-closed", in);
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1263,8 +1266,11 @@ int test_telemetry_hex_pressure() {
 	DumpTelemetry("seek-cold-2m", in);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Close().status));
 	DumpTelemetry("after-close", in);
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1286,10 +1292,13 @@ int test_telemetry_saved_partial_disjoint() {
 		return 1;
 	ASSERT_EQUAL(fn, ToString(Status::Ok),
 		ToString(in.Seek(0, Position::Absolute).status));
-	const struct BufferedFileReader::Telemetry t = in.Telemetry();
-	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
-	ASSERT_TRUE(fn, t.SeekOrigin > 0);
-	ASSERT_TRUE(fn, t.SeekSavedPartial > 0);
+	const auto tel = in.Telemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, tel->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
+	ASSERT_TRUE(fn, io->SeekOrigin() > 0);
+	ASSERT_TRUE(fn, io->SeekSavedPartial() > 0);
 	RETURN_TEST(fn, 0);
 }
 

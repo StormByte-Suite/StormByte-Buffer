@@ -584,6 +584,7 @@ Result BufferedWriter::Flush() {
 				m_state = StormByte::Buffer::IO::State::Fault;
 			return visible;
 		}
+		NoteDirty();
 		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
 			io->DeltaOperation(StormByte::ByteSize{0},
 				std::chrono::duration_cast<std::chrono::microseconds>(

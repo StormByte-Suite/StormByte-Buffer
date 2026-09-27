@@ -40,7 +40,6 @@
  */
 
 #include <StormByte/buffer/consumer.hxx>
-#include <StormByte/buffer/external.hxx>
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -56,8 +55,6 @@
 
 using StormByte::Buffer::Consumer;
 using StormByte::BinaryData;
-using StormByte::Buffer::ExternalBufferWriter;
-using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
 
@@ -689,23 +686,19 @@ int test_occupied_drops_after_consumer_extract() {
 	const std::string fn = "test_occupied_drops_after_consumer_extract";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ExternalBufferWriter adapter(producer);
-	ASSERT_TRUE(fn, adapter.Write("ABCDEFGH"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, adapter.Occupied());
-	ASSERT_EQUAL(fn, producer.Size(), adapter.Occupied());
-	ASSERT_EQUAL(fn, consumer.Size(), adapter.Occupied());
+	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
+	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, producer.Size());
+	ASSERT_EQUAL(fn, consumer.Size(), producer.Size());
 	BinaryData first;
 	ASSERT_TRUE(fn, consumer.Extract(3, first));
 	ASSERT_EQUAL(fn, std::string("ABC"), BytesToText(first));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, consumer.Size());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, producer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, adapter.Occupied());
 	BinaryData rest;
 	ASSERT_TRUE(fn, consumer.Extract(0, rest));
 	ASSERT_EQUAL(fn, std::string("DEFGH"), BytesToText(rest));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, adapter.Occupied());
 	ASSERT_TRUE(fn, consumer.Empty());
 	RETURN_TEST(fn, 0);
 }
@@ -714,10 +707,9 @@ int test_occupied_drops_under_concurrent_extract() {
 	const std::string fn = "test_occupied_drops_under_concurrent_extract";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ExternalBufferWriter adapter(producer);
 	const std::string payload(256, 'Z');
-	ASSERT_TRUE(fn, adapter.Write(payload));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{payload.size()}, adapter.Occupied());
+	ASSERT_TRUE(fn, producer.Write(payload));
+	ASSERT_EQUAL(fn, StormByte::ByteSize{payload.size()}, producer.Size());
 	std::atomic<std::size_t> taken {0};
 	std::thread cons([&] {
 		while (taken.load() < payload.size()) {
@@ -731,7 +723,6 @@ int test_occupied_drops_under_concurrent_extract() {
 	});
 	cons.join();
 	ASSERT_EQUAL(fn, payload.size(), taken.load());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, adapter.Occupied());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
 	RETURN_TEST(fn, 0);
@@ -741,11 +732,9 @@ int test_occupied_read_does_not_drop() {
 	const std::string fn = "test_occupied_read_does_not_drop";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ExternalBufferWriter adapter(producer);
-	ASSERT_TRUE(fn, adapter.Write("ABCDEF"));
+	ASSERT_TRUE(fn, producer.Write("ABCDEF"));
 	BinaryData peek;
 	ASSERT_TRUE(fn, consumer.Read(2, peek));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, adapter.Occupied());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, producer.Size());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Available());
 	RETURN_TEST(fn, 0);
@@ -754,13 +743,9 @@ int test_occupied_read_does_not_drop() {
 int test_occupied_tracks_producer_size() {
 	const std::string fn = "test_occupied_tracks_producer_size";
 	Producer producer;
-	ExternalBufferWriter adapter(producer);
-	ExternalWriter& writer = adapter;
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, writer.Occupied());
-	ASSERT_EQUAL(fn, producer.Size(), writer.Occupied());
-	ASSERT_TRUE(fn, writer.Write("HELLO"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, writer.Occupied());
-	ASSERT_EQUAL(fn, producer.Size(), writer.Occupied());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
+	ASSERT_TRUE(fn, producer.Write("HELLO"));
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, producer.Size());
 	RETURN_TEST(fn, 0);
 }
 

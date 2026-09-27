@@ -14,17 +14,17 @@ if(ENABLE_TEST)
 	target_link_libraries(BufferedFileWriterTests StormByte-Buffer)
 	add_test(NAME BufferedFileWriterTests COMMAND BufferedFileWriterTests)
 
+	add_executable(ExceptionTests exception_test.cxx)
+	target_link_libraries(ExceptionTests StormByte-Buffer)
+	add_test(NAME ExceptionTests COMMAND ExceptionTests)
+
 	add_executable(FIFOTests fifo_test.cxx)
 	target_link_libraries(FIFOTests StormByte-Buffer)
 	add_test(NAME FIFOTests COMMAND FIFOTests)
 
-	add_executable(ExternalTests external_test.cxx)
-	target_link_libraries(ExternalTests StormByte-Buffer)
-	add_test(NAME ExternalTests COMMAND ExternalTests)
-
-	add_executable(ExceptionTests exception_test.cxx)
-	target_link_libraries(ExceptionTests StormByte-Buffer)
-	add_test(NAME ExceptionTests COMMAND ExceptionTests)
+	add_executable(HopperTests hopper_test.cxx)
+	target_link_libraries(HopperTests StormByte-Buffer)
+	add_test(NAME HopperTests COMMAND HopperTests)
 
 	add_executable(PipelineTests pipeline_test.cxx)
 	target_link_libraries(PipelineTests StormByte-Buffer)
@@ -34,6 +34,10 @@ if(ENABLE_TEST)
 	target_link_libraries(ProducerConsumerTests StormByte-Buffer)
 	add_test(NAME ProducerConsumerTests COMMAND ProducerConsumerTests)
 
+	add_executable(PumperTests pumper_test.cxx)
+	target_link_libraries(PumperTests StormByte-Buffer)
+	add_test(NAME PumperTests COMMAND PumperTests)
+
 	add_executable(RingTests ring_test.cxx)
 	target_link_libraries(RingTests StormByte-Buffer)
 	add_test(NAME RingTests COMMAND RingTests)
@@ -42,11 +46,11 @@ if(ENABLE_TEST)
 	target_link_libraries(SharedFIFOTests StormByte-Buffer)
 	add_test(NAME SharedFIFOTests COMMAND SharedFIFOTests)
 
-	add_executable(HopperTests hopper_test.cxx)
-	target_link_libraries(HopperTests StormByte-Buffer)
-	add_test(NAME HopperTests COMMAND HopperTests)
-
 	add_executable(SinkTests sink_test.cxx)
 	target_link_libraries(SinkTests StormByte-Buffer)
 	add_test(NAME SinkTests COMMAND SinkTests)
+
+	add_executable(TelemetryTests telemetry_test.cxx)
+	target_link_libraries(TelemetryTests StormByte-Buffer)
+	add_test(NAME TelemetryTests COMMAND TelemetryTests)
 endif()

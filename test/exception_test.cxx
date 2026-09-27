@@ -50,48 +50,65 @@ using StormByte::Buffer::Exception;
 using StormByte::Buffer::ReadError;
 using StormByte::Buffer::WriteError;
 
-int test_buffer_exception_message() {
-	Exception exception(std::string("message"));
-	ASSERT_EQUAL("message", std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	RETURN_TEST("test_buffer_exception_message", 0);
+// -------------------
+// Exceptions
+// -------------------
+
+int test_buffer_error_message() {
+	constexpr auto fn = "test_buffer_error_message";
+	int result = 0;
+	Error exception(std::string("message"));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
 }
 
 int test_buffer_exception_format() {
+	constexpr auto fn = "test_buffer_exception_format";
+	int result = 0;
 	Exception exception("value is {}", 42);
-	ASSERT_EQUAL("format", std::string("StormByte.Buffer: value is 42"), std::string(exception.what()));
-	RETURN_TEST("test_buffer_exception_format", 0);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: value is 42"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
 }
 
-int test_buffer_error_message() {
-	Error exception(std::string("message"));
-	ASSERT_EQUAL("error", std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	RETURN_TEST("test_buffer_error_message", 0);
+int test_buffer_exception_message() {
+	constexpr auto fn = "test_buffer_exception_message";
+	int result = 0;
+	Exception exception(std::string("message"));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
 }
 
 int test_read_error_message() {
+	constexpr auto fn = "test_read_error_message";
+	int result = 0;
 	ReadError exception("read {}", "failed");
-	ASSERT_EQUAL("read error", std::string("StormByte.Buffer.Read: read failed"), std::string(exception.what()));
-	RETURN_TEST("test_read_error_message", 0);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: read failed"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
 }
 
 int test_write_error_message() {
+	constexpr auto fn = "test_write_error_message";
+	int result = 0;
 	WriteError exception(std::string("write failed"));
-	ASSERT_EQUAL("write error", std::string("StormByte.Buffer.Write: write failed"), std::string(exception.what()));
-	RETURN_TEST("test_write_error_message", 0);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Write: write failed"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
 }
 
 int main() {
 	int result = 0;
-	result += test_buffer_exception_message();
-	result += test_buffer_exception_format();
+
+	// -------------------
+	// Exceptions
+	// -------------------
 	result += test_buffer_error_message();
+	result += test_buffer_exception_format();
+	result += test_buffer_exception_message();
 	result += test_read_error_message();
 	result += test_write_error_message();
-	if (result == 0) {
-		std::cout << "Exception tests passed!" << std::endl;
-	} else {
-		std::cout << result << " Exception tests failed." << std::endl;
-	}
 
+	if (result == 0)
+		std::cout << "All tests passed!" << std::endl;
+	else
+		std::cout << result << " tests failed." << std::endl;
 	return result;
 }
