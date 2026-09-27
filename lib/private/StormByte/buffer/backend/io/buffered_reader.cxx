@@ -239,6 +239,13 @@ bool BufferedReader::EoF() const noexcept {
 	return m_origin_exhausted && CoverageFrom(m_tell) == StormByte::ByteSize{0};
 }
 
+StormByte::ByteSize BufferedReader::Available() const noexcept {
+	std::lock_guard lock(m_mutex);
+	if (!m_open)
+		return StormByte::ByteSize{0};
+	return CoverageFrom(m_tell);
+}
+
 Result BufferedReader::Read(const StormByte::ByteSize n, FIFO& dest) const {
 	return Serve(n, dest, true);
 }
