@@ -76,7 +76,7 @@ namespace StormByte {
 		 *
 		 * @see ExternalBufferReader, ExternalWriter, Pipeline, Bridge
 		 */
-		class STORMBYTE_BUFFER_PUBLIC ExternalReader
+		class STORMBYTE_BUFFER_PRIVATE ExternalReader
 			: public Clonable<ExternalReader, StormByte::Unique<ExternalReader>> {
 			public:
 				/**
@@ -221,7 +221,7 @@ namespace StormByte {
 		 *
 		 * @see ExternalReader, ReadOnly, Consumer
 		 */
-		class STORMBYTE_BUFFER_PUBLIC ExternalBufferReader final : public ExternalReader {
+		class STORMBYTE_BUFFER_PRIVATE ExternalBufferReader final : public ExternalReader {
 			public:
 				/**
 				 * @brief Adapt a @ref ReadOnly store. Not owned.
@@ -388,7 +388,7 @@ namespace StormByte {
 		 *
 		 * @see ExternalBufferWriter, ExternalReader, Pipeline, Bridge
 		 */
-		class STORMBYTE_BUFFER_PUBLIC ExternalWriter
+		class STORMBYTE_BUFFER_PRIVATE ExternalWriter
 			: public Clonable<ExternalWriter, StormByte::Unique<ExternalWriter>> {
 			public:
 				/**
@@ -528,7 +528,7 @@ namespace StormByte {
 		 *
 		 * @see ExternalWriter, WriteOnly, Producer, Ring
 		 */
-		class STORMBYTE_BUFFER_PUBLIC ExternalBufferWriter final : public ExternalWriter {
+		class STORMBYTE_BUFFER_PRIVATE ExternalBufferWriter final : public ExternalWriter {
 			public:
 				/**
 				 * @brief Adapt a @ref WriteOnly store. Not owned.

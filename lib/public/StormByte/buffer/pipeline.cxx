@@ -1,45 +1,3 @@
-/*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer original source is dual-licensed:
- *
- * 1. GNU Lesser General Public License v3.0 (or later)
- *    You may redistribute and/or modify this file under the terms of the
- *    GNU Lesser General Public License as published by the Free Software
- *    Foundation, either version 3 of the License, or (at your option)
- *    any later version.
- *
- * 2. Commercial license
- *    Alternatively, this file may be used under the terms of a commercial
- *    license agreement with the copyright holder
- *    (David C. Manuelda <StormByte@gmail.com>).
- *
- * Both licenses apply only to original StormByte-Buffer source in this
- * repository. They do not cover other StormByte modules or any third-party
- * material shipped with this repository (including everything under
- * thirdparty/, and in particular the bundled StormByte-Logger tree and
- * the rest of the StormByte suite it vendors), which remains under its own
- * license.
- *
- * Neither license grants any patent rights. Any patent licenses required
- * to use this software or third-party components must be obtained separately
- * from the patent holders.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * version 3 along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- *
- * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
- */
-
-#include <StormByte/buffer/external.hxx>
 #include <StormByte/buffer/lockfree_ring.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
@@ -49,11 +7,17 @@
 
 using namespace StormByte::Buffer;
 
+Pipeline::Stage::Stage(Stage&&) noexcept = default;
+
+Pipeline::Stage& Pipeline::Stage::operator=(Stage&&) noexcept = default;
+
+Pipeline::Stage::~Stage() noexcept = default;
+
 struct Pipeline::Backend {
-	std::vector<PipeFunction>                          pipes;
+	std::vector<StormByte::Unique<Pipeline::Stage>> pipes;
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;
-	mutable Producer                                   final_producer;
-	mutable std::vector<std::thread>                   threads;
+	mutable Producer final_producer;
+	mutable std::vector<std::thread> threads;
 
 	/**
 	 * @brief Join any running background threads and clear the container.
@@ -63,26 +27,24 @@ struct Pipeline::Backend {
 			if (t.joinable())
 				t.join();
 		}
-
 		threads.clear();
 	}
 };
 
-Pipeline::Pipeline() noexcept
-	: m_io(std::make_unique<Backend>())
-{
+Pipeline::Pipeline() noexcept:
+	m_io(std::make_unique<Backend>()) {}
+
+Pipeline::Pipeline(const Pipeline& other):
+	m_io(std::make_unique<Backend>()) {
+	m_io->pipes.reserve(other.m_io->pipes.size());
+	for (const auto& stage : other.m_io->pipes) {
+		if (stage)
+			m_io->pipes.push_back(stage->Clone());
+	}
 }
 
-Pipeline::Pipeline(const Pipeline& other)
-	: m_io(std::make_unique<Backend>())
-{
-	m_io->pipes = other.m_io->pipes;
-}
-
-Pipeline::Pipeline(Pipeline&& other) noexcept
-	: m_io(std::move(other.m_io))
-{
-}
+Pipeline::Pipeline(Pipeline&& other) noexcept:
+	m_io(std::move(other.m_io)) {}
 
 Pipeline::~Pipeline() noexcept {
 	if (m_io)
@@ -94,9 +56,12 @@ Pipeline& Pipeline::operator=(const Pipeline& other) {
 		if (m_io)
 			m_io->WaitForCompletion();
 		m_io = std::make_unique<Backend>();
-		m_io->pipes = other.m_io->pipes;
+		m_io->pipes.reserve(other.m_io->pipes.size());
+		for (const auto& stage : other.m_io->pipes) {
+			if (stage)
+				m_io->pipes.push_back(stage->Clone());
+		}
 	}
-
 	return *this;
 }
 
@@ -106,16 +71,12 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 			m_io->WaitForCompletion();
 		m_io = std::move(other.m_io);
 	}
-
 	return *this;
 }
 
-void Pipeline::AddPipe(const PipeFunction& pipe) {
-	m_io->pipes.push_back(pipe);
-}
-
-void Pipeline::AddPipe(PipeFunction&& pipe) {
-	m_io->pipes.push_back(std::move(pipe));
+void Pipeline::AddPipe(StormByte::Unique<Stage> stage) {
+	if (stage)
+		m_io->pipes.push_back(std::move(stage));
 }
 
 void Pipeline::SetError() const noexcept {
@@ -123,19 +84,15 @@ void Pipeline::SetError() const noexcept {
 		if (buf)
 			buf->SetError();
 	}
-
 	m_io->final_producer.SetError();
 }
 
-Consumer Pipeline::Process(Consumer buffer,
-						const ExecutionMode& mode,
-						std::shared_ptr<Logger::Log> log) const noexcept
-{
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode,
+		std::shared_ptr<Logger::Log> log) const noexcept {
 	m_io->WaitForCompletion();
 
-	if (m_io->pipes.empty()) {
+	if (m_io->pipes.empty())
 		return buffer;
-	}
 
 	const std::shared_ptr<Logger::Log> stage_log =
 		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
@@ -151,31 +108,18 @@ Consumer Pipeline::Process(Consumer buffer,
 	m_io->threads.clear();
 
 	const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
-	const bool async    = HasExecutionFlag(mode, ExecutionMode::Async);
+	const bool async = HasExecutionFlag(mode, ExecutionMode::Async);
 
-	/**
-	 * @brief Run a single stage @p i.
-	 * @param i     Stage index in @c pipes.
-	 * @param input Original input Consumer (used only when @p i == 0).
-	 */
-	auto run_one_stage = [this, stage_log, num_stages](std::size_t i, Consumer& input) {
-		ExternalBufferReader in_adapter =
-			(i == 0)
-				? ExternalBufferReader(static_cast<ReadOnly&>(input))
-				: ExternalBufferReader(*m_io->intermediates[i - 1]);
-
-		if (i + 1 == num_stages) {
-			ExternalBufferWriter out_adapter(m_io->final_producer);
-			m_io->pipes[i](in_adapter, out_adapter, stage_log);
-		} else {
-			ExternalBufferWriter out_adapter(*m_io->intermediates[i]);
-			m_io->pipes[i](in_adapter, out_adapter, stage_log);
-		}
+	auto run_one_stage = [this, stage_log, num_stages](const std::size_t i, Consumer& input) {
+		ReadOnly& in = (i == 0)
+			? static_cast<ReadOnly&>(input)
+			: static_cast<ReadOnly&>(*m_io->intermediates[i - 1]);
+		WriteOnly& out = (i + 1 == num_stages)
+			? static_cast<WriteOnly&>(m_io->final_producer)
+			: static_cast<WriteOnly&>(*m_io->intermediates[i]);
+		m_io->pipes[i]->Run(in, out, stage_log.get());
 	};
 
-	/**
-	 * @brief Run all stages sequentially on the current thread.
-	 */
 	auto run_stages_sequential =
 		[run_one_stage, buffer = buffer, num_stages]() mutable {
 			for (std::size_t i = 0; i < num_stages; ++i)
@@ -191,13 +135,13 @@ Consumer Pipeline::Process(Consumer buffer,
 					run_one_stage(i, input);
 				});
 		}
-
-		if (!async) {
+		if (!async)
 			m_io->WaitForCompletion();
-		}
-	} else if (async) {
+	}
+	else if (async) {
 		m_io->threads.emplace_back(std::move(run_stages_sequential));
-	} else {
+	}
+	else {
 		run_stages_sequential();
 	}
 

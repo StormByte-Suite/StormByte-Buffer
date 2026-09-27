@@ -1,230 +1,306 @@
-/*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer original source is dual-licensed:
- *
- * 1. GNU Lesser General Public License v3.0 (or later)
- *    You may redistribute and/or modify this file under the terms of the
- *    GNU Lesser General Public License as published by the Free Software
- *    Foundation, either version 3 of the License, or (at your option)
- *    any later version.
- *
- * 2. Commercial license
- *    Alternatively, this file may be used under the terms of a commercial
- *    license agreement with the copyright holder
- *    (David C. Manuelda <StormByte@gmail.com>).
- *
- * Both licenses apply only to original StormByte-Buffer source in this
- * repository. They do not cover other StormByte modules or any third-party
- * material shipped with this repository (including everything under
- * thirdparty/, and in particular the bundled StormByte-Logger tree and
- * the rest of the StormByte suite it vendors), which remains under its own
- * license.
- *
- * Neither license grants any patent rights. Any patent licenses required
- * to use this software or third-party components must be obtained separately
- * from the patent holders.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * version 3 along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- *
- * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
- */
-
 #pragma once
 
 #include <StormByte/buffer/consumer.hxx>
-#include <StormByte/buffer/external.hxx>
+#include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/typedefs.hxx>
+#include <StormByte/buffer/visibility.h>
+#include <StormByte/clonable.hxx>
+#include <StormByte/platform.h>
+#include <StormByte/safe_pointers.hxx>
 
-#include <functional>
 #include <memory>
-#include <thread>
-#include <vector>
+#include <utility>
 
 /**
- * @namespace StormByte::Buffer
- * @brief Buffer module of the StormByte suite.
+ * @namespace StormByte
+ * @brief Root namespace of the StormByte C++ suite.
  */
-namespace StormByte::Buffer {
+namespace StormByte {
 	/**
-	 * @class Pipeline
-	 * @brief High-performance multi-stage data-processing pipeline.
-	 *
-	 * @par Overview
-	 * Pipeline manages a sequence of transformation functions (stages).
-	 * Each stage receives abstract @ref ExternalReader / @ref ExternalWriter
-	 * interfaces, allowing the Pipeline to choose the concrete buffer
-	 * implementation for every intermediate step without changing stage code.
-	 *
-	 * @par Buffer strategy
-	 * - **Intermediate stages** use a private SPSC ring.
-	 * - **Final stage** writes into a public @ref Producer (backed by @ref Ring),
-	 *   so the @ref Consumer returned to the caller keeps the full public API
-	 *   and can be shared safely.
-	 *
-	 * @par Execution modes
-	 * Flags are orthogonal and combinable with @c operator|:
-	 * - @c Sync (0): stages sequential on the caller’s thread; @ref Process blocks.
-	 * - @c Async: work runs in background; @ref Process returns immediately.
-	 * - @c Parallel: one thread per stage (SPSC intermediates); without @c Async,
-	 *   @ref Process still joins workers before returning.
-	 * - @c Async | Parallel: concurrent stages and non-blocking @ref Process.
-	 *
-	 * @par Stage signature
-	 * @code{.cpp}
-	 * void stage(ExternalReader& in, ExternalWriter& out,
-	 *            std::shared_ptr<Logger::Log> log);
-	 * @endcode
-	 *
-	 * When @p log is not null, @ref Process passes
-	 * @c log->Scope("Buffer/Pipeline") so @c %c identifies this module
-	 * without touching the thread-local component stack. Nested
-	 * @c log->Scope("Decode") inside a stage becomes
-	 * @c Buffer/Pipeline/Decode (or @c Multimedia/Buffer/Pipeline/Decode
-	 * if the caller already scoped the parent module).
-	 *
-	 * @par Best practices
-	 * - Always call @c out.Close() (or @c out.SetError()) at the end of every stage.
-	 * - Prefer @c Async | Parallel for multi-stage streaming production workloads.
-	 * - Use @c Sync for deterministic debugging.
-	 * - The returned @ref Consumer is the only synchronization point the caller needs
-	 *   (wait on @ref Consumer::EoF() / @ref Consumer::IsWritable() as appropriate).
-	 * - Pass the application or parent-module logger to @ref Process; do not
-	 *   pre-scope @c Buffer/Pipeline or the path will be duplicated.
-	 *
-	 * @see ExternalReader, ExternalWriter, Producer, Consumer, ExecutionMode
+	 * @namespace StormByte::Logger
+	 * @brief Forward declaration only. Full type lives in StormByte-Logger.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC Pipeline final {
-		public:
-			/**
-			 * @brief Signature of a pipeline stage.
-			 *
-			 * Stages receive abstract reader/writer interfaces so the Pipeline
-			 * can inject a private SPSC ring for intermediates and @ref Ring for
-			 * the final output without changing stage code.
-			 *
-			 * @param in Abstract reader for the stage input.
-			 * @param out Abstract writer for the stage output.
-			 * @param log Optional logger (may be null). When set, this is
-			 *            already @c Scope("Buffer/Pipeline") relative to the
-			 *            logger passed to @ref Process.
-			 */
-			using PipeFunction = std::function<void(
-				ExternalReader&,
-				ExternalWriter&,
-				std::shared_ptr<Logger::Log>
-			)>;
+	namespace Logger {
+		/**
+		 * @class Log
+		 * @brief Logger handle forwarded so Pipeline does not include Logger headers.
+		 */
+		class Log;
+	}
 
-			/**
-			 * @name Constructors / destructor / assignment
-			 * @{
-			 */
+	/**
+	 * @namespace StormByte::Buffer
+	 * @brief Buffer module of the StormByte suite.
+	 */
+	namespace Buffer {
+		/**
+		 * @class Pipeline
+		 * @brief Multi-stage byte transformation.
+		 *
+		 * Each stage receives @ref ReadOnly / @ref WriteOnly. Intermediate
+		 * stages use a private SPSC ring; the last writes a public
+		 * @ref Producer. Stages are owned here after @ref AddPipe.
+		 *
+		 * @par Execution modes
+		 * Flags combine with @c operator|:
+		 * - @c Sync (0): stages on the caller thread; @ref Process blocks.
+		 * - @c Async: work in background; @ref Process returns immediately.
+		 * - @c Parallel: one thread per stage; without Async, Process joins.
+		 * - @c Async | Parallel: concurrent stages and non-blocking Process.
+		 *
+		 * @see Producer, Consumer, ExecutionMode
+		 */
+		class STORMBYTE_BUFFER_PUBLIC Pipeline final {
+			public:
+				/**
+				 * @class Stage
+				 * @brief One transformation. Owned by the Pipeline after @ref AddPipe.
+				 *
+				 * Copy is deleted (avoids slicing). Move is out of line so the
+				 * DLL boundary has a single definition. @c Clone is private:
+				 * only Pipeline copy may duplicate a stage. Hand a stage in
+				 * with @ref Move (or @c AddPipe of a callable).
+				 */
+				class STORMBYTE_BUFFER_PUBLIC Stage: public Clonable<Stage, StormByte::Unique<Stage>> {
+					friend class Pipeline;
 
-			/**
-			 * @brief Default construct an empty pipeline (no stages).
-			 */
-			Pipeline() noexcept;
+					public:
+						/**
+						 * @brief Copy constructor is deleted.
+						 */
+						Stage(const Stage&) = delete;
 
-			/**
-			 * @brief Copy construct.
-			 * @param other Source pipeline (only the list of stages is copied;
-			 *              no running background work is shared).
-			 */
-			Pipeline(const Pipeline& other);
+						/**
+						 * @brief Move constructor. Defined in this module.
+						 * @param other Instance to take from.
+						 */
+						Stage(Stage&& other) noexcept;
 
-			/**
-			 * @brief Move construct.
-			 * @param other Source pipeline (left in a valid but unspecified state).
-			 */
-			Pipeline(Pipeline&& other) noexcept;
+						/**
+						 * @brief Virtual destructor. Out-of-line for the DLL boundary.
+						 */
+						virtual ~Stage() noexcept;
 
-			/**
-			 * @brief Destructor.
-			 * @details Joins any running background execution before destroying state.
-			 */
-			~Pipeline() noexcept;
+						/**
+						 * @brief Copy assignment is deleted.
+						 */
+						Stage& operator=(const Stage&) = delete;
 
-			/**
-			 * @brief Copy assignment.
-			 * @param other Source pipeline (stages only).
-			 * @return Reference to this pipeline.
-			 */
-			Pipeline& operator=(const Pipeline& other);
+						/**
+						 * @brief Move assignment. Defined in this module.
+						 * @param other Instance to take from.
+						 * @return *this.
+						 */
+						Stage& operator=(Stage&& other) noexcept;
 
-			/**
-			 * @brief Move assignment.
-			 * @param other Source pipeline.
-			 * @return Reference to this pipeline.
-			 */
-			Pipeline& operator=(Pipeline&& other) noexcept;
+						/**
+						 * @brief Run this stage.
+						 * @param in Source. Lives for the call.
+						 * @param out Sink. Lives for the call. Close or SetError before return.
+						 * @param log May be null. Already scoped Buffer/Pipeline when set.
+						 */
+						virtual void Run(ReadOnly& in, WriteOnly& out, Logger::Log* log) = 0;
 
-			/** @} */
+						/**
+						 * @brief Polymorphic move. The source must not be used afterwards.
+						 * @return Owned handle.
+						 */
+						PointerType Move() noexcept override = 0;
 
-			/**
-			 * @name Stage registration
-			 * @{
-			 */
+					protected:
+						/**
+						 * @brief Construct an abstract stage.
+						 */
+						Stage() noexcept = default;
 
-			/**
-			 * @brief Append a processing stage (copy).
-			 * @param pipe Stage function matching @ref PipeFunction.
-			 */
-			void AddPipe(const PipeFunction& pipe);
+					private:
+						/**
+						 * @brief Polymorphic copy. Only Pipeline may call this.
+						 * @return Owned handle.
+						 */
+						PointerType Clone() const noexcept override = 0;
+				};
 
-			/**
-			 * @brief Append a processing stage (move).
-			 * @param pipe Stage function matching @ref PipeFunction.
-			 */
-			void AddPipe(PipeFunction&& pipe);
+				/**
+				 * @name Lifecycle
+				 * @{
+				 */
 
-			/** @} */
+				/**
+				 * @brief Construct an empty pipeline.
+				 */
+				Pipeline() noexcept;
 
-			/**
-			 * @name Execution / error
-			 * @{
-			 */
+				/**
+				 * @brief Copy stages only. No running work is shared.
+				 * @param other Source pipeline.
+				 */
+				Pipeline(const Pipeline& other);
 
-			/**
-			 * @brief Propagate error state to all internal buffers.
-			 * @details Calls @c SetError() on every intermediate SPSC ring
-			 *          and on the final @ref Producer. Waiting stages wake and
-			 *          observe the error condition.
-			 */
-			void SetError() const noexcept;
+				/**
+				 * @brief Move constructor.
+				 * @param other Source pipeline.
+				 */
+				Pipeline(Pipeline&& other) noexcept;
 
-			/**
-			 * @brief Execute the pipeline.
-			 * @param buffer Input @ref Consumer for the first stage.
-			 * @param mode Bitmask of @ref ExecutionMode flags
-			 *              (@c Sync, @c Async, @c Parallel, or combinations).
-			 * @param log Optional logger (may be null). When set, every stage
-			 *            receives @c log->Scope("Buffer/Pipeline").
-			 * @return @ref Consumer of the final stage.
-			 *         When @c Async is set, the Consumer is available immediately
-			 *         while background work continues; otherwise @ref Process
-			 *         returns only after all stages have finished.
-			 *
-			 * @note Any previous background run is joined before starting a new one.
-			 * @see ExecutionMode, HasExecutionFlag(), Consumer, Producer
-			 */
-			Consumer Process(Consumer buffer,
-							const ExecutionMode& mode,
-							std::shared_ptr<Logger::Log> log) const noexcept;
+				/**
+				 * @brief Join any background run, then destroy.
+				 */
+				~Pipeline() noexcept;
 
-			/** @} */
+				/**
+				 * @brief Copy stages only.
+				 * @param other Source pipeline.
+				 * @return *this.
+				 */
+				Pipeline& operator=(const Pipeline& other);
 
-		private:
-			struct Backend;						///< Private coordinator.
-			std::unique_ptr<Backend> m_io;		///< Opaque coordinator.
-	};
+				/**
+				 * @brief Move assignment.
+				 * @param other Source pipeline.
+				 * @return *this.
+				 */
+				Pipeline& operator=(Pipeline&& other) noexcept;
+
+				/**
+				 * @}
+				 */
+
+				/**
+				 * @name Stages
+				 * @{
+				 */
+
+				/**
+				 * @brief Take ownership of a stage.
+				 * @param stage Handle from @ref Stage::Move. Empty is ignored.
+				 */
+				void AddPipe(StormByte::Unique<Stage> stage);
+
+				/**
+				 * @brief Box a callable in this TU and take ownership.
+				 * @tparam F Invocable as @c void(ReadOnly&, WriteOnly&, Logger::Log*).
+				 * @param fn Callable. Moved-from is empty.
+				 */
+				template<typename F>
+				STORMBYTE_FORCE_INLINE void AddPipe(F&& fn) {
+					/**
+					 * @class Box
+					 * @brief Caller-TU wrapper around @p F. Not a DLL type.
+					 */
+					class Box final: public Stage {
+						public:
+							/**
+							 * @brief Take the callable by move.
+							 * @param fn Callable.
+							 */
+							STORMBYTE_FORCE_INLINE explicit Box(F&& fn) noexcept:
+								m_fn(std::forward<F>(fn)) {}
+
+							/**
+							 * @brief Copy constructor is deleted.
+							 */
+							STORMBYTE_FORCE_INLINE Box(const Box&) = delete;
+
+							/**
+							 * @brief Move constructor.
+							 * @param other Instance to take from.
+							 */
+							STORMBYTE_FORCE_INLINE Box(Box&& other) noexcept = default;
+
+							/**
+							 * @brief Destructor.
+							 */
+							STORMBYTE_FORCE_INLINE ~Box() noexcept override = default;
+
+							/**
+							 * @brief Copy assignment is deleted.
+							 */
+							STORMBYTE_FORCE_INLINE Box& operator=(const Box&) = delete;
+
+							/**
+							 * @brief Move assignment.
+							 * @param other Instance to take from.
+							 * @return *this.
+							 */
+							STORMBYTE_FORCE_INLINE Box& operator=(Box&& other) noexcept = default;
+
+							/**
+							 * @brief Invoke the boxed callable.
+							 * @param in Source.
+							 * @param out Sink.
+							 * @param log May be null.
+							 */
+							STORMBYTE_FORCE_INLINE void Run(ReadOnly& in, WriteOnly& out, Logger::Log* log) override {
+								m_fn(in, out, log);
+							}
+
+							/**
+							 * @brief Polymorphic move of this box.
+							 * @return Owned handle.
+							 */
+							STORMBYTE_FORCE_INLINE PointerType Move() noexcept override {
+								return StormByte::Unique<Stage>::MakePointer<Box>(std::move(*this));
+							}
+
+						private:
+							/**
+							 * @brief Copy the callable for @ref Clone.
+							 * @param fn Callable.
+							 */
+							STORMBYTE_FORCE_INLINE explicit Box(const F& fn) noexcept:
+								m_fn(fn) {}
+
+							/**
+							 * @brief Polymorphic copy of this box.
+							 * @return Owned handle.
+							 */
+							STORMBYTE_FORCE_INLINE PointerType Clone() const noexcept override {
+								return StormByte::Unique<Stage>::MakePointer<Box>(m_fn);
+							}
+
+							F m_fn;	///< Caller callable.
+					};
+					AddPipe(StormByte::Unique<Stage>::MakePointer<Box>(std::forward<F>(fn)));
+				}
+
+				/**
+				 * @}
+				 */
+
+				/**
+				 * @name Execution
+				 * @{
+				 */
+
+				/**
+				 * @brief SetError on every intermediate ring and the final Producer.
+				 */
+				void SetError() const noexcept;
+
+				/**
+				 * @brief Run the stages.
+				 * @param buffer First-stage input.
+				 * @param mode @ref ExecutionMode flags.
+				 * @param log Optional. Stages receive Scope("Buffer/Pipeline") when set.
+				 * @return Consumer of the last stage.
+				 */
+				Consumer Process(Consumer buffer, const ExecutionMode& mode,
+					std::shared_ptr<Logger::Log> log) const noexcept;
+
+				/**
+				 * @}
+				 */
+
+			private:
+				/**
+				 * @struct Backend
+				 * @brief Coordinator. Defined in the implementation file.
+				 */
+				struct Backend;
+
+				std::unique_ptr<Backend> m_io;	///< Opaque coordinator.
+		};
+	}
 }

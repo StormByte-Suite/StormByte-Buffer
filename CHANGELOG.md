@@ -46,13 +46,15 @@ If you landed here from a release link and have not read the tree:
 - Flatten: `operator StormByte::String::String` (out of line) and `STORMBYTE_FORCE_INLINE operator std::string()` so `Logger << *telemetry` stays on the caller TU.
 - `BufferedReader::Available()`. Contiguous cached bytes at `Tell`. Does not call `OriginPull` / `OriginSeek` and does not wait for prefetch.
 - `StormByte::Buffer::Pumper`. Takes a `Bridge` by move and runs `Passthrough` on a worker until EoF or failure. Starts in the constructor; the destructor joins. Nested `Parameters` with knobs `Chunk` and `HighWater`. `Chunk` `0` is automatic cycle size, not Bridge “current contents”. `HighWater` applies to the **input** only: omitted = `0` if the source is IO, otherwise the backend default (constexpr in the PIMPL `.cxx`); explicit `0` = no Pumper cap (intended when the IO source already limits itself). Non-IO sources are unbounded by design. `Toggle` pauses/resumes. `Cancel` is terminal (`Failed`, no restart). Telemetry is forwarded from the owned Bridge.
+- `Pipeline::Stage`. Abstract owned stage (`Clonable` + `Unique<Stage>`). Copy is deleted; move is out of line. `Clone` is private (Pipeline copy only). `AddPipe(Unique<Stage>)` takes ownership. `AddPipe(F&&)` boxes the callable in the caller TU with `STORMBYTE_FORCE_INLINE` and `Unique::MakePointer` (no raw `new`).
 
 ### Changed
 
 - **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
 - **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
 - **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
-- **Breaking:** `ExternalReader` and `ExternalWriter` are `Clonable` with `StormByte::Unique`. `std::unique_ptr` is not a `PointerType`.
+- **Breaking:** `ExternalReader`, `ExternalWriter`, `ExternalBufferReader` and `ExternalBufferWriter` are private (`STORMBYTE_BUFFER_PRIVATE`). They are not installed. Bridge and Pumper own the adapters; callers use `ReadOnly` / `WriteOnly` or IO leaves.
+- **Breaking:** `Pipeline::PipeFunction` (`std::function` over `ExternalReader` / `ExternalWriter`) is gone. Stages are `Pipeline::Stage` (`Run(ReadOnly&, WriteOnly&, Logger::Log*)`) or a callable boxed by `AddPipe`.
 - **Breaking:** `BufferedLocationReader` and `BufferedLocationWriter` sit between the engines and the file leaves. A location is file-like: named by `Location()` (`StormByte::String::String`, owned in this module), always seekable and sized. `Device()` returns `System::Device` by value from pure `OriginDevice()`. Path-only `Setup()` lives here.
 - **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local`. A socket on the lower layer can pass `Location::Remote`.
 - **Breaking:** IO constructors no longer take positional windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`). One constructor per leaf: path plus that class’s `Parameters` (default `{}` = probe). Explicit zeros stay zeros; they do not probe.
@@ -81,6 +83,8 @@ If you landed here from a release link and have not read the tree:
 - `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
+
+[2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0
 
 ## [1.4.0] - 2026-09-23
 
