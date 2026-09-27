@@ -9,7 +9,7 @@
 
 This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pumper, pipelines and buffered I/O for the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline stages (`Scope`). Public headers live under `StormByte/buffer/`.
+It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network, String and System are **other repositories**. This one does not implement them.
 
@@ -18,19 +18,19 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 Pieces plug into each other through `ReadOnly` / `WriteOnly` and through IO leaves.
 
 - `Producer` yields a `Consumer` over the same `Ring`.
+- `Pipeline` transforms stream buffers only (`ReadOnly` / `WriteOnly`). Pipes do not take IO leaves.
 - `Bridge` moves bytes from a `ReadOnly` or an IO reader into a `WriteOnly` or an IO writer. IO tips are taken by move; in-memory tips stay referenced.
 - `Pumper` owns a `Bridge` and runs `Passthrough` until EoF or failure.
 - `BufferedFileReader` *is* a `BufferedReader`. `BufferedFileWriter` *is* a `BufferedWriter`. Leaves implement `Origin*`. Cache, prefetch, backpressure, delayed seek and telemetry live in the bases.
-- `Pipeline` stages read a `ReadOnly` and write a `WriteOnly`. Intermediates are a private ring; the last stage writes a `Producer`.
 
 Typical wires:
 
 - `Producer` → `Consumer` (same ring).
-- `Bridge(consumer, std::move(file_writer))` then `Passthrough`, or wrap that Bridge in a `Pumper`.
-- `BufferedFileReader` — sequential or seekable reads with a page map.
-- `BufferedFileWriter` — sequential or seekable writes with lazy dirty pages.
+- `Producer` → `Pipeline::Process` → `Consumer`.
+- That `Consumer` → `Bridge::Passthrough` → file (or wrap the Bridge in a `Pumper`).
+- `BufferedFileReader` / `BufferedFileWriter` for seekable files with a page map.
 
-See [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWriter](#iobufferedwriter) and [Pipeline](#pipeline).
+See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
 
 ## What this module does
 
@@ -40,11 +40,11 @@ See [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::Buffered
 - **Ring** — concurrent ring (many-to-many).
 - **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
 - **Hopper / Sink** — SPSC typed items and a keyed map of hoppers.
+- **Pipeline** — user leaves of `Pipe`. Stream buffers only. `Add` clones or moves.
 - **Bridge** — manual transfer. `Passthrough(n, Operation)` only. No worker.
 - **Pumper** — owns a Bridge and pumps until EoF or `Cancel`.
 - **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Shared<…>`. `MeanRate` is caller rate, not disk rate.
 - **IO** — `BufferedReader` / `BufferedWriter` bases and file leaves. Nested `Parameters` and knobs.
-- **Pipeline** — owned `Pipeline::Stage` objects. Callables boxed in the caller TU.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
 ## The rest of the suite
@@ -76,12 +76,12 @@ See [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::Buffered
   - [Sink](#sink)
   - [Parameters](#parameters)
   - [Telemetry](#telemetry)
+  - [Pipeline](#pipeline)
   - [Bridge](#bridge)
   - [Pumper](#pumper)
   - [IO::BufferedReader](#iobufferedreader)
   - [IO::BufferedWriter](#iobufferedwriter)
   - [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter)
-  - [Pipeline](#pipeline)
 - [Support](#support)
 - [Contributing](#contributing)
 - [License](#license)
@@ -93,7 +93,7 @@ See [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::Buffered
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer (vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0)), [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) when pipeline stages take a logger.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer (vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0)), [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) when pipeline pipes take a logger.
 
 ```sh
 git clone --recursive https://github.com/StormBytePP/StormByte-Buffer.git
@@ -273,9 +273,79 @@ if (tel)
 	log << Level::Info << *tel << std::endl;
 ```
 
+### Pipeline
+
+`Pipeline` transforms **stream** buffers (`ReadOnly` / `WriteOnly`). It does not take IO leaves. A file or device is attached later with a [Bridge](#bridge).
+
+A pipe is a user leaf of `Pipe`. Implement `Run`, `Clone` and `Move`. `Add(const Pipe&)` clones onto Base's heap and does not touch the caller object. `Add(Pipe&&)` takes `Move()`.
+
+`Pipe::Run(ReadOnly&, WriteOnly&, const Shared<Logger::Log>&)`. Close or `SetError` the sink before return. `Pipeline::Process(buffer, log, mode)` — mode last. When a logger is set, each pipe receives a scoped handle.
+
+```cpp
+#include <StormByte/buffer/pipe.hxx>
+#include <StormByte/buffer/pipeline.hxx>
+#include <StormByte/buffer/producer.hxx>
+#include <StormByte/safe_pointers.hxx>
+
+using StormByte::Buffer::Consumer;
+using StormByte::Buffer::ExecutionMode;
+using StormByte::Buffer::Pipe;
+using StormByte::Buffer::Pipeline;
+using StormByte::Buffer::Producer;
+using StormByte::Buffer::ReadOnly;
+using StormByte::Buffer::WriteOnly;
+
+class StripCrPipe final: public Pipe {
+	public:
+		StripCrPipe() = default;
+		StripCrPipe(const StripCrPipe&) = default;
+		StripCrPipe(StripCrPipe&&) noexcept = default;
+		~StripCrPipe() noexcept override = default;
+		StripCrPipe& operator=(const StripCrPipe&) = default;
+		StripCrPipe& operator=(StripCrPipe&&) noexcept = default;
+
+		void Run(ReadOnly& in, WriteOnly& out,
+			const StormByte::Shared<StormByte::Logger::Log>&) override {
+			StormByte::BinaryData raw;
+			in.Extract(0, raw);
+			StormByte::BinaryData unix_newlines;
+			unix_newlines.reserve(raw.size());
+			for (const std::byte octet : raw) {
+				if (octet != std::byte{'\r'})
+					unix_newlines.push_back(octet);
+			}
+			out.Write(unix_newlines.size(), std::move(unix_newlines));
+			out.Close();
+		}
+
+		PointerType Clone() const noexcept override {
+			return StormByte::Unique<Pipe>::MakePointer<StripCrPipe>(*this);
+		}
+
+		PointerType Move() noexcept override {
+			return StormByte::Unique<Pipe>::MakePointer<StripCrPipe>(std::move(*this));
+		}
+};
+
+int main() {
+	Producer src;
+	src.Write("a\r\nb\r\n");
+	src.Close();
+
+	StripCrPipe crlf;
+	Pipeline pipe;
+	pipe.Add(crlf);
+
+	Consumer result = pipe.Process(src.Consumer(), {}, ExecutionMode::Sync);
+	(void)result;
+}
+```
+
+`Sync` runs on the caller thread. `Async` returns at once. `Parallel` is one thread per pipe. Combine with `|`.
+
 ### Bridge
 
-`Bridge` is a manual transfer. Bytes move only when you call `Passthrough`. There is no worker and no occupancy cap here. Continuous transfer is [Pumper](#pumper).
+`Bridge` is a manual transfer. Bytes move only when you call `Bridge::Passthrough`. There is no worker and no occupancy cap here. Continuous transfer is [Pumper](#pumper).
 
 - In-memory tips: `ReadOnly&` / `WriteOnly&`. Those buffers must outlive the Bridge.
 - IO tips: stolen by move as the concrete leaf (`BufferedFileReader`, `BufferedFileWriter`, …).
@@ -309,6 +379,44 @@ int main() {
 	}
 }
 ```
+
+A `Pipeline` is not a Bridge tip. `Pipeline::Process` is. It returns a `Consumer`, and a `Consumer` is `ReadOnly`, so it can be the source of a Bridge. The leaf `StripCrPipe` is the one from [Pipeline](#pipeline).
+
+```cpp
+#include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/pipeline.hxx>
+#include <StormByte/buffer/producer.hxx>
+
+using StormByte::Buffer::Bridge;
+using StormByte::Buffer::Consumer;
+using StormByte::Buffer::ExecutionMode;
+using StormByte::Buffer::Pipeline;
+using StormByte::Buffer::Producer;
+using StormByte::Buffer::IO::BufferedFileWriter;
+
+int main() {
+	Producer capture;
+	capture.Write("line 1\r\nline 2\r\n");
+	capture.Close();
+
+	StripCrPipe crlf;
+	Pipeline pipe;
+	pipe.Add(crlf);
+
+	Consumer normalized = pipe.Process(capture.Consumer(), {}, ExecutionMode::Sync);
+
+	BufferedFileWriter out("session.log");
+	out.Open();
+	Bridge to_disk(normalized, std::move(out));
+	while (!to_disk.EoF() && !to_disk.Failed()) {
+		if (to_disk.Passthrough(4 * 1024) == 0 && !to_disk.EoF())
+			break;
+	}
+}
+```
+
+`session.log` holds `line 1\nline 2\n`. For a long capture, wrap `to_disk` in a `Pumper` instead of the `Passthrough` loop.
 
 ### Pumper
 
@@ -383,43 +491,6 @@ int main() {
 	in.Close();
 }
 ```
-
-### Pipeline
-
-Stages are owned `Pipeline::Stage` objects. Copy of a stage value is deleted. `Clone` is private (only Pipeline copy). `AddPipe(Unique<Stage>)` takes ownership. `AddPipe(F&&)` boxes a callable in **your** TU.
-
-`Run(ReadOnly&, WriteOnly&, Logger::Log*)`. Close or `SetError` the sink before return. When a logger is passed to `Process`, each stage receives `Scope("Buffer/Pipeline")`.
-
-```cpp
-#include <StormByte/buffer/pipeline.hxx>
-#include <StormByte/buffer/producer.hxx>
-
-using StormByte::Buffer::Consumer;
-using StormByte::Buffer::ExecutionMode;
-using StormByte::Buffer::Pipeline;
-using StormByte::Buffer::Producer;
-using StormByte::Buffer::ReadOnly;
-using StormByte::Buffer::WriteOnly;
-
-int main() {
-	Producer src;
-	src.Write("abcdef");
-	src.Close();
-
-	Pipeline pipe;
-	pipe.AddPipe([](ReadOnly& in, WriteOnly& out, StormByte::Logger::Log*) {
-		StormByte::BinaryData chunk;
-		in.Extract(0, chunk);
-		out.Write(chunk.size(), std::move(chunk));
-		out.Close();
-	});
-
-	Consumer result = pipe.Process(src.Consumer(), ExecutionMode::Sync, nullptr);
-	(void)result;
-}
-```
-
-`Sync` runs on the caller thread. `Async` returns at once. `Parallel` is one thread per stage. Combine with `|`.
 
 ## Support
 
