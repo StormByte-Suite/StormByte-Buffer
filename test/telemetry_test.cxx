@@ -41,17 +41,174 @@
 
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/telemetry.hxx>
+#include <StormByte/byte_size.hxx>
+#include <StormByte/string/string.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 
+using StormByte::ByteSize;
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::IO::BufferedFileReader;
+using StormByte::Buffer::IO::MaxMemory;
+using StormByte::Buffer::IO::ReadAhead;
+
+namespace {
+	StormByte::String::String Loc(const std::filesystem::path& path) {
+#ifdef WINDOWS
+		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+#else
+		return StormByte::String::String(std::string_view(path.string()));
+#endif
+	}
+
+	void DumpText(const std::filesystem::path& path, const std::string& text) {
+		std::ofstream out(path, std::ios::binary | std::ios::trunc);
+		out.write(text.data(), static_cast<std::streamsize>(text.size()));
+	}
+}
 
 // -------------------
-// Counters
+// Close
+// -------------------
+
+int test_telemetry_survives_bridge_close() {
+	constexpr auto fn = "test_telemetry_survives_bridge_close";
+	int result = 0;
+	FIFO in;
+	FIFO out;
+	in.Write("payload");
+	in.Close();
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{7}, bridge.Passthrough(7));
+	const auto read = bridge.ReadTelemetry();
+	const auto write = bridge.WriteTelemetry();
+	bridge.Close();
+	ASSERT_TRUE(fn, static_cast<bool>(read));
+	ASSERT_TRUE(fn, static_cast<bool>(write));
+	ASSERT_EQUAL(fn, ByteSize{7}, read->Delivered());
+	ASSERT_EQUAL(fn, ByteSize{7}, write->Accepted());
+	RETURN_TEST(fn, result);
+}
+
+int test_telemetry_survives_bridge_dtor() {
+	constexpr auto fn = "test_telemetry_survives_bridge_dtor";
+	int result = 0;
+	StormByte::Shared<StormByte::Buffer::ReadTelemetry> kept;
+	{
+		FIFO in;
+		FIFO out;
+		in.Write("xyz");
+		in.Close();
+		Bridge bridge(in, out);
+		ASSERT_EQUAL(fn, ByteSize{3}, bridge.Passthrough(3));
+		kept = bridge.ReadTelemetry();
+	}
+	ASSERT_TRUE(fn, static_cast<bool>(kept));
+	ASSERT_EQUAL(fn, ByteSize{3}, kept->Delivered());
+	RETURN_TEST(fn, result);
+}
+
+// -------------------
+// Flatten
+// -------------------
+
+int test_telemetry_flatten_after_transfer() {
+	constexpr auto fn = "test_telemetry_flatten_after_transfer";
+	int result = 0;
+	FIFO in;
+	FIFO out;
+	in.Write("payload");
+	in.Close();
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{7}, bridge.Passthrough(7));
+	const auto read = bridge.ReadTelemetry();
+	const auto write = bridge.WriteTelemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(read));
+	ASSERT_TRUE(fn, static_cast<bool>(write));
+	ASSERT_TRUE(fn, !static_cast<std::string>(*read).empty());
+	ASSERT_TRUE(fn, !static_cast<std::string>(*write).empty());
+	RETURN_TEST(fn, result);
+}
+
+// -------------------
+// Handle
+// -------------------
+
+int test_telemetry_same_handle() {
+	constexpr auto fn = "test_telemetry_same_handle";
+	int result = 0;
+	FIFO in;
+	FIFO out;
+	in.Write("payload");
+	in.Close();
+	Bridge bridge(in, out);
+	const auto first = bridge.ReadTelemetry();
+	ASSERT_EQUAL(fn, ByteSize{7}, bridge.Passthrough(7));
+	const auto second = bridge.ReadTelemetry();
+	ASSERT_TRUE(fn, first == second);
+	ASSERT_EQUAL(fn, ByteSize{7}, first->Delivered());
+	ASSERT_EQUAL(fn, ByteSize{7}, second->Delivered());
+	RETURN_TEST(fn, result);
+}
+
+// -------------------
+// IO
+// -------------------
+
+int test_telemetry_io_leaf_same_pointer() {
+	constexpr auto fn = "test_telemetry_io_leaf_same_pointer";
+	int result = 0;
+	const auto path = std::filesystem::temp_directory_path() / "sbb_tel_io.tmp";
+	std::filesystem::remove(path);
+	DumpText(path, "ABCDEFGH");
+	BufferedFileReader in(Loc(path), { ReadAhead{ByteSize{0}}, MaxMemory{ByteSize{0}} });
+	ASSERT_TRUE(fn, in.Open());
+	const auto leaf = in.Telemetry();
+	FIFO out;
+	Bridge bridge(std::move(in), out);
+	ASSERT_TRUE(fn, bridge.InputIsIO());
+	const auto bridged = bridge.ReadTelemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(leaf));
+	ASSERT_TRUE(fn, static_cast<bool>(bridged));
+	ASSERT_TRUE(fn, leaf == bridged);
+	ASSERT_EQUAL(fn, ByteSize{8}, bridge.Passthrough(8));
+	ASSERT_EQUAL(fn, ByteSize{8}, bridged->Delivered());
+	ASSERT_EQUAL(fn, ByteSize{8}, leaf->Delivered());
+	bridge.Close();
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, result);
+}
+
+int test_telemetry_io_not_double_counted() {
+	constexpr auto fn = "test_telemetry_io_not_double_counted";
+	int result = 0;
+	const auto path = std::filesystem::temp_directory_path() / "sbb_tel_once.tmp";
+	std::filesystem::remove(path);
+	DumpText(path, "1234");
+	BufferedFileReader in(Loc(path), { ReadAhead{ByteSize{0}}, MaxMemory{ByteSize{0}} });
+	ASSERT_TRUE(fn, in.Open());
+	FIFO out;
+	Bridge bridge(std::move(in), out);
+	ASSERT_EQUAL(fn, ByteSize{4}, bridge.Passthrough(4));
+	const auto read = bridge.ReadTelemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(read));
+	ASSERT_EQUAL(fn, ByteSize{4}, read->Delivered());
+	bridge.Close();
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, result);
+}
+
+// -------------------
+// Start
 // -------------------
 
 int test_telemetry_empty_before_passthrough() {
@@ -66,47 +223,14 @@ int test_telemetry_empty_before_passthrough() {
 	const auto write = bridge.WriteTelemetry();
 	ASSERT_TRUE(fn, static_cast<bool>(read));
 	ASSERT_TRUE(fn, static_cast<bool>(write));
-	ASSERT_TRUE(fn, read->Delivered() == 0);
-	ASSERT_TRUE(fn, write->Accepted() == 0);
+	ASSERT_EQUAL(fn, ByteSize{0}, read->Delivered());
+	ASSERT_EQUAL(fn, ByteSize{0}, write->Accepted());
 	RETURN_TEST(fn, result);
 }
 
-int test_telemetry_flatten_after_transfer() {
-	constexpr auto fn = "test_telemetry_flatten_after_transfer";
-	int result = 0;
-	FIFO in;
-	FIFO out;
-	in.Write("payload");
-	in.Close();
-	Bridge bridge(in, out);
-	ASSERT_TRUE(fn, bridge.Passthrough(7) == 7);
-	const auto read = bridge.ReadTelemetry();
-	const auto write = bridge.WriteTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(read));
-	ASSERT_TRUE(fn, static_cast<bool>(write));
-	const std::string flat_read = *read;
-	const std::string flat_write = *write;
-	ASSERT_TRUE(fn, !flat_read.empty());
-	ASSERT_TRUE(fn, !flat_write.empty());
-	RETURN_TEST(fn, result);
-}
-
-int test_telemetry_same_handle() {
-	constexpr auto fn = "test_telemetry_same_handle";
-	int result = 0;
-	FIFO in;
-	FIFO out;
-	in.Write("payload");
-	in.Close();
-	Bridge bridge(in, out);
-	const auto first = bridge.ReadTelemetry();
-	ASSERT_TRUE(fn, bridge.Passthrough(7) == 7);
-	const auto second = bridge.ReadTelemetry();
-	ASSERT_TRUE(fn, first == second);
-	ASSERT_TRUE(fn, first->Delivered() == 7);
-	ASSERT_TRUE(fn, second->Delivered() == 7);
-	RETURN_TEST(fn, result);
-}
+// -------------------
+// Track
+// -------------------
 
 int test_telemetry_tracks_delivered_and_accepted() {
 	constexpr auto fn = "test_telemetry_tracks_delivered_and_accepted";
@@ -116,13 +240,13 @@ int test_telemetry_tracks_delivered_and_accepted() {
 	in.Write("payload");
 	in.Close();
 	Bridge bridge(in, out);
-	ASSERT_TRUE(fn, bridge.Passthrough(7) == 7);
+	ASSERT_EQUAL(fn, ByteSize{7}, bridge.Passthrough(7));
 	const auto read = bridge.ReadTelemetry();
 	const auto write = bridge.WriteTelemetry();
 	ASSERT_TRUE(fn, static_cast<bool>(read));
 	ASSERT_TRUE(fn, static_cast<bool>(write));
-	ASSERT_TRUE(fn, read->Delivered() == 7);
-	ASSERT_TRUE(fn, write->Accepted() == 7);
+	ASSERT_EQUAL(fn, ByteSize{7}, read->Delivered());
+	ASSERT_EQUAL(fn, ByteSize{7}, write->Accepted());
 	RETURN_TEST(fn, result);
 }
 
@@ -130,11 +254,35 @@ int main() {
 	int result = 0;
 
 	// -------------------
-	// Counters
+	// Close
+	// -------------------
+	result += test_telemetry_survives_bridge_close();
+	result += test_telemetry_survives_bridge_dtor();
+
+	// -------------------
+	// Flatten
+	// -------------------
+	result += test_telemetry_flatten_after_transfer();
+
+	// -------------------
+	// Handle
+	// -------------------
+	result += test_telemetry_same_handle();
+
+	// -------------------
+	// IO
+	// -------------------
+	result += test_telemetry_io_leaf_same_pointer();
+	result += test_telemetry_io_not_double_counted();
+
+	// -------------------
+	// Start
 	// -------------------
 	result += test_telemetry_empty_before_passthrough();
-	result += test_telemetry_flatten_after_transfer();
-	result += test_telemetry_same_handle();
+
+	// -------------------
+	// Track
+	// -------------------
 	result += test_telemetry_tracks_delivered_and_accepted();
 
 	if (result == 0)

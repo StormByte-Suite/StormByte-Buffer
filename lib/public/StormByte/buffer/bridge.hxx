@@ -136,6 +136,10 @@ namespace StormByte {
 		 * returns 0 and does nothing. A NonBlocking call that yields
 		 * zero bytes is not the end of the session.
 		 *
+		 * A non-IO source that is not readable (@ref ReadOnly::IsReadable
+		 * is false, including after @c SetError) is a tip fault, not EoF.
+		 * A closed empty source is EoF. Those two are not the same.
+		 *
 		 * @par Telemetry
 		 * This Bridge always holds a @c Shared copy of the read and
 		 * write counters. A non-IO tip uses a basic
@@ -253,7 +257,7 @@ namespace StormByte {
 
 				/**
 				 * @brief Whether the read tip reports end-of-stream.
-				 * @return @c true on EoF, if there is no read tip, or if not @ref State::Open.
+				 * @return @c true on EoF, if @ref State is not Open, or if there is no read tip.
 				 */
 				bool EoF() const noexcept;
 
@@ -270,6 +274,22 @@ namespace StormByte {
 				bool InputIsIO() const noexcept;
 
 				/**
+				 * @brief Whether @ref Pumper must Blocking-pull this source.
+				 * @return @c true when the stolen reader has @ref IO::BufferedReader::ReadAhead of 0.
+				 *
+				 * Non-IO sources return @c false. Snapshotted at attach;
+				 * later @ref IO::BufferedReader::ReadAhead setters on a
+				 * moved-from leaf do not change it.
+				 */
+				bool InputPullBlocking() const noexcept;
+
+				/**
+				 * @brief Session lifetime.
+				 * @return Current @ref State.
+				 */
+				enum State State() const noexcept;
+
+				/**
 				 * @brief Move bytes from the read tip to the write tip.
 				 * @param n Requested bytes. Zero means current contents.
 				 * @param operation Read-side wait policy.
@@ -279,19 +299,13 @@ namespace StormByte {
 					Operation operation = Operation::Blocking);
 
 				/**
-				 * @brief Session counters for the read tip.
+				 * @brief Read counters. Always the cached @c Shared handle.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 				/**
-				 * @brief Current session state.
-				 * @return @ref State::Open, @ref State::Closed or @ref State::Failed.
-				 */
-				enum State State() const noexcept;
-
-				/**
-				 * @brief Session counters for the write tip.
+				 * @brief Write counters. Always the cached @c Shared handle.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
@@ -310,12 +324,56 @@ namespace StormByte {
 				void AttachNonIoOut(WriteOnly& out) noexcept;
 
 				/**
+				 * @brief Snapshot the stolen IO source telemetry handle.
+				 *
+				 * Runs in this module so the @c Shared copy does not
+				 * cross the DLL boundary from an inline template.
+				 */
+				void CacheReadTelemetry() noexcept;
+
+				/**
+				 * @brief Snapshot the stolen IO sink telemetry handle.
+				 *
+				 * Runs in this module so the @c Shared copy does not
+				 * cross the DLL boundary from an inline template.
+				 */
+				void CacheWriteTelemetry() noexcept;
+
+				/**
+				 * @brief Drop adapters and stolen leaves. Does not change @ref State.
+				 */
+				void ReleaseTips() noexcept;
+
+				/**
+				 * @brief EoF of the current read tip. Caller holds @c m_mutex.
+				 * @return @c true if the tip reports EoF or there is no tip.
+				 */
+				bool SourceEoF() const noexcept;
+
+				/**
+				 * @brief Pull up to @p n into @p dest according to @p operation.
+				 * @param n Requested bytes.
+				 * @param dest Scratch FIFO.
+				 * @param operation Read-side wait policy.
+				 * @return Status and count. @c Failed if the source is not readable.
+				 */
+				IO::Result Pull(StormByte::ByteSize n, FIFO& dest, Operation operation);
+
+				/**
+				 * @brief Push @p src. Retry TryAgain until Ok, End or fail.
+				 * @param src Bytes to write.
+				 * @return Status. @c Failed if the sink is not writable.
+				 */
+				IO::Result Push(FIFO& src);
+
+				/**
 				 * @brief Steal an IO source onto Base's heap.
 				 * @tparam In Concrete @ref IO::BufferedReader leaf.
 				 * @param in Source. Moved-from is empty.
 				 */
 				template<typename In>
 				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) noexcept {
+					m_io_in_blocking = (in.ReadAhead() == StormByte::ByteSize{0});
 					m_io_in = StormByte::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
 						std::forward<In>(in));
 					CacheReadTelemetry();
@@ -333,42 +391,13 @@ namespace StormByte {
 					CacheWriteTelemetry();
 				}
 
-				/**
-				 * @brief Snapshot the stolen IO source telemetry. Defined in this module.
-				 */
-				void CacheReadTelemetry() noexcept;
-
-				/**
-				 * @brief Snapshot the stolen IO sink telemetry. Defined in this module.
-				 */
-				void CacheWriteTelemetry() noexcept;
-
-				/**
-				 * @brief Drop adapters and stolen IO leaves. Telemetry stays.
-				 */
-				void ReleaseTips() noexcept;
-
-				/**
-				 * @brief Whether the attached source reports EoF. Caller holds @c m_mutex.
-				 */
-				bool SourceEoF() const noexcept;
-
-				/**
-				 * @brief Pull up to @p n into @p dest according to @p operation.
-				 */
-				IO::Result Pull(StormByte::ByteSize n, FIFO& dest, Operation operation);
-
-				/**
-				 * @brief Push @p src. Retry TryAgain until Ok, End or fail.
-				 */
-				IO::Result Push(FIFO& src);
-
 				std::unique_ptr<ExternalBufferReader, ExternalReaderDeleter> m_ext_in;	///< Non-IO read adapter. Owned.
 				std::unique_ptr<ExternalBufferWriter, ExternalWriterDeleter> m_ext_out;	///< Non-IO write adapter. Owned.
 				StormByte::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
 				StormByte::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
-				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Session read counters.
-				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Session write counters.
+				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.
+				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Cached write counters.
+				bool m_io_in_blocking {false};											///< Stolen reader ReadAhead was 0.
 				enum State m_state {State::Open};										///< Session lifetime.
 				mutable std::mutex m_mutex;												///< Session lock.
 		};

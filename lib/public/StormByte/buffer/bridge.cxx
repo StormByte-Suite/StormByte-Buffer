@@ -112,7 +112,9 @@ Bridge::Bridge(Bridge&& other) noexcept {
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
+	m_io_in_blocking = other.m_io_in_blocking;
 	m_state = other.m_state;
+	other.m_io_in_blocking = false;
 	other.m_state = State::Closed;
 }
 
@@ -129,7 +131,9 @@ Bridge& Bridge::operator=(Bridge&& other) noexcept {
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
+	m_io_in_blocking = other.m_io_in_blocking;
 	m_state = other.m_state;
+	other.m_io_in_blocking = false;
 	other.m_state = State::Closed;
 	return *this;
 }
@@ -139,6 +143,7 @@ void Bridge::ReleaseTips() noexcept {
 	m_ext_out.reset();
 	m_io_in.reset();
 	m_io_out.reset();
+	m_io_in_blocking = false;
 }
 
 void Bridge::Close() noexcept {
@@ -173,6 +178,11 @@ bool Bridge::InputIsIO() const noexcept {
 	return static_cast<bool>(m_io_in);
 }
 
+bool Bridge::InputPullBlocking() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_io_in_blocking;
+}
+
 enum Bridge::State Bridge::State() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_state;
@@ -192,8 +202,10 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 	dest.Clear();
 
 	if (m_ext_in) {
-		if (!m_ext_in->IsReadable() && m_ext_in->Available() == StormByte::ByteSize{0})
+		if (!m_ext_in->IsReadable())
 			return { IO::Status::Failed, 0 };
+		if (m_ext_in->Available() == StormByte::ByteSize{0} && m_ext_in->EoF())
+			return { IO::Status::End, 0 };
 
 		StormByte::ByteSize want = n;
 		const StormByte::ByteSize now = m_ext_in->Available();
@@ -205,7 +217,7 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 		}
 
 		if (want == StormByte::ByteSize{0})
-			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+			return { IO::Status::Ok, 0 };
 
 		BinaryData chunk;
 		if (!m_ext_in->Extract(want, chunk)) {
@@ -216,14 +228,19 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 					return { IO::Status::Failed, 0 };
 				return { IO::Status::Ok, dest.Available() };
 			}
+			if (!m_ext_in->IsReadable())
+				return { IO::Status::Failed, 0 };
 			if (m_ext_in->EoF())
 				return { IO::Status::End, 0 };
 			if (operation == Operation::NonBlocking)
 				return { IO::Status::Ok, 0 };
 			return { IO::Status::Failed, 0 };
 		}
-		if (chunk.empty())
+		if (chunk.empty()) {
+			if (!m_ext_in->IsReadable())
+				return { IO::Status::Failed, 0 };
 			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+		}
 		if (!dest.Write(std::move(chunk)))
 			return { IO::Status::Failed, 0 };
 		return { IO::Status::Ok, dest.Available() };
@@ -252,6 +269,8 @@ IO::Result Bridge::Push(FIFO& src) {
 		return { IO::Status::Ok, 0 };
 
 	if (m_ext_out) {
+		if (!m_ext_out->IsWritable())
+			return { IO::Status::Failed, 0 };
 		BinaryData chunk;
 		if (!src.Extract(n, chunk))
 			return { IO::Status::Failed, 0 };

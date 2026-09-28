@@ -225,6 +225,145 @@ int test_buf_to_io_writer_not_open() {
 }
 
 // -------------------
+// Close
+// -------------------
+
+int test_close_is_idempotent() {
+	constexpr auto fn = "test_close_is_idempotent";
+	int result = 0;
+	FIFO in = FromText("abc");
+	in.Close();
+	FIFO out;
+	Bridge bridge(in, out);
+	bridge.Close();
+	bridge.Close();
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(3));
+	RETURN_TEST(fn, result);
+}
+
+int test_close_marks_closed_not_failed() {
+	constexpr auto fn = "test_close_marks_closed_not_failed";
+	int result = 0;
+	FIFO in = FromText("abc");
+	in.Close();
+	FIFO out;
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Open);
+	bridge.Close();
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(3));
+	RETURN_TEST(fn, result);
+}
+
+int test_close_on_failed_keeps_failed() {
+	constexpr auto fn = "test_close_on_failed_keeps_failed";
+	int result = 0;
+	FIFO in = FromText("abc");
+	in.Close();
+	FIFO out;
+	out.Close();
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(3));
+	ASSERT_TRUE(fn, bridge.Failed());
+	bridge.Close();
+	ASSERT_TRUE(fn, bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Failed);
+	RETURN_TEST(fn, result);
+}
+
+int test_close_releases_io_for_remove() {
+	constexpr auto fn = "test_close_releases_io_for_remove";
+	int result = 0;
+	const auto path = Scratch("closeio");
+	std::filesystem::remove(path);
+	DumpText(path, "LOCK");
+	FIFO out;
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_EQUAL(fn, ByteSize{4}, Drain(bridge));
+	bridge.Close();
+	ASSERT_TRUE(fn, std::filesystem::remove(path));
+	RETURN_TEST(fn, result);
+}
+
+int test_eof_closes_session() {
+	constexpr auto fn = "test_eof_closes_session";
+	int result = 0;
+	FIFO in = FromText("xy");
+	in.Close();
+	FIFO out;
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{2}, bridge.Passthrough(2));
+	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(1));
+	RETURN_TEST(fn, result);
+}
+
+int test_input_is_io_by_ctor() {
+	constexpr auto fn = "test_input_is_io_by_ctor";
+	int result = 0;
+	FIFO a;
+	FIFO b;
+	Bridge mem(a, b);
+	ASSERT_TRUE(fn, !mem.InputIsIO());
+	const auto path = Scratch("isio");
+	std::filesystem::remove(path);
+	DumpText(path, "Z");
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	FIFO dest;
+	Bridge io(std::move(reader), dest);
+	ASSERT_TRUE(fn, io.InputIsIO());
+	io.Close();
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, result);
+}
+
+int test_move_assign_releases_lhs_tips() {
+	constexpr auto fn = "test_move_assign_releases_lhs_tips";
+	int result = 0;
+	const auto path = Scratch("lhs");
+	std::filesystem::remove(path);
+	DumpText(path, "LHS");
+	FIFO unused;
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge lhs(std::move(reader), unused);
+	FIFO in = FromText("R");
+	in.Close();
+	FIFO out;
+	Bridge rhs(in, out);
+	lhs = std::move(rhs);
+	ASSERT_TRUE(fn, std::filesystem::remove(path));
+	ASSERT_EQUAL(fn, ByteSize{1}, Drain(lhs));
+	RETURN_TEST(fn, result);
+}
+
+int test_nonblocking_zero_keeps_open() {
+	constexpr auto fn = "test_nonblocking_zero_keeps_open";
+	int result = 0;
+	Producer src;
+	FIFO out;
+	Consumer in = src.Consumer();
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(8, Bridge::Operation::NonBlocking));
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Open);
+	ASSERT_TRUE(fn, !bridge.Failed());
+	src.Write("ok");
+	src.Close();
+	ASSERT_EQUAL(fn, ByteSize{2}, Drain(bridge));
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	RETURN_TEST(fn, result);
+}
+
+// -------------------
 // Failed
 // -------------------
 
@@ -913,6 +1052,18 @@ int main() {
 	result += test_buf_to_io();
 	result += test_buf_to_io_chunked();
 	result += test_buf_to_io_writer_not_open();
+
+	// -------------------
+	// Close
+	// -------------------
+	result += test_close_is_idempotent();
+	result += test_close_marks_closed_not_failed();
+	result += test_close_on_failed_keeps_failed();
+	result += test_close_releases_io_for_remove();
+	result += test_eof_closes_session();
+	result += test_input_is_io_by_ctor();
+	result += test_move_assign_releases_lhs_tips();
+	result += test_nonblocking_zero_keeps_open();
 
 	// -------------------
 	// Failed

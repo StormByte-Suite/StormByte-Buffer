@@ -1,43 +1,43 @@
 /*
-* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
-*
-* This file is part of StormByte-Buffer.
-*
-* StormByte-Buffer original source is dual-licensed:
-*
-* 1. GNU Lesser General Public License v3.0 (or later)
-*    You may redistribute and/or modify this file under the terms of the
-*    GNU Lesser General Public License as published by the Free Software
-*    Foundation, either version 3 of the License, or (at your option)
-*    any later version.
-*
-* 2. Commercial license
-*    Alternatively, this file may be used under the terms of a commercial
-*    license agreement with the copyright holder
-*    (David C. Manuelda <StormByte@gmail.com>).
-*
-* Both licenses apply only to original StormByte-Buffer source in this
-* repository. They do not cover other StormByte modules or any third-party
-* material shipped with this repository (including everything under
-* thirdparty/, and in particular the bundled StormByte-Logger tree and
-* the rest of the StormByte suite it vendors), which remains under its own
-* license.
-*
-* Neither license grants any patent rights. Any patent licenses required
-* to use this software or third-party components must be obtained separately
-* from the patent holders.
-*
-* StormByte-Buffer is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU Lesser General Public License for more details.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* version 3 along with StormByte-Buffer. If not, see
-* <https://www.gnu.org/licenses/lgpl-3.0.html>.
-*
-* SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
-*/
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer original source is dual-licensed:
+ *
+ * 1. GNU Lesser General Public License v3.0 (or later)
+ *    You may redistribute and/or modify this file under the terms of the
+ *    GNU Lesser General Public License as published by the Free Software
+ *    Foundation, either version 3 of the License, or (at your option)
+ *    any later version.
+ *
+ * 2. Commercial license
+ *    Alternatively, this file may be used under the terms of a commercial
+ *    license agreement with the copyright holder
+ *    (David C. Manuelda <StormByte@gmail.com>).
+ *
+ * Both licenses apply only to original StormByte-Buffer source in this
+ * repository. They do not cover other StormByte modules or any third-party
+ * material shipped with this repository (including everything under
+ * thirdparty/, and in particular the bundled StormByte-Logger tree and
+ * the rest of the StormByte suite it vendors), which remains under its own
+ * license.
+ *
+ * Neither license grants any patent rights. Any patent licenses required
+ * to use this software or third-party components must be obtained separately
+ * from the patent holders.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3 along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
+ */
 
 #pragma once
 
@@ -129,7 +129,7 @@ namespace StormByte {
 
 		/**
 		 * @class Pumper
-		 * @brief Owns a @ref Bridge and moves bytes until EoF or failure.
+		 * @brief Owns a @ref Bridge and moves bytes until EoF, failure or Cancel.
 		 *
 		 * Starts the worker in the constructor. The destructor joins; it
 		 * may block until the current cycle finishes. There is no Stop.
@@ -148,6 +148,14 @@ namespace StormByte {
 		 * @par Chunk
 		 * Bytes the worker asks @ref Bridge::Passthrough per cycle.
 		 * @c 0 is automatic chunking, not Bridge's "current contents".
+		 * The backend never asks for 0 bytes: a Blocking IO pull of 0
+		 * would not touch the origin.
+		 *
+		 * @par IO pull
+		 * If the owned Bridge reports @ref Bridge::InputPullBlocking
+		 * (stolen reader with @ref IO::BufferedReader::ReadAhead of 0),
+		 * the worker uses @ref Bridge::Operation::Blocking. Otherwise
+		 * it uses @ref Bridge::Operation::NonBlocking.
 		 *
 		 * @par Telemetry
 		 * Copies the Bridge handles at construction. Those @c Shared
@@ -201,10 +209,18 @@ namespace StormByte {
 						}
 
 					private:
+						/**
+						 * @brief Store a @ref Chunk knob.
+						 * @param knob Cycle size.
+						 */
 						STORMBYTE_FORCE_INLINE void Apply(class Chunk knob) noexcept {
 							m_chunk = knob.Value();
 						}
 
+						/**
+						 * @brief Store a @ref HighWater knob.
+						 * @param knob Input cap.
+						 */
 						STORMBYTE_FORCE_INLINE void Apply(class HighWater knob) noexcept {
 							m_high_water = knob.Value();
 						}
