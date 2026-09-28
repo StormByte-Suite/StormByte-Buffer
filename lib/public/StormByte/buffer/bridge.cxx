@@ -94,6 +94,16 @@ void Bridge::AttachNonIoOut(WriteOnly& out) noexcept {
 		m_owned_write = MakeWriteTelemetry();
 }
 
+void Bridge::CacheReadTelemetry() noexcept {
+	if (m_io_in)
+		m_owned_read = m_io_in->Telemetry();
+}
+
+void Bridge::CacheWriteTelemetry() noexcept {
+	if (m_io_out)
+		m_owned_write = m_io_out->Telemetry();
+}
+
 Bridge::Bridge(Bridge&& other) noexcept {
 	std::lock_guard lock(other.m_mutex);
 	m_ext_in = std::move(other.m_ext_in);
@@ -102,8 +112,8 @@ Bridge::Bridge(Bridge&& other) noexcept {
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
-	m_failed = other.m_failed;
-	other.m_failed = true;
+	m_state = other.m_state;
+	other.m_state = State::Closed;
 }
 
 Bridge::~Bridge() noexcept = default;
@@ -112,19 +122,33 @@ Bridge& Bridge::operator=(Bridge&& other) noexcept {
 	if (this == &other)
 		return *this;
 	std::scoped_lock lock(m_mutex, other.m_mutex);
+	ReleaseTips();
 	m_ext_in = std::move(other.m_ext_in);
 	m_ext_out = std::move(other.m_ext_out);
 	m_io_in = std::move(other.m_io_in);
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
-	m_failed = other.m_failed;
-	other.m_failed = true;
+	m_state = other.m_state;
+	other.m_state = State::Closed;
 	return *this;
 }
 
-bool Bridge::EoF() const noexcept {
+void Bridge::ReleaseTips() noexcept {
+	m_ext_in.reset();
+	m_ext_out.reset();
+	m_io_in.reset();
+	m_io_out.reset();
+}
+
+void Bridge::Close() noexcept {
 	std::lock_guard lock(m_mutex);
+	ReleaseTips();
+	if (m_state == State::Open)
+		m_state = State::Closed;
+}
+
+bool Bridge::SourceEoF() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->EoF();
 	if (m_io_in)
@@ -132,9 +156,16 @@ bool Bridge::EoF() const noexcept {
 	return true;
 }
 
+bool Bridge::EoF() const noexcept {
+	std::lock_guard lock(m_mutex);
+	if (m_state != State::Open)
+		return true;
+	return SourceEoF();
+}
+
 bool Bridge::Failed() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_failed;
+	return m_state == State::Failed;
 }
 
 bool Bridge::InputIsIO() const noexcept {
@@ -142,17 +173,18 @@ bool Bridge::InputIsIO() const noexcept {
 	return static_cast<bool>(m_io_in);
 }
 
+enum Bridge::State Bridge::State() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_state;
+}
+
 const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
 	std::lock_guard lock(m_mutex);
-	if (m_io_in)
-		return m_io_in->Telemetry();
 	return m_owned_read;
 }
 
 const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Bridge::WriteTelemetry() const noexcept {
 	std::lock_guard lock(m_mutex);
-	if (m_io_out)
-		return m_io_out->Telemetry();
 	return m_owned_write;
 }
 
@@ -242,36 +274,48 @@ IO::Result Bridge::Push(FIFO& src) {
 
 StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Operation operation) {
 	std::lock_guard lock(m_mutex);
-	if (m_failed)
+	if (m_state != State::Open)
 		return StormByte::ByteSize{0};
 
 	const auto started = std::chrono::steady_clock::now();
 	FIFO work;
 	const IO::Result pulled = Pull(n, work, operation);
 	if (pulled.status == IO::Status::Failed || pulled.status == IO::Status::Error) {
-		m_failed = true;
+		m_state = State::Failed;
+		ReleaseTips();
 		return StormByte::ByteSize{0};
 	}
 
 	const StormByte::ByteSize got = work.Available();
-	if (got == StormByte::ByteSize{0})
+	if (got == StormByte::ByteSize{0}) {
+		if (pulled.status == IO::Status::End) {
+			m_state = State::Closed;
+			ReleaseTips();
+		}
 		return StormByte::ByteSize{0};
+	}
 
 	const IO::Result pushed = Push(work);
 	if (pushed.status != IO::Status::Ok) {
-		m_failed = true;
+		m_state = State::Failed;
+		ReleaseTips();
 		return StormByte::ByteSize{0};
 	}
 
 	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
 		std::chrono::steady_clock::now() - started);
-	if (m_owned_read) {
+	if (m_ext_in && m_owned_read) {
 		m_owned_read->DeltaOperation(got, elapsed);
 		m_owned_read->m_delivered = m_owned_read->m_delivered + got;
 	}
-	if (m_owned_write) {
+	if (m_ext_out && m_owned_write) {
 		m_owned_write->DeltaOperation(got, elapsed);
 		m_owned_write->m_accepted = m_owned_write->m_accepted + got;
+	}
+
+	if (SourceEoF()) {
+		m_state = State::Closed;
+		ReleaseTips();
 	}
 	return got;
 }

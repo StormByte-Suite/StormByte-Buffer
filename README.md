@@ -352,13 +352,19 @@ int main() {
 - `Passthrough(n, Operation)` is atomic. Write `TryAgain` is retried until that call completes.
 - `Operation` applies to the **read** tip only: `Blocking` waits for `n` or EoF; `NonBlocking` takes what is available now, up to `n`.
 - `n == 0` is current contents (`Available()` on IO does not touch the origin).
-- `Failed()` is sticky. A failed Bridge returns `0` and does nothing.
-- Telemetry: IO tips forward their Shared handle; in-memory tips use a basic telemetry owned by the Bridge.
+- `State` is `Open`, `Closed` or `Failed`. `Failed()` is only a real tip fault. A moved-from Bridge is `Closed`, not `Failed`.
+- `Close()` ends the session. Owned adapters and stolen IO leaves are released. After `Close`, a consumed source EoF, or a move-from, the instance is `Closed` and cannot be re-armed. Construct a new Bridge to transfer again. `Close()` is idempotent and does not set `Failed`.
+- A NonBlocking `Passthrough` that returns `0` is not the end of the session.
+- Telemetry: the Bridge always keeps a `Shared` copy of the read and write counters. Non-IO tips use a basic telemetry owned and updated by the Bridge. IO tips donate the leaf handle at attach; the leaf updates that object. After `Close` the same handles remain valid. A `Shared` you already copied stays valid when the Bridge dies.
+
+On Windows an IO leaf keeps the origin handle until that leaf is destroyed. While the Bridge still owns a `BufferedFileReader` or a `BufferedFileWriter`, the path stays locked: `DeleteFile` / `std::filesystem::remove` fail. In-memory tips do not lock a file. Call `Bridge::Close()` when you are done so the stolen IO origin is closed and the path can be unlinked. The destructor does the same work; `Close` is for when `*this` must stay alive.
 
 ```cpp
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+
+#include <filesystem>
 
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::FIFO;
@@ -377,6 +383,10 @@ int main() {
 		if (bridge.Passthrough(64 * 1024) == 0 && !bridge.EoF())
 			break;
 	}
+	auto read = bridge.ReadTelemetry();
+	bridge.Close();
+	(void)read;	// still valid
+	std::filesystem::remove("out.bin");
 }
 ```
 
@@ -413,10 +423,11 @@ int main() {
 		if (to_disk.Passthrough(4 * 1024) == 0 && !to_disk.EoF())
 			break;
 	}
+	to_disk.Close();
 }
 ```
 
-`session.log` holds `line 1\nline 2\n`. For a long capture, wrap `to_disk` in a `Pumper` instead of the `Passthrough` loop.
+`session.log` holds `line 1\nline 2\n`. For a long capture, wrap `to_disk` in a `Pumper` instead of the `Passthrough` loop. The file stays locked while that `Pumper` is alive; `~Pumper` joins and then releases the owned Bridge.
 
 ### Pumper
 

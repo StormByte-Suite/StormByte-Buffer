@@ -171,15 +171,16 @@ int test_buf_to_io() {
 	std::filesystem::remove(path);
 	FIFO src = FromText("HELLO");
 	src.Close();
-	{
-		BufferedFileWriter out(Loc(path), Direct());
-		ASSERT_TRUE(fn, out.Open());
-		Bridge bridge(src, std::move(out));
-		ASSERT_TRUE(fn, !bridge.InputIsIO());
-		ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge, ByteSize{16}));
-		ASSERT_TRUE(fn, WaitFile(path, 5));
-		ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(path));
-	}
+	BufferedFileWriter out(Loc(path), Direct());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(src, std::move(out));
+	ASSERT_TRUE(fn, !bridge.InputIsIO());
+	ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge, ByteSize{16}));
+	ASSERT_TRUE(fn, WaitFile(path, 5));
+	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(path));
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -193,16 +194,15 @@ int test_buf_to_io_chunked() {
 	FIFO src;
 	(void)src.Write(payload);
 	src.Close();
-	{
-		BufferedFileWriter out(Loc(path), Direct());
-		ASSERT_TRUE(fn, out.Open());
-		Bridge bridge(src, std::move(out));
-		ASSERT_EQUAL(fn, ByteSize{8192}, Drain(bridge, ByteSize{300}));
-		const std::string disk = Slurp(path);
-		ASSERT_EQUAL(fn, payload.size(), ByteSize{disk.size()});
-		ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
-			reinterpret_cast<const std::byte*>(disk.data())));
-	}
+	BufferedFileWriter out(Loc(path), Direct());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(src, std::move(out));
+	ASSERT_EQUAL(fn, ByteSize{8192}, Drain(bridge, ByteSize{300}));
+	const std::string disk = Slurp(path);
+	ASSERT_EQUAL(fn, payload.size(), ByteSize{disk.size()});
+	ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
+		reinterpret_cast<const std::byte*>(disk.data())));
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -214,13 +214,12 @@ int test_buf_to_io_writer_not_open() {
 	std::filesystem::remove(path);
 	FIFO src = FromText("NOPE");
 	src.Close();
-	{
-		BufferedFileWriter out(Loc(path), Direct());
-		Bridge bridge(src, std::move(out));
-		const ByteSize got = bridge.Passthrough(4, Bridge::Operation::NonBlocking);
-		ASSERT_TRUE(fn, got == ByteSize{0});
-		ASSERT_TRUE(fn, bridge.Failed() || src.Available() == ByteSize{4});
-	}
+	BufferedFileWriter out(Loc(path), Direct());
+	Bridge bridge(src, std::move(out));
+	const ByteSize got = bridge.Passthrough(4, Bridge::Operation::NonBlocking);
+	ASSERT_TRUE(fn, got == ByteSize{0});
+	ASSERT_TRUE(fn, bridge.Failed() || src.Available() == ByteSize{4});
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -237,11 +236,14 @@ int test_bridge_failed_is_sticky() {
 	FIFO out;
 	Bridge bridge(in, out);
 	Bridge taken(std::move(bridge));
-	ASSERT_TRUE(fn, bridge.Failed());
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(1));
 	ASSERT_TRUE(fn, !taken.Failed());
+	ASSERT_TRUE(fn, taken.State() == Bridge::State::Open);
 	ASSERT_EQUAL(fn, ByteSize{1}, taken.Passthrough(1));
 	ASSERT_TRUE(fn, taken.EoF());
+	ASSERT_TRUE(fn, taken.State() == Bridge::State::Closed);
 	RETURN_TEST(fn, result);
 }
 
@@ -257,7 +259,8 @@ int test_bridge_move_assign() {
 	Bridge first(a_in, a_out);
 	Bridge second(b_in, b_out);
 	second = std::move(first);
-	ASSERT_TRUE(fn, first.Failed());
+	ASSERT_TRUE(fn, !first.Failed());
+	ASSERT_TRUE(fn, first.State() == Bridge::State::Closed);
 	ASSERT_EQUAL(fn, ByteSize{4}, Drain(second));
 	BinaryData got;
 	ASSERT_TRUE(fn, a_out.Extract(0, got));
@@ -293,9 +296,9 @@ int test_dest_seterror_after_partial_write() {
 	const ByteSize second = bridge.Passthrough(5);
 	ASSERT_EQUAL(fn, ByteSize{0}, second);
 	ASSERT_TRUE(fn, bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Failed);
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(1));
 	ASSERT_TRUE(fn, bridge.Failed());
-	BinaryData got;
 	ASSERT_TRUE(fn, !out.IsWritable());
 	RETURN_TEST(fn, result);
 }
@@ -306,14 +309,13 @@ int test_missing_file_open_fails() {
 	const auto path = Scratch("missing");
 	std::filesystem::remove(path);
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path));
-		ASSERT_TRUE(fn, !reader.Open());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_TRUE(fn, bridge.InputIsIO());
-		ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(16, Bridge::Operation::NonBlocking));
-		ASSERT_TRUE(fn, bridge.Failed() || bridge.EoF());
-	}
+	BufferedFileReader reader(Loc(path));
+	ASSERT_TRUE(fn, !reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_TRUE(fn, bridge.InputIsIO());
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(16, Bridge::Operation::NonBlocking));
+	ASSERT_TRUE(fn, bridge.Failed() || bridge.EoF());
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -325,6 +327,7 @@ int test_passthrough_on_failed_is_zero() {
 	FIFO out;
 	Bridge first(in, out);
 	Bridge second(std::move(first));
+	ASSERT_TRUE(fn, first.State() == Bridge::State::Closed);
 	ASSERT_EQUAL(fn, ByteSize{0}, first.Passthrough(8));
 	ASSERT_EQUAL(fn, ByteSize{0}, first.Passthrough(0, Bridge::Operation::NonBlocking));
 	RETURN_TEST(fn, result);
@@ -392,6 +395,7 @@ int test_write_to_directory_fails() {
 	Bridge bridge(src, std::move(writer));
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(4, Bridge::Operation::NonBlocking));
 	ASSERT_TRUE(fn, bridge.Failed() || src.Available() == ByteSize{4});
+	bridge.Close();
 	RETURN_TEST(fn, result);
 }
 
@@ -405,15 +409,15 @@ int test_io_empty_file() {
 	const auto path = Scratch("empty");
 	DumpText(path, "");
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
-		ASSERT_TRUE(fn, reader.Open());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_TRUE(fn, bridge.InputIsIO());
-		ASSERT_EQUAL(fn, ByteSize{0}, Drain(bridge));
-		ASSERT_TRUE(fn, bridge.EoF());
-		ASSERT_TRUE(fn, !bridge.Failed());
-	}
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_TRUE(fn, bridge.InputIsIO());
+	ASSERT_EQUAL(fn, ByteSize{0}, Drain(bridge));
+	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -424,16 +428,16 @@ int test_io_file_available_zero_without_readahead() {
 	const auto path = Scratch("av0");
 	DumpText(path, std::string(4096, 'Q'));
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
-		ASSERT_TRUE(fn, reader.Open());
-		ASSERT_EQUAL(fn, ByteSize{0}, reader.Available());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(0, Bridge::Operation::NonBlocking));
-		ASSERT_EQUAL(fn, ByteSize{4096}, bridge.Passthrough(4096, Bridge::Operation::Blocking));
-		ASSERT_TRUE(fn, bridge.EoF());
-		ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(0));
-	}
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	ASSERT_EQUAL(fn, ByteSize{0}, reader.Available());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(0, Bridge::Operation::NonBlocking));
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Open);
+	ASSERT_EQUAL(fn, ByteSize{4096}, bridge.Passthrough(4096, Bridge::Operation::Blocking));
+	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(0));
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -446,19 +450,18 @@ int test_io_file_to_file() {
 	const BinaryData payload = Pattern(10000);
 	Dump(src, payload);
 	std::filesystem::remove(dst);
-	{
-		BufferedFileReader reader(Loc(src));
-		BufferedFileWriter writer(Loc(dst), Direct());
-		ASSERT_TRUE(fn, reader.Open());
-		ASSERT_TRUE(fn, writer.Open());
-		Bridge bridge(std::move(reader), std::move(writer));
-		ASSERT_TRUE(fn, bridge.InputIsIO());
-		ASSERT_EQUAL(fn, ByteSize{10000}, Drain(bridge));
-		const std::string disk = Slurp(dst);
-		ASSERT_EQUAL(fn, payload.size(), ByteSize{disk.size()});
-		ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
-			reinterpret_cast<const std::byte*>(disk.data())));
-	}
+	BufferedFileReader reader(Loc(src));
+	BufferedFileWriter writer(Loc(dst), Direct());
+	ASSERT_TRUE(fn, reader.Open());
+	ASSERT_TRUE(fn, writer.Open());
+	Bridge bridge(std::move(reader), std::move(writer));
+	ASSERT_TRUE(fn, bridge.InputIsIO());
+	ASSERT_EQUAL(fn, ByteSize{10000}, Drain(bridge));
+	const std::string disk = Slurp(dst);
+	ASSERT_EQUAL(fn, payload.size(), ByteSize{disk.size()});
+	ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
+		reinterpret_cast<const std::byte*>(disk.data())));
+	bridge.Close();
 	std::filesystem::remove(src);
 	std::filesystem::remove(dst);
 	RETURN_TEST(fn, result);
@@ -471,17 +474,16 @@ int test_io_pattern_256() {
 	const auto dst = Scratch("p256o");
 	const BinaryData payload = Pattern(256);
 	Dump(src, payload);
-	{
-		BufferedFileReader reader(Loc(src), { ReadAhead{64}, MaxMemory{1024} });
-		BufferedFileWriter writer(Loc(dst), Direct());
-		ASSERT_TRUE(fn, reader.Open());
-		ASSERT_TRUE(fn, writer.Open());
-		Bridge bridge(std::move(reader), std::move(writer));
-		ASSERT_EQUAL(fn, ByteSize{256}, Drain(bridge, ByteSize{17}));
-		const std::string disk = Slurp(dst);
-		ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
-			reinterpret_cast<const std::byte*>(disk.data())));
-	}
+	BufferedFileReader reader(Loc(src), { ReadAhead{64}, MaxMemory{1024} });
+	BufferedFileWriter writer(Loc(dst), Direct());
+	ASSERT_TRUE(fn, reader.Open());
+	ASSERT_TRUE(fn, writer.Open());
+	Bridge bridge(std::move(reader), std::move(writer));
+	ASSERT_EQUAL(fn, ByteSize{256}, Drain(bridge, ByteSize{17}));
+	const std::string disk = Slurp(dst);
+	ASSERT_TRUE(fn, std::equal(payload.begin(), payload.end(),
+		reinterpret_cast<const std::byte*>(disk.data())));
+	bridge.Close();
 	std::filesystem::remove(src);
 	std::filesystem::remove(dst);
 	RETURN_TEST(fn, result);
@@ -493,15 +495,14 @@ int test_io_reader_not_open() {
 	const auto path = Scratch("rnopen");
 	DumpText(path, "SECRET");
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path));
-		Bridge bridge(std::move(reader), out);
-		const ByteSize got = bridge.Passthrough(6, Bridge::Operation::NonBlocking);
-		ASSERT_TRUE(fn, got == ByteSize{0} || bridge.Failed());
-		BinaryData leftover;
-		(void)out.Extract(0, leftover);
-		ASSERT_TRUE(fn, leftover.empty());
-	}
+	BufferedFileReader reader(Loc(path));
+	Bridge bridge(std::move(reader), out);
+	const ByteSize got = bridge.Passthrough(6, Bridge::Operation::NonBlocking);
+	ASSERT_TRUE(fn, got == ByteSize{0} || bridge.Failed());
+	BinaryData leftover;
+	(void)out.Extract(0, leftover);
+	ASSERT_TRUE(fn, leftover.empty());
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -512,16 +513,15 @@ int test_io_to_buf() {
 	const auto path = Scratch("i2b");
 	DumpText(path, "WORLD");
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
-		ASSERT_TRUE(fn, reader.Open());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_TRUE(fn, bridge.InputIsIO());
-		ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge));
-		BinaryData got;
-		ASSERT_TRUE(fn, out.Extract(0, got));
-		ASSERT_EQUAL(fn, std::string("WORLD"), BytesToText(got));
-	}
+	BufferedFileReader reader(Loc(path), { ReadAhead{0}, MaxMemory{0} });
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_TRUE(fn, bridge.InputIsIO());
+	ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge));
+	BinaryData got;
+	ASSERT_TRUE(fn, out.Extract(0, got));
+	ASSERT_EQUAL(fn, std::string("WORLD"), BytesToText(got));
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -533,15 +533,14 @@ int test_io_to_buf_nul_and_binary() {
 	BinaryData payload{std::byte{0}, std::byte{'A'}, std::byte{0}, std::byte{0xFF}, std::byte{'Z'}};
 	Dump(path, payload);
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path));
-		ASSERT_TRUE(fn, reader.Open());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_EQUAL(fn, payload.size(), Drain(bridge, ByteSize{1}));
-		BinaryData got;
-		ASSERT_TRUE(fn, out.Extract(0, got));
-		ASSERT_TRUE(fn, got == payload);
-	}
+	BufferedFileReader reader(Loc(path));
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_EQUAL(fn, payload.size(), Drain(bridge, ByteSize{1}));
+	BinaryData got;
+	ASSERT_TRUE(fn, out.Extract(0, got));
+	ASSERT_TRUE(fn, got == payload);
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -553,18 +552,18 @@ int test_io_to_buf_pattern() {
 	const BinaryData payload = Pattern(2048);
 	Dump(path, payload);
 	FIFO out;
-	{
-		BufferedFileReader reader(Loc(path), { ReadAhead{512}, MaxMemory{4096} });
-		ASSERT_TRUE(fn, reader.Open());
-		Bridge bridge(std::move(reader), out);
-		ASSERT_EQUAL(fn, ByteSize{2048}, Drain(bridge, ByteSize{128}));
-		BinaryData got;
-		ASSERT_TRUE(fn, out.Extract(0, got));
-		ASSERT_TRUE(fn, got == payload);
-		const auto tel = bridge.ReadTelemetry();
-		ASSERT_TRUE(fn, static_cast<bool>(tel));
-		ASSERT_EQUAL(fn, ByteSize{2048}, tel->Delivered());
-	}
+	BufferedFileReader reader(Loc(path), { ReadAhead{512}, MaxMemory{4096} });
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), out);
+	ASSERT_EQUAL(fn, ByteSize{2048}, Drain(bridge, ByteSize{128}));
+	BinaryData got;
+	ASSERT_TRUE(fn, out.Extract(0, got));
+	ASSERT_TRUE(fn, got == payload);
+	const auto tel = bridge.ReadTelemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(tel));
+	ASSERT_EQUAL(fn, ByteSize{2048}, tel->Delivered());
+	bridge.Close();
+	ASSERT_EQUAL(fn, ByteSize{2048}, tel->Delivered());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -576,12 +575,11 @@ int test_io_unopened_does_not_write() {
 	std::filesystem::remove(path);
 	FIFO src = FromText("XXXX");
 	src.Close();
-	{
-		BufferedFileWriter writer(Loc(path), Direct());
-		Bridge bridge(src, std::move(writer));
-		(void)bridge.Passthrough(4, Bridge::Operation::NonBlocking);
-		ASSERT_TRUE(fn, !std::filesystem::exists(path) || Slurp(path).empty());
-	}
+	BufferedFileWriter writer(Loc(path), Direct());
+	Bridge bridge(src, std::move(writer));
+	(void)bridge.Passthrough(4, Bridge::Operation::NonBlocking);
+	ASSERT_TRUE(fn, !std::filesystem::exists(path) || Slurp(path).empty());
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -597,16 +595,15 @@ int test_demuxer_file_to_producer() {
 	DumpText(path, "DEMUX-DATA");
 	Producer dst;
 	Consumer view = dst.Consumer();
-	{
-		BufferedFileReader reader(Loc(path));
-		ASSERT_TRUE(fn, reader.Open());
-		Bridge bridge(std::move(reader), dst);
-		ASSERT_EQUAL(fn, ByteSize{10}, Drain(bridge, ByteSize{3}));
-		dst.Close();
-		BinaryData got;
-		ASSERT_TRUE(fn, view.Extract(0, got));
-		ASSERT_EQUAL(fn, std::string("DEMUX-DATA"), BytesToText(got));
-	}
+	BufferedFileReader reader(Loc(path));
+	ASSERT_TRUE(fn, reader.Open());
+	Bridge bridge(std::move(reader), dst);
+	ASSERT_EQUAL(fn, ByteSize{10}, Drain(bridge, ByteSize{3}));
+	dst.Close();
+	BinaryData got;
+	ASSERT_TRUE(fn, view.Extract(0, got));
+	ASSERT_EQUAL(fn, std::string("DEMUX-DATA"), BytesToText(got));
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -618,18 +615,17 @@ int test_muxer_producer_to_file() {
 	std::filesystem::remove(path);
 	Producer src;
 	Consumer in = src.Consumer();
-	{
-		BufferedFileWriter writer(Loc(path), Direct());
-		ASSERT_TRUE(fn, writer.Open());
-		Bridge bridge(in, std::move(writer));
-		src.Write("PART1");
-		ASSERT_EQUAL(fn, ByteSize{5}, bridge.Passthrough(5, Bridge::Operation::Blocking));
-		src.Write("PART2");
-		src.Close();
-		ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge));
-		ASSERT_TRUE(fn, WaitFile(path, 10));
-		ASSERT_EQUAL(fn, std::string("PART1PART2"), Slurp(path));
-	}
+	BufferedFileWriter writer(Loc(path), Direct());
+	ASSERT_TRUE(fn, writer.Open());
+	Bridge bridge(in, std::move(writer));
+	src.Write("PART1");
+	ASSERT_EQUAL(fn, ByteSize{5}, bridge.Passthrough(5, Bridge::Operation::Blocking));
+	src.Write("PART2");
+	src.Close();
+	ASSERT_EQUAL(fn, ByteSize{5}, Drain(bridge));
+	ASSERT_TRUE(fn, WaitFile(path, 10));
+	ASSERT_EQUAL(fn, std::string("PART1PART2"), Slurp(path));
+	bridge.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -640,26 +636,24 @@ int test_muxer_then_demuxer_roundtrip() {
 	const auto path = Scratch("round");
 	std::filesystem::remove(path);
 	const BinaryData payload = Pattern(4096);
-	{
-		Producer src;
-		Consumer in = src.Consumer();
-		BufferedFileWriter writer(Loc(path), Direct());
-		ASSERT_TRUE(fn, writer.Open());
-		Bridge to_file(in, std::move(writer));
-		(void)src.Write(payload);
-		src.Close();
-		ASSERT_EQUAL(fn, payload.size(), Drain(to_file, ByteSize{256}));
-	}
-	{
-		BufferedFileReader reader(Loc(path));
-		ASSERT_TRUE(fn, reader.Open());
-		FIFO out;
-		Bridge from_file(std::move(reader), out);
-		ASSERT_EQUAL(fn, payload.size(), Drain(from_file, ByteSize{333}));
-		BinaryData got;
-		ASSERT_TRUE(fn, out.Extract(0, got));
-		ASSERT_TRUE(fn, got == payload);
-	}
+	Producer src;
+	Consumer in = src.Consumer();
+	BufferedFileWriter writer(Loc(path), Direct());
+	ASSERT_TRUE(fn, writer.Open());
+	Bridge to_file(in, std::move(writer));
+	(void)src.Write(payload);
+	src.Close();
+	ASSERT_EQUAL(fn, payload.size(), Drain(to_file, ByteSize{256}));
+	to_file.Close();
+	BufferedFileReader reader(Loc(path));
+	ASSERT_TRUE(fn, reader.Open());
+	FIFO out;
+	Bridge from_file(std::move(reader), out);
+	ASSERT_EQUAL(fn, payload.size(), Drain(from_file, ByteSize{333}));
+	BinaryData got;
+	ASSERT_TRUE(fn, out.Extract(0, got));
+	ASSERT_TRUE(fn, got == payload);
+	from_file.Close();
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, result);
 }
@@ -675,6 +669,7 @@ int test_producer_close_empty() {
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(16, Bridge::Operation::Blocking));
 	ASSERT_TRUE(fn, bridge.EoF());
 	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
 	RETURN_TEST(fn, result);
 }
 
@@ -711,6 +706,7 @@ int test_blocking_returns_partial_on_eof() {
 	ASSERT_EQUAL(fn, ByteSize{3},
 		bridge.Passthrough(100, Bridge::Operation::Blocking));
 	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_TRUE(fn, !bridge.Failed());
 	RETURN_TEST(fn, result);
 }
 
@@ -751,6 +747,7 @@ int test_nonblocking_does_not_wait() {
 	ASSERT_EQUAL(fn, ByteSize{0}, got);
 	ASSERT_TRUE(fn, ms < 200);
 	ASSERT_TRUE(fn, !bridge.EoF());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Open);
 	src.Write("late");
 	src.Close();
 	ASSERT_EQUAL(fn, ByteSize{4},
@@ -842,6 +839,8 @@ int test_chunks_then_eof() {
 	ASSERT_EQUAL(fn, ByteSize{10}, read->Delivered());
 	ASSERT_EQUAL(fn, ByteSize{10}, write->Accepted());
 	ASSERT_TRUE(fn, read == bridge.ReadTelemetry());
+	bridge.Close();
+	ASSERT_EQUAL(fn, ByteSize{10}, read->Delivered());
 	RETURN_TEST(fn, result);
 }
 
@@ -857,6 +856,7 @@ int test_close_source_while_copying() {
 	src.Close();
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(8));
 	ASSERT_TRUE(fn, bridge.EoF());
+	ASSERT_TRUE(fn, !bridge.Failed());
 	RETURN_TEST(fn, result);
 }
 
@@ -870,6 +870,7 @@ int test_empty_closed_is_eof() {
 	ASSERT_EQUAL(fn, ByteSize{0}, bridge.Passthrough(4));
 	ASSERT_TRUE(fn, bridge.EoF());
 	ASSERT_TRUE(fn, !bridge.Failed());
+	ASSERT_TRUE(fn, bridge.State() == Bridge::State::Closed);
 	RETURN_TEST(fn, result);
 }
 

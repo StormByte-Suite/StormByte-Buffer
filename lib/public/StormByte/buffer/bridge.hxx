@@ -107,6 +107,21 @@ namespace StormByte {
 		 * cannot race @ref Passthrough. Stolen leaves live in
 		 * @c StormByte::Unique on Base's heap.
 		 *
+		 * @par Lifecycle
+		 * A Bridge is one shot. @ref State::Open while tips are attached.
+		 * @ref Close, a consumed source EoF and move-from go to
+		 * @ref State::Closed. A real tip fault goes to @ref State::Failed.
+		 * @ref Failed is only that last case. There is no rewind and no
+		 * seek on the session. After @ref State::Closed or
+		 * @ref State::Failed the instance cannot be re-armed; construct
+		 * a new Bridge to transfer again.
+		 *
+		 * @ref Close releases adapters and stolen IO leaves. IO
+		 * destructors close the origin, so Windows can unlink the path.
+		 * In-memory tips do not lock a file. Idempotent. @ref Close does
+		 * not set @ref Failed. A session that is already @ref State::Failed
+		 * stays Failed and still drops the tips.
+		 *
 		 * @par Passthrough
 		 * One call is one atomic transfer. @c TryAgain on the write tip
 		 * is retried until the requested write completes or the tip
@@ -117,14 +132,20 @@ namespace StormByte {
 		 * (non-IO occupancy, or @ref IO::BufferedReader::Available).
 		 * Available on IO does not touch the origin.
 		 *
-		 * If @ref Failed is already true, @ref Passthrough returns 0 and
-		 * does nothing.
+		 * If @ref State is not @ref State::Open, @ref Passthrough
+		 * returns 0 and does nothing. A NonBlocking call that yields
+		 * zero bytes is not the end of the session.
 		 *
 		 * @par Telemetry
-		 * An IO tip forwards that tip's @c Shared handle. A non-IO tip
-		 * uses a basic @ref StormByte::Buffer::ReadTelemetry /
-		 * @ref StormByte::Buffer::WriteTelemetry owned by this Bridge
-		 * and updated on each successful transfer.
+		 * This Bridge always holds a @c Shared copy of the read and
+		 * write counters. A non-IO tip uses a basic
+		 * @ref StormByte::Buffer::ReadTelemetry /
+		 * @ref StormByte::Buffer::WriteTelemetry created here. The
+		 * Bridge updates those counters on each successful transfer.
+		 * An IO tip donates the leaf handle at attach. The leaf updates
+		 * that object; the Bridge only caches the handle so @ref Close
+		 * does not drop it. Survivors that copied the @c Shared keep
+		 * the last values when *this dies.
 		 *
 		 * @see ReadOnly, WriteOnly, IO::BufferedReader, IO::BufferedWriter
 		 */
@@ -137,6 +158,16 @@ namespace StormByte {
 				enum class Operation {
 					Blocking,		///< Wait until N bytes or EoF.
 					NonBlocking		///< Take what is available now, up to N.
+				};
+
+				/**
+				 * @enum State
+				 * @brief Session lifetime. @ref Failed is a real tip fault only.
+				 */
+				enum class State {
+					Open,		///< Tips attached. @ref Passthrough may run.
+					Closed,		///< @ref Close, consumed EoF or moved-from.
+					Failed		///< A tip failed. Sticky.
 				};
 
 				/**
@@ -190,7 +221,7 @@ namespace StormByte {
 				Bridge(const Bridge&) = delete;
 
 				/**
-				 * @brief Move constructor. Moved-from is Failed and empty.
+				 * @brief Move constructor. Moved-from is @ref State::Closed and empty.
 				 * @param other Instance to take from.
 				 */
 				Bridge(Bridge&& other) noexcept;
@@ -203,21 +234,32 @@ namespace StormByte {
 				Bridge& operator=(const Bridge&) = delete;
 
 				/**
-				 * @brief Move assignment. Moved-from is Failed and empty.
+				 * @brief Move assignment. Moved-from is @ref State::Closed and empty.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
 				Bridge& operator=(Bridge&& other) noexcept;
 
 				/**
+				 * @brief Release owned tips. Mark @ref State::Closed if it was Open.
+				 *
+				 * Drops non-IO adapters and stolen IO leaves. IO
+				 * destructors close the origin. Idempotent. Does not
+				 * set @ref Failed. A @ref State::Failed session stays
+				 * Failed and still drops the tips. After @ref State::Closed
+				 * construct a new Bridge to transfer again.
+				 */
+				void Close() noexcept;
+
+				/**
 				 * @brief Whether the read tip reports end-of-stream.
-				 * @return @c true on EoF or if there is no read tip.
+				 * @return @c true on EoF, if there is no read tip, or if not @ref State::Open.
 				 */
 				bool EoF() const noexcept;
 
 				/**
 				 * @brief Whether a tip has failed for real.
-				 * @return Sticky flag. @ref Passthrough is then a no-op.
+				 * @return @c true only when @ref State is @ref State::Failed.
 				 */
 				bool Failed() const noexcept;
 
@@ -231,19 +273,25 @@ namespace StormByte {
 				 * @brief Move bytes from the read tip to the write tip.
 				 * @param n Requested bytes. Zero means current contents.
 				 * @param operation Read-side wait policy.
-				 * @return Bytes actually moved. Zero if @ref Failed or empty.
+				 * @return Bytes actually moved. Zero if not @ref State::Open or empty.
 				 */
 				StormByte::ByteSize Passthrough(StormByte::ByteSize n,
 					Operation operation = Operation::Blocking);
 
 				/**
-				 * @brief Read counters. IO tip forwards; non-IO is owned here.
+				 * @brief Session counters for the read tip.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 				/**
-				 * @brief Write counters. IO tip forwards; non-IO is owned here.
+				 * @brief Current session state.
+				 * @return @ref State::Open, @ref State::Closed or @ref State::Failed.
+				 */
+				enum State State() const noexcept;
+
+				/**
+				 * @brief Session counters for the write tip.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
@@ -270,6 +318,7 @@ namespace StormByte {
 				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) noexcept {
 					m_io_in = StormByte::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
 						std::forward<In>(in));
+					CacheReadTelemetry();
 				}
 
 				/**
@@ -281,7 +330,28 @@ namespace StormByte {
 				STORMBYTE_FORCE_INLINE void AttachIoOut(Out&& out) noexcept {
 					m_io_out = StormByte::Unique<IO::BufferedWriter>::MakePointer<std::remove_cvref_t<Out>>(
 						std::forward<Out>(out));
+					CacheWriteTelemetry();
 				}
+
+				/**
+				 * @brief Snapshot the stolen IO source telemetry. Defined in this module.
+				 */
+				void CacheReadTelemetry() noexcept;
+
+				/**
+				 * @brief Snapshot the stolen IO sink telemetry. Defined in this module.
+				 */
+				void CacheWriteTelemetry() noexcept;
+
+				/**
+				 * @brief Drop adapters and stolen IO leaves. Telemetry stays.
+				 */
+				void ReleaseTips() noexcept;
+
+				/**
+				 * @brief Whether the attached source reports EoF. Caller holds @c m_mutex.
+				 */
+				bool SourceEoF() const noexcept;
 
 				/**
 				 * @brief Pull up to @p n into @p dest according to @p operation.
@@ -295,12 +365,12 @@ namespace StormByte {
 
 				std::unique_ptr<ExternalBufferReader, ExternalReaderDeleter> m_ext_in;	///< Non-IO read adapter. Owned.
 				std::unique_ptr<ExternalBufferWriter, ExternalWriterDeleter> m_ext_out;	///< Non-IO write adapter. Owned.
-				StormByte::Unique<IO::BufferedReader> m_io_in;	///< Stolen IO source. Base heap.
-				StormByte::Unique<IO::BufferedWriter> m_io_out;	///< Stolen IO sink. Base heap.
-				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;	///< When in is not IO.
-				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;	///< When out is not IO.
-				bool m_failed {false};								///< Sticky failure.
-				mutable std::mutex m_mutex;							///< Session lock.
+				StormByte::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
+				StormByte::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
+				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Session read counters.
+				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Session write counters.
+				enum State m_state {State::Open};										///< Session lifetime.
+				mutable std::mutex m_mutex;												///< Session lock.
 		};
 	}
 }
