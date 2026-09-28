@@ -72,11 +72,15 @@ namespace StormByte {
 			 * @brief Worker that drives @ref StormByte::Buffer::Bridge::Passthrough until EoF or failure.
 			 *
 			 * Owns the public Bridge. Starts in the constructor. @ref Cancel
-			 * is terminal. @ref Toggle parks the worker. The destructor joins.
+			 * is terminal and closes the Bridge. @ref Toggle parks the worker.
+			 * The destructor joins and does not Cancel. @ref Failed is only
+			 * a real Bridge fault.
 			 *
 			 * HighWater applies to the read tip. 0 = no Pumper cap.
 			 * Chunk 0 = automatic cycle size (constexpr in the .cxx),
 			 * not Bridge "current contents".
+			 *
+			 * Telemetry handles are copied from the Bridge at construction.
 			 */
 			class STORMBYTE_BUFFER_PRIVATE Pumper {
 				public:
@@ -93,12 +97,23 @@ namespace StormByte {
 					Pumper(Pumper&&) = delete;
 
 					/**
-					 * @brief Signal stop and join.
+					 * @brief Signal stop and join. Does not Cancel.
 					 */
 					~Pumper();
 
 					Pumper& operator=(const Pumper&) = delete;
 					Pumper& operator=(Pumper&&) = delete;
+
+					/**
+					 * @brief Terminal stop. Sets Canceled and closes the Bridge.
+					 */
+					void Cancel() noexcept;
+
+					/**
+					 * @brief Whether Cancel ran.
+					 * @return Sticky.
+					 */
+					bool Canceled() const noexcept;
 
 					/**
 					 * @brief Whether the Bridge reports EoF.
@@ -107,29 +122,24 @@ namespace StormByte {
 					bool EoF() const noexcept;
 
 					/**
-					 * @brief Cancelled or Bridge failed.
-					 * @return Sticky.
+					 * @brief Whether the Bridge failed for real.
+					 * @return Sticky. Not set by Cancel.
 					 */
 					bool Failed() const noexcept;
 
 					/**
-					 * @brief Pause or resume. No-op if Failed.
+					 * @brief Pause or resume. No-op if Failed or Canceled.
 					 */
 					void Toggle() noexcept;
 
 					/**
-					 * @brief Terminal stop. Sets Failed.
-					 */
-					void Cancel() noexcept;
-
-					/**
-					 * @brief Forward the Bridge read handle.
+					 * @brief Cached Bridge read handle.
 					 * @return Shared handle.
 					 */
 					const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 					/**
-					 * @brief Forward the Bridge write handle.
+					 * @brief Cached Bridge write handle.
 					 * @return Shared handle.
 					 */
 					const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
@@ -147,9 +157,11 @@ namespace StormByte {
 					StormByte::ByteSize CycleRequest() const noexcept;
 
 					StormByte::Buffer::Bridge m_bridge;				///< Owned public bridge.
+					StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_read;	///< Session read counters.
+					StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_write;	///< Session write counters.
 					StormByte::ByteSize m_chunk {0};				///< 0 = automatic.
 					StormByte::ByteSize m_high_water {0};			///< 0 = no Pumper cap.
-					bool m_failed {false};							///< Cancel or permanent fail.
+					bool m_canceled {false};						///< Cancel ran.
 					bool m_paused {false};							///< Toggle park.
 					std::atomic<bool> m_stop {false};				///< Join flag.
 					mutable std::mutex m_mutex;						///< Session.

@@ -59,22 +59,26 @@ Pumper& Pumper::operator=(Pumper&& other) noexcept {
 	return *this;
 }
 
+void Pumper::Cancel() noexcept {
+	if (m_backend)
+		m_backend->Cancel();
+}
+
+bool Pumper::Canceled() const noexcept {
+	return m_backend && m_backend->Canceled();
+}
+
 bool Pumper::EoF() const noexcept {
 	return !m_backend || m_backend->EoF();
 }
 
 bool Pumper::Failed() const noexcept {
-	return !m_backend || m_backend->Failed();
+	return m_backend && m_backend->Failed();
 }
 
 void Pumper::Toggle() noexcept {
 	if (m_backend)
 		m_backend->Toggle();
-}
-
-void Pumper::Cancel() noexcept {
-	if (m_backend)
-		m_backend->Cancel();
 }
 
 const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {

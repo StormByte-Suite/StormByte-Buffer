@@ -66,17 +66,17 @@ using StormByte::Buffer::Pumper;
 namespace {
 	bool WaitFinish(Pumper& pump, const std::chrono::milliseconds budget) {
 		const auto start = std::chrono::steady_clock::now();
-		while (!pump.Failed() && !pump.EoF()) {
+		while (!pump.Failed() && !pump.Canceled() && !pump.EoF()) {
 			if (std::chrono::steady_clock::now() - start > budget)
 				return false;
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
-		return pump.EoF() && !pump.Failed();
+		return pump.EoF() && !pump.Failed() && !pump.Canceled();
 	}
 
 	bool WaitDelivered(Pumper& pump, const ByteSize need, const std::chrono::milliseconds budget) {
 		const auto start = std::chrono::steady_clock::now();
-		while (!pump.Failed()) {
+		while (!pump.Failed() && !pump.Canceled()) {
 			const auto tel = pump.ReadTelemetry();
 			if (tel && tel->Delivered() >= need)
 				return true;
@@ -100,14 +100,18 @@ int test_pumper_cancel_is_terminal() {
 	Consumer in = src.Consumer();
 	Pumper pump(Bridge(in, out), { Chunk{64} });
 	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(fn, !pump.Canceled());
 	pump.Cancel();
-	ASSERT_TRUE(fn, pump.Failed());
+	ASSERT_TRUE(fn, pump.Canceled());
+	ASSERT_TRUE(fn, !pump.Failed());
 	pump.Toggle();
-	ASSERT_TRUE(fn, pump.Failed());
+	ASSERT_TRUE(fn, pump.Canceled());
+	ASSERT_TRUE(fn, !pump.Failed());
 	src.Write("late");
 	src.Close();
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_TRUE(fn, pump.Failed());
+	ASSERT_TRUE(fn, pump.Canceled());
+	ASSERT_TRUE(fn, !pump.Failed());
 	ASSERT_TRUE(fn, !WaitFinish(pump, std::chrono::milliseconds(100)));
 	RETURN_TEST(fn, result);
 }
@@ -125,7 +129,8 @@ int test_pumper_cancel_before_close_does_not_drain() {
 	src.Write("XXXXXXXX");
 	src.Close();
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_TRUE(fn, pump.Failed());
+	ASSERT_TRUE(fn, pump.Canceled());
+	ASSERT_TRUE(fn, !pump.Failed());
 	const auto tel = pump.ReadTelemetry();
 	ASSERT_TRUE(fn, static_cast<bool>(tel));
 	ASSERT_TRUE(fn, tel->Delivered() < ByteSize{16});
@@ -184,6 +189,7 @@ int test_pumper_empty_closed_source_is_eof() {
 	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
 	ASSERT_TRUE(fn, pump.EoF());
 	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(fn, !pump.Canceled());
 	const auto read = pump.ReadTelemetry();
 	ASSERT_TRUE(fn, static_cast<bool>(read));
 	ASSERT_EQUAL(fn, ByteSize{0}, read->Delivered());
@@ -222,7 +228,9 @@ int test_pumper_move_leaves_source_failed() {
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{1} });
 	Pumper taken(std::move(pump));
-	ASSERT_TRUE(fn, pump.Failed());
+	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(fn, !pump.Canceled());
+	ASSERT_TRUE(fn, pump.EoF());
 	ASSERT_TRUE(fn, WaitFinish(taken, std::chrono::seconds(2)));
 	BinaryData got;
 	ASSERT_TRUE(fn, out.Extract(0, got));

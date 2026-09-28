@@ -431,12 +431,16 @@ int main() {
 
 ### Pumper
 
-`Pumper` takes a `Bridge` by move and starts a worker immediately. The destructor **joins** and may block until the current cycle ends.
+`Pumper` takes a `Bridge` by move and starts a worker immediately. The destructor **joins** and may block until the current cycle ends. It does **not** `Cancel`: it lets the worker finish.
 
 - `Chunk` — bytes asked of `Passthrough` each cycle. `0` is automatic chunking, **not** Bridge “current contents”.
 - `HighWater` — input cap only. Omitted: `0` if the source is IO, otherwise a backend default (constexpr in the PIMPL). Explicit `0`: no Pumper cap. Use `0` when the IO source already limits itself. Non-IO sources are unbounded by design.
-- `Toggle` pauses and resumes. `Cancel` is terminal (`Failed`, no restart).
-- Telemetry is forwarded from the owned Bridge.
+- `Toggle` pauses and resumes. No-op if `Failed` or `Canceled`.
+- `Cancel` is terminal (`Canceled`, no restart). It does not set `Failed`. It `Close()`s the owned Bridge so Windows can unlink an IO path.
+- `Failed()` is only a real Bridge fault. A moved-from Pumper is empty (`EoF`), not `Failed` and not `Canceled`.
+- Telemetry handles are copied from the Bridge at construction. They stay valid after `Cancel`. A `Shared` you already copied stays valid when the Pumper dies.
+
+An IO path stays locked while the Pumper is alive. After `Cancel` (or after `~Pumper` joins and destroys the Bridge) the handle is released.
 
 ```cpp
 #include <StormByte/buffer/bridge.hxx>
@@ -458,14 +462,17 @@ int main() {
 	out.Open();
 
 	Pumper pump(Bridge(std::move(in), std::move(out)), { Chunk{1 << 20} });
-	while (!pump.EoF() && !pump.Failed()) {
+	while (!pump.EoF() && !pump.Failed() && !pump.Canceled()) {
 		// work elsewhere; pump runs on its thread
 	}
+	auto read = pump.ReadTelemetry();
+	(void)read;	// still valid after ~Pumper
 	// ~Pumper joins
 }
 ```
 
-`finish = !pump.Failed() && pump.EoF()`. `active = !pump.Failed() && !pump.EoF()`.
+`finish = !pump.Failed() && !pump.Canceled() && pump.EoF()`.  
+`active = !pump.Failed() && !pump.Canceled() && !pump.EoF()`.
 
 ### IO::BufferedReader
 

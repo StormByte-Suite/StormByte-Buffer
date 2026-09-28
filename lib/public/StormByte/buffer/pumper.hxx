@@ -133,8 +133,9 @@ namespace StormByte {
 		 *
 		 * Starts the worker in the constructor. The destructor joins; it
 		 * may block until the current cycle finishes. There is no Stop.
-		 * @ref Cancel is terminal (@ref Failed, no restart). @ref Toggle
-		 * pauses and resumes.
+		 * The destructor does not @ref Cancel: it lets the worker finish.
+		 * @ref Cancel is terminal (@ref Canceled, no restart). @ref Toggle
+		 * pauses and resumes. @ref Failed is only a real @ref Bridge fault.
 		 *
 		 * @par HighWater
 		 * Caps how much the worker will pull from the input. @c nullopt
@@ -149,7 +150,12 @@ namespace StormByte {
 		 * @c 0 is automatic chunking, not Bridge's "current contents".
 		 *
 		 * @par Telemetry
-		 * Forwards the Bridge handles. No extra counters.
+		 * Copies the Bridge handles at construction. Those @c Shared
+		 * objects stay valid after @ref Cancel and after *this dies
+		 * if the caller kept a copy. No extra counters.
+		 *
+		 * An IO path stays locked while this Pumper is alive. After
+		 * @ref Cancel the owned Bridge is Closed.
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Pumper {
 			public:
@@ -223,24 +229,38 @@ namespace StormByte {
 				Pumper(const Pumper&) = delete;
 
 				/**
-				 * @brief Move constructor. Moved-from is Failed and joined.
+				 * @brief Move constructor. Moved-from is empty and joined.
 				 * @param other Instance to take from.
 				 */
 				Pumper(Pumper&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Joins the worker.
+				 * @brief Destructor. Joins the worker. Does not @ref Cancel.
 				 */
 				~Pumper() noexcept;
 
 				Pumper& operator=(const Pumper&) = delete;
 
 				/**
-				 * @brief Move assignment. Moved-from is Failed and joined.
+				 * @brief Move assignment. Moved-from is empty and joined.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
 				Pumper& operator=(Pumper&& other) noexcept;
+
+				/**
+				 * @brief Terminal stop. Sets @ref Canceled. Closes the Bridge.
+				 *
+				 * Idempotent. Does not set @ref Failed. The worker will not
+				 * resume. Construct a new Pumper to transfer again.
+				 */
+				void Cancel() noexcept;
+
+				/**
+				 * @brief Whether @ref Cancel ran.
+				 * @return Sticky. A canceled Pumper cannot be resumed.
+				 */
+				bool Canceled() const noexcept;
 
 				/**
 				 * @brief Whether the owned Bridge reports EoF.
@@ -249,29 +269,26 @@ namespace StormByte {
 				bool EoF() const noexcept;
 
 				/**
-				 * @brief Whether Cancel ran or the Bridge failed.
-				 * @return Sticky. A Failed Pumper cannot be resumed.
+				 * @brief Whether the owned Bridge failed for real.
+				 * @return Sticky. Not set by @ref Cancel or move-from.
 				 */
 				bool Failed() const noexcept;
 
 				/**
-				 * @brief Pause or resume the worker. No-op if @ref Failed.
+				 * @brief Pause or resume the worker.
+				 *
+				 * No-op if @ref Failed or @ref Canceled.
 				 */
 				void Toggle() noexcept;
 
 				/**
-				 * @brief Terminal stop. Sets @ref Failed. Cannot restart.
-				 */
-				void Cancel() noexcept;
-
-				/**
-				 * @brief Read counters of the owned Bridge.
+				 * @brief Read counters copied from the owned Bridge.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 				/**
-				 * @brief Write counters of the owned Bridge.
+				 * @brief Write counters copied from the owned Bridge.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
 				const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;

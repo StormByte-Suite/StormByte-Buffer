@@ -41,6 +41,8 @@
 
 #include <StormByte/buffer/backend/pumper.hxx>
 
+#include <chrono>
+
 using namespace StormByte::Buffer::Backend;
 
 namespace {
@@ -51,6 +53,8 @@ namespace {
 Pumper::Pumper(StormByte::Buffer::Bridge&& bridge, const StormByte::ByteSize chunk,
 		const std::optional<StormByte::ByteSize> high_water):
 	m_bridge(std::move(bridge)),
+	m_read(m_bridge.ReadTelemetry()),
+	m_write(m_bridge.WriteTelemetry()),
 	m_chunk(chunk) {
 	if (high_water.has_value())
 		m_high_water = *high_water;
@@ -66,6 +70,19 @@ Pumper::~Pumper() {
 		m_worker.join();
 }
 
+void Pumper::Cancel() noexcept {
+	std::lock_guard lock(m_mutex);
+	m_canceled = true;
+	m_stop.store(true);
+	m_bridge.Close();
+	m_cv.notify_all();
+}
+
+bool Pumper::Canceled() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_canceled;
+}
+
 bool Pumper::EoF() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_bridge.EoF();
@@ -73,30 +90,25 @@ bool Pumper::EoF() const noexcept {
 
 bool Pumper::Failed() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_failed || m_bridge.Failed();
+	return m_bridge.Failed();
 }
 
 void Pumper::Toggle() noexcept {
 	std::lock_guard lock(m_mutex);
-	if (m_failed || m_bridge.Failed())
+	if (m_canceled || m_bridge.Failed())
 		return;
 	m_paused = !m_paused;
 	m_cv.notify_all();
 }
 
-void Pumper::Cancel() noexcept {
-	std::lock_guard lock(m_mutex);
-	m_failed = true;
-	m_stop.store(true);
-	m_cv.notify_all();
-}
-
 const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {
-	return m_bridge.ReadTelemetry();
+	std::lock_guard lock(m_mutex);
+	return m_read;
 }
 
 const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Pumper::WriteTelemetry() const noexcept {
-	return m_bridge.WriteTelemetry();
+	std::lock_guard lock(m_mutex);
+	return m_write;
 }
 
 StormByte::ByteSize Pumper::CycleRequest() const noexcept {
@@ -111,35 +123,28 @@ void Pumper::Worker() {
 		{
 			std::unique_lock lock(m_mutex);
 			m_cv.wait(lock, [this] {
-				return m_stop.load() || !m_paused || m_failed || m_bridge.Failed();
+				return m_stop.load() || !m_paused || m_canceled || m_bridge.Failed();
 			});
-			if (m_stop.load() || m_failed || m_bridge.Failed())
+			if (m_stop.load() || m_canceled || m_bridge.Failed())
 				return;
 		}
 
-		if (m_bridge.EoF() || m_bridge.Failed()) {
-			std::lock_guard lock(m_mutex);
-			if (m_bridge.Failed())
-				m_failed = true;
+		if (m_bridge.EoF() || m_bridge.Failed() || m_canceled)
 			return;
-		}
 
 		const StormByte::ByteSize want = CycleRequest();
 		const StormByte::ByteSize got = m_bridge.Passthrough(want,
 			StormByte::Buffer::Bridge::Operation::NonBlocking);
-		if (m_bridge.Failed()) {
-			std::lock_guard lock(m_mutex);
-			m_failed = true;
+		if (m_bridge.Failed() || m_canceled)
 			return;
-		}
 		if (got == StormByte::ByteSize{0} && m_bridge.EoF())
 			return;
 		if (got == StormByte::ByteSize{0}) {
 			std::unique_lock lock(m_mutex);
-			if (m_stop.load() || m_failed || m_paused)
+			if (m_stop.load() || m_canceled || m_paused)
 				continue;
 			m_cv.wait_for(lock, std::chrono::milliseconds(1), [this] {
-				return m_stop.load() || m_failed || m_paused || m_bridge.Failed();
+				return m_stop.load() || m_canceled || m_paused || m_bridge.Failed();
 			});
 		}
 	}
