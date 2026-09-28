@@ -48,10 +48,10 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/safe_pointers.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <memory>
 #include <mutex>
-#include <type_traits>
 #include <utility>
 
 /**
@@ -104,7 +104,8 @@ namespace StormByte {
 		 * buffers must outlive the Bridge. Adapters over those tips are
 		 * owned here and are not part of the public contract. IO tips are
 		 * taken by move as the concrete leaf so a second reader or writer
-		 * cannot race @ref Passthrough.
+		 * cannot race @ref Passthrough. Stolen leaves live in
+		 * @c StormByte::Unique on Base's heap.
 		 *
 		 * @par Passthrough
 		 * One call is one atomic transfer. @c TryAgain on the write tip
@@ -154,10 +155,11 @@ namespace StormByte {
 				 */
 				template<typename In, typename Out>
 				STORMBYTE_FORCE_INLINE Bridge(In&& in, Out&& out) noexcept
-					requires (std::is_base_of_v<IO::BufferedReader, std::decay_t<In>>
-						&& std::is_base_of_v<IO::BufferedWriter, std::decay_t<Out>>):
-					m_io_in(std::make_unique<std::decay_t<In>>(std::forward<In>(in))),
-					m_io_out(std::make_unique<std::decay_t<Out>>(std::forward<Out>(out))) {}
+					requires (Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader>
+						&& Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter>) {
+					AttachIoIn(std::forward<In>(in));
+					AttachIoOut(std::forward<Out>(out));
+				}
 
 				/**
 				 * @brief Non-IO source, IO sink stolen.
@@ -167,8 +169,8 @@ namespace StormByte {
 				 */
 				template<typename Out>
 				STORMBYTE_FORCE_INLINE Bridge(ReadOnly& in, Out&& out) noexcept
-					requires std::is_base_of_v<IO::BufferedWriter, std::decay_t<Out>>:
-					m_io_out(std::make_unique<std::decay_t<Out>>(std::forward<Out>(out))) {
+					requires Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter> {
+					AttachIoOut(std::forward<Out>(out));
 					AttachNonIoIn(in);
 				}
 
@@ -180,8 +182,8 @@ namespace StormByte {
 				 */
 				template<typename In>
 				STORMBYTE_FORCE_INLINE Bridge(In&& in, WriteOnly& out) noexcept
-					requires std::is_base_of_v<IO::BufferedReader, std::decay_t<In>>:
-					m_io_in(std::make_unique<std::decay_t<In>>(std::forward<In>(in))) {
+					requires Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader> {
+					AttachIoIn(std::forward<In>(in));
 					AttachNonIoOut(out);
 				}
 
@@ -260,6 +262,28 @@ namespace StormByte {
 				void AttachNonIoOut(WriteOnly& out) noexcept;
 
 				/**
+				 * @brief Steal an IO source onto Base's heap.
+				 * @tparam In Concrete @ref IO::BufferedReader leaf.
+				 * @param in Source. Moved-from is empty.
+				 */
+				template<typename In>
+				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) noexcept {
+					m_io_in = StormByte::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
+						std::forward<In>(in));
+				}
+
+				/**
+				 * @brief Steal an IO sink onto Base's heap.
+				 * @tparam Out Concrete @ref IO::BufferedWriter leaf.
+				 * @param out Sink. Moved-from is empty.
+				 */
+				template<typename Out>
+				STORMBYTE_FORCE_INLINE void AttachIoOut(Out&& out) noexcept {
+					m_io_out = StormByte::Unique<IO::BufferedWriter>::MakePointer<std::remove_cvref_t<Out>>(
+						std::forward<Out>(out));
+				}
+
+				/**
 				 * @brief Pull up to @p n into @p dest according to @p operation.
 				 */
 				IO::Result Pull(StormByte::ByteSize n, FIFO& dest, Operation operation);
@@ -271,8 +295,8 @@ namespace StormByte {
 
 				std::unique_ptr<ExternalBufferReader, ExternalReaderDeleter> m_ext_in;	///< Non-IO read adapter. Owned.
 				std::unique_ptr<ExternalBufferWriter, ExternalWriterDeleter> m_ext_out;	///< Non-IO write adapter. Owned.
-				std::unique_ptr<IO::BufferedReader> m_io_in;		///< Stolen IO source (concrete leaf).
-				std::unique_ptr<IO::BufferedWriter> m_io_out;		///< Stolen IO sink (concrete leaf).
+				StormByte::Unique<IO::BufferedReader> m_io_in;	///< Stolen IO source. Base heap.
+				StormByte::Unique<IO::BufferedWriter> m_io_out;	///< Stolen IO sink. Base heap.
 				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;	///< When in is not IO.
 				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;	///< When out is not IO.
 				bool m_failed {false};								///< Sticky failure.
