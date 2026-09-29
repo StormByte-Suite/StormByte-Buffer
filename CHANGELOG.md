@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-09-28
+## [2.0.0] - 2026-09-29
 
 ### Added
 
