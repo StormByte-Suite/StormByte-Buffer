@@ -1,19 +1,29 @@
 include(GNUInstallDirs)
 
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
-
 file(GLOB_RECURSE STORMBYTE_BUFFER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/*.cxx")
 
 if(BUILD_SHARED_LIBS)
-	add_library(StormByte-Buffer SHARED ${STORMBYTE_BUFFER_SOURCES})
+	set(_mode shared)
+else()
+	set(_mode static)
+endif()
+
+buildmaster_component(
+	StormByte-Buffer
+	"StormByte Suite - Buffer"
+	"${STORMBYTE_BUFFER_SOURCES}"
+	""
+	${_mode}
+	"StormByte-Buffer"
+	"BACKEND=host;ALIAS=StormByte::Buffer"
+)
+
+if(BUILD_SHARED_LIBS)
 	target_compile_definitions(StormByte-Buffer
 		PRIVATE StormByte_Buffer_EXPORTS
 		PUBLIC STORMBYTE_BUFFER_SHARED
 	)
-else()
-	add_library(StormByte-Buffer STATIC ${STORMBYTE_BUFFER_SOURCES})
 endif()
-add_library(StormByte::Buffer ALIAS StormByte-Buffer)
 
 set_target_properties(StormByte-Buffer PROPERTIES
 	LINKER_LANGUAGE CXX

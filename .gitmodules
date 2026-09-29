@@ -1,10 +1,9 @@
 [submodule "StormByte Suite - Logger"]
 	path = thirdparty/StormByte/logger/src
 	url = https://github.com/StormBytePP/StormByte-Logger.git
-[submodule "StormByte BuildMaster"]
+[submodule "BuildMaster"]
 	path = buildmaster
 	url = https://github.com/StormBytePP/StormByte-BuildMaster.git
-
 [submodule "StormByte Suite - System"]
 	path = thirdparty/StormByte/system/src
 	url = https://github.com/StormBytePP/StormByte-System.git

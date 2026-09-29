@@ -34,7 +34,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `option(BUILD_SHARED_LIBS "Build shared libraries" ON)` in `lib/`. Shared is the default so a consumer can redistribute without triggering LGPL static-link obligations. Static is opt-in (`-DBUILD_SHARED_LIBS=OFF`). Third-party StormByte pins pass `ENABLE_TEST=OFF`.
+- `option(BUILD_SHARED_LIBS "Build shared libraries" ON)` in the project root. Shared is the default so a consumer can redistribute without triggering LGPL static-link obligations. Static is opt-in (`-DBUILD_SHARED_LIBS=OFF`). CI passes `-DBUILD_SHARED_LIBS=ON`. Third-party StormByte pins pass `ENABLE_TEST=OFF`.
 - Nested `Parameters` on `BufferedReader`, `BufferedLocationReader`, `BufferedFileReader`, `BufferedWriter`, `BufferedLocationWriter` and `BufferedFileWriter`. Each level declares its own type (leaves inherit the parent and add nothing). Knobs are optional: omitted means the previous default; all device knobs omitted means `Setup()` probes. Brace-init and a named `Parameters` object are both valid. Variadic knobs resolve in the caller under `STORMBYTE_FORCE_INLINE`; the DLL sees only numbers and a probe flag.
 - Knob types `ReadAhead`, `MaxMemory`, `MaxWait`, `WriteChunk`, `BackPressure` in `parameters.hxx`.
 - `BufferedReader` page cache. Consumed bytes can stay in RAM up to `MaxMemory`. CollectGarbage evicts farthest from `Tell`. Readahead and the page map work together; a later `Seek` into a live page is served from cache.
