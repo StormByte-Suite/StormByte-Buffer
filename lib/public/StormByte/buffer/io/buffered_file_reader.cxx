@@ -86,8 +86,8 @@ BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) no
 	return *this;
 }
 
-StormByte::System::Device BufferedFileReader::OriginDevice() const {
-	return StormByte::System::Device{Path()};
+StormByte::Shared<StormByte::System::Device> BufferedFileReader::OriginDevice() const {
+	return StormByte::Shared<StormByte::System::Device>::MakePointer<StormByte::System::Device>(Path());
 }
 
 Result BufferedFileReader::OriginOpen() {

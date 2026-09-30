@@ -131,8 +131,8 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 	return *this;
 }
 
-StormByte::System::Device BufferedFileWriter::OriginDevice() const {
-	return StormByte::System::Device{Path()};
+StormByte::Shared<StormByte::System::Device> BufferedFileWriter::OriginDevice() const {
+	return StormByte::Shared<StormByte::System::Device>::MakePointer<StormByte::System::Device>(Path());
 }
 
 StormByte::ByteSize BufferedFileWriter::OriginSize() const noexcept {

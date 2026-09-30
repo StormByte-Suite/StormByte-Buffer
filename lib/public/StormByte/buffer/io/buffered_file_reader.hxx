@@ -164,9 +164,11 @@ namespace StormByte {
 				protected:
 					/**
 					 * @brief Device for the location probe.
-					 * @return @ref StormByte::System::Device on @ref Location.
+					 * @return Owner of a @ref StormByte::System::Device on @ref Path.
+					 *
+					 * The base type is used as is, so usability is the real path probe.
 					 */
-					StormByte::System::Device OriginDevice() const override;
+					StormByte::Shared<StormByte::System::Device> OriginDevice() const override;
 
 					/**
 					 * @brief Open the file as a binary input and cache its size.

@@ -43,6 +43,7 @@
 
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/safe_pointers.hxx>
 #include <StormByte/string/string.hxx>
 #include <StormByte/system/device.hxx>
 
@@ -100,10 +101,14 @@ namespace StormByte {
 			 * path, @c socket://… or @c http://… . A file leaf passes
 			 * @ref Location::Local and its path is a local filesystem path.
 			 *
-			 * @ref Device is not virtual. @ref OriginDevice is pure.
-			 * @ref Setup applies @ref StormByte::System::Device::Window,
-			 * backpressure 4 and 1 MiB of @ref MaxMemory when the caller
-			 * omitted @ref WriteChunk, @ref BackPressure and @ref MaxMemory.
+			 * @ref Device is not virtual. @ref OriginDevice is pure and hands
+			 * out a @ref StormByte::Shared owner, so a leaf may supply a
+			 * @ref StormByte::System::Device subclass and the dynamic type
+			 * survives. @ref Setup applies
+			 * @ref StormByte::System::Device::Window, backpressure 4 and 1 MiB
+			 * of @ref MaxMemory when the caller omitted @ref WriteChunk,
+			 * @ref BackPressure and @ref MaxMemory, and
+			 * @ref OriginDeviceUsable accepts the device.
 			 *
 			 * The leaf implements @ref OriginOpen, @ref OriginClose,
 			 * @ref OriginPush, @ref OriginFlush, @ref OriginTruncate,
@@ -153,9 +158,12 @@ namespace StormByte {
 
 					/**
 					 * @brief Measurement of this location.
-					 * @return @ref OriginDevice by value. Not a pointer.
+					 * @return Owner returned by @ref OriginDevice. May be empty.
+					 *
+					 * The dynamic type of the leaf device is preserved and the
+					 * caller may keep the object alive.
 					 */
-					StormByte::System::Device Device() const;
+					StormByte::Shared<StormByte::System::Device> Device() const;
 
 					/**
 					 * @brief This location can seek.
@@ -212,10 +220,26 @@ namespace StormByte {
 						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory, bool probe);
 
 					/**
-					 * @brief Leaf measurement. Not a filesystem type.
-					 * @return Device built by the leaf. Returned by value.
+					 * @brief Leaf measurement. Not necessarily a filesystem type.
+					 * @return Owner of the device built by the leaf. May be empty.
+					 *
+					 * Build it with @c StormByte::Shared<StormByte::System::Device>::MakePointer
+					 * so a @ref StormByte::System::Device subclass keeps its overrides.
 					 */
-					virtual StormByte::System::Device OriginDevice() const = 0;
+					virtual StormByte::Shared<StormByte::System::Device> OriginDevice() const = 0;
+
+					/**
+					 * @brief Whether @ref Setup may read windows from @p device.
+					 * @param device Owner returned by @ref OriginDevice. May be empty.
+					 * @return @c true when the device may be measured.
+					 *
+					 * The default is a non-empty owner whose
+					 * @ref StormByte::System::Device::operator bool is true, which probes
+					 * the stored path. A leaf whose identifier is not a filesystem path
+					 * overrides this and never reaches that non-virtual probe. An empty
+					 * owner is always unusable.
+					 */
+					virtual bool OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept;
 
 					/**
 					 * @brief Length the leaf can answer. Not optional.
@@ -232,6 +256,10 @@ namespace StormByte {
 
 					/**
 					 * @brief Apply the device write window when the constructor asked for a probe.
+					 *
+					 * @ref OriginDevice is called once. When
+					 * @ref OriginDeviceUsable rejects the owner, @ref WriteChunk,
+					 * @ref BackPressure and @ref MaxMemory keep their defaults.
 					 */
 					void Setup() final;
 

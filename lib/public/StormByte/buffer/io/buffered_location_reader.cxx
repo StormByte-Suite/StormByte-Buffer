@@ -66,8 +66,12 @@ BufferedLocationReader& BufferedLocationReader::operator=(BufferedLocationReader
 	return *this;
 }
 
-StormByte::System::Device BufferedLocationReader::Device() const {
+StormByte::Shared<StormByte::System::Device> BufferedLocationReader::Device() const {
 	return OriginDevice();
+}
+
+bool BufferedLocationReader::OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept {
+	return device && static_cast<bool>(*device);
 }
 
 bool BufferedLocationReader::OriginCanSeek() const noexcept {
@@ -81,10 +85,10 @@ bool BufferedLocationReader::OriginHasSize() const noexcept {
 void BufferedLocationReader::Setup() {
 	if (!m_io || !m_io->Probe())
 		return;
-	const auto device = Device();
-	if (!device) {
+	const auto device = OriginDevice();
+	if (!OriginDeviceUsable(device)) {
 		ReadAhead(StormByte::ByteSize{0});
 		return;
 	}
-	ReadAhead(device.Window().read);
+	ReadAhead(device->Window().read);
 }

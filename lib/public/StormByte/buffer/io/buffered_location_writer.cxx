@@ -71,8 +71,12 @@ BufferedLocationWriter& BufferedLocationWriter::operator=(BufferedLocationWriter
 	return *this;
 }
 
-StormByte::System::Device BufferedLocationWriter::Device() const {
+StormByte::Shared<StormByte::System::Device> BufferedLocationWriter::Device() const {
 	return OriginDevice();
+}
+
+bool BufferedLocationWriter::OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept {
+	return device && static_cast<bool>(*device);
 }
 
 bool BufferedLocationWriter::IsSeekable() const noexcept {
@@ -90,11 +94,11 @@ StormByte::ByteSize BufferedLocationWriter::Size() const noexcept {
 void BufferedLocationWriter::Setup() {
 	if (!m_io || !m_io->Probe())
 		return;
-	const auto device = Device();
-	if (!device)
+	const auto device = OriginDevice();
+	if (!OriginDeviceUsable(device))
 		WriteChunk(StormByte::ByteSize{0});
 	else
-		WriteChunk(device.Window().write);
+		WriteChunk(device->Window().write);
 	BackPressure(DefaultBackPressure);
 	MaxMemory(DefaultMaxMemory);
 }

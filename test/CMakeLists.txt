@@ -14,6 +14,10 @@ if(ENABLE_TEST)
 	target_link_libraries(BufferedFileWriterTests StormByte-Buffer)
 	add_test(NAME BufferedFileWriterTests COMMAND BufferedFileWriterTests)
 
+	add_executable(BufferedLocationDeviceTests buffered_location_device_test.cxx)
+	target_link_libraries(BufferedLocationDeviceTests StormByte-Buffer)
+	add_test(NAME BufferedLocationDeviceTests COMMAND BufferedLocationDeviceTests)
+
 	add_executable(ExceptionTests exception_test.cxx)
 	target_link_libraries(ExceptionTests StormByte-Buffer)
 	add_test(NAME ExceptionTests COMMAND ExceptionTests)
