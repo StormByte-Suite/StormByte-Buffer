@@ -44,7 +44,7 @@
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 
 #include <condition_variable>
 #include <mutex>
@@ -148,13 +148,13 @@ namespace StormByte {
 					 * @brief Cached Bridge read handle.
 					 * @return Shared handle. Empty if the Bridge had none.
 					 */
-					const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
+					const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 					/**
 					 * @brief Cached Bridge write handle.
 					 * @return Shared handle. Empty if the Bridge had none.
 					 */
-					const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
+					const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
 
 				private:
 					/**
@@ -172,8 +172,8 @@ namespace StormByte {
 					StormByte::ByteSize CycleRequest() const noexcept;
 
 					StormByte::Buffer::Bridge m_bridge;				///< Owned public bridge.
-					StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_read;	///< Session read counters.
-					StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_write;	///< Session write counters.
+					StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_read;	///< Session read counters.
+					StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_write;	///< Session write counters.
 					StormByte::ByteSize m_chunk {0};				///< 0 = automatic.
 					StormByte::ByteSize m_high_water {0};			///< 0 = no Pumper cap.
 					bool m_io_in_blocking {false};					///< Bridge::InputPullBlocking at take-over.

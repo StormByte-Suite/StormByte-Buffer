@@ -48,8 +48,8 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <chrono>
 #include <cstddef>
@@ -214,7 +214,7 @@ namespace StormByte {
 			 * network filesystem can still make the later @c Write fail.
 			 *
 			 * @par Telemetry
-			 * @ref Telemetry returns a const @c StormByte::Shared of
+				 * @ref Telemetry returns a const @c StormByte::Safe::Shared of
 			 * @ref StormByte::Buffer::WriteTelemetry. The user cannot
 			 * reseat the handle. The office updates the same object.
 			 * Default dynamic type is @ref IO::WriteTelemetry.
@@ -294,7 +294,7 @@ namespace StormByte {
 					 *
 					 * @return Owned text. Empty if moved-from.
 					 */
-					const StormByte::String::String& Path() const noexcept;
+					const StormByte::Safe::String& Path() const noexcept;
 
 					/**
 					 * @brief Where @ref Path points. Does not change.
@@ -459,7 +459,7 @@ namespace StormByte {
 					 * The user cannot reseat the handle. The office updates
 					 * the same object. Survivors keep the last values.
 					 */
-					const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Telemetry() const noexcept;
+					const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> Telemetry() const noexcept;
 
 					/**
 					 * @}
@@ -543,7 +543,7 @@ namespace StormByte {
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param parameters Omitted knobs are 0 / 0 ms. Resolved in the caller.
 					 */
-					STORMBYTE_FORCE_INLINE BufferedWriter(StormByte::String::String path, enum Location location,
+					STORMBYTE_FORCE_INLINE BufferedWriter(StormByte::Safe::String path, enum Location location,
 							Parameters parameters = {}):
 						BufferedWriter(std::move(path), location,
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
@@ -562,7 +562,7 @@ namespace StormByte {
 					 *
 					 * DLL boundary. Children that already resolved knobs call this.
 					 */
-					BufferedWriter(StormByte::String::String path, enum Location location,
+					BufferedWriter(StormByte::Safe::String path, enum Location location,
 						StormByte::ByteSize write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory);
 
@@ -593,7 +593,7 @@ namespace StormByte {
 					 * Called once, after the most-derived constructor, the
 					 * first time telemetry is needed. Must not return empty.
 					 */
-					virtual StormByte::Shared<StormByte::Buffer::WriteTelemetry> CreateTelemetry() const;
+					virtual StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> CreateTelemetry() const;
 
 					/**
 					 * @brief Whether @p n more bytes can be accepted now.

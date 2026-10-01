@@ -47,8 +47,8 @@
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <atomic>
 #include <chrono>
@@ -109,7 +109,7 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::String::String path,
+						BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::Safe::String path,
 							StormByte::Buffer::IO::Location location, StormByte::ByteSize read_ahead,
 							StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait);
 
@@ -152,7 +152,7 @@ namespace StormByte {
 						 * @brief Locator stored at construction.
 						 * @return Owned text.
 						 */
-						const StormByte::String::String& Path() const noexcept;
+						const StormByte::Safe::String& Path() const noexcept;
 
 						/**
 						 * @brief Kind stored at construction.
@@ -327,13 +327,13 @@ namespace StormByte {
 						 * @brief Attach the telemetry object created by the leaf.
 						 * @param telemetry Shared handle. Must not be empty.
 						 */
-						void BindTelemetry(StormByte::Shared<StormByte::Buffer::ReadTelemetry> telemetry) noexcept;
+						void BindTelemetry(StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> telemetry) noexcept;
 
 						/**
 						 * @brief Shared read counters.
 						 * @return Handle. Empty until BindTelemetry.
 						 */
-						const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
+						const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
 
 						/**
 						 * @}
@@ -519,7 +519,7 @@ namespace StormByte {
 						StormByte::Buffer::IO::ReadTelemetry* IoTelemetry() const noexcept;
 
 						StormByte::Buffer::IO::BufferedReader* m_owner;							///< Public leaf (hooks).
-						StormByte::String::String m_path;						///< Locator. Not changed.
+						StormByte::Safe::String m_path;						///< Locator. Not changed.
 						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};			///< Local or remote. Not changed.
 
 						mutable std::mutex m_mutex;								///< Session + map.
@@ -541,7 +541,7 @@ namespace StormByte {
 
 						mutable std::map<StormByte::ByteSize, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
 
-						mutable StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;	///< Session counters.
+						mutable StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;	///< Session counters.
 
 						mutable StormByte::ByteSize m_delivered {0};			///< Telemetry.Delivered.
 						mutable StormByte::ByteSize m_hit_ahead {0};			///< Telemetry.HitAhead.

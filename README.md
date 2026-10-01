@@ -9,9 +9,9 @@
 
 This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pumper, pipelines and buffered I/O for the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormByte-Suite/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Public headers live under `StormByte/buffer/`.
+It uses [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer through [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and uses [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Base provides the owned UTF-8 and wide text types. Public headers live under `StormByte/buffer/`.
 
-The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network, String and System are **other repositories**. This one does not implement them.
+The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network and System are **other repositories**. This one does not implement them.
 
 ## Designed to interconnect
 
@@ -43,7 +43,7 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 - **Pipeline** — user leaves of `Pipe`. Stream buffers only. `Add` clones or moves.
 - **Bridge** — manual transfer. `Passthrough(n, Operation)` only. No worker.
 - **Pumper** — owns a Bridge and pumps until EoF or `Cancel`.
-- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Shared<…>`. `MeanRate` is caller rate, not disk rate.
+- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Safe::Shared<…>`, derived from Base `StormByte::Telemetry`. Named Base clocks measure operation rates. `MeanRate` is caller rate, not disk rate.
 - **IO** — `BufferedReader` / `BufferedWriter` bases and file leaves. Nested `Parameters` and knobs.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
@@ -59,7 +59,6 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 | [Logger](https://github.com/StormByte-Suite/StormByte-Logger) | Stream logger with levels, headers, components and `Scope` | [/StormByte-Logger](http://suite.stormbyte.org/StormByte-Logger) |
 | [Multimedia](https://github.com/StormByte-Suite/StormByte-Multimedia) | Decode, encode and containers without raw FFmpeg types | [/StormByte-Multimedia](http://suite.stormbyte.org/StormByte-Multimedia) |
 | [Network](https://github.com/StormByte-Suite/StormByte-Network) | Framed packets, Client/Server, IPv4/IPv6 TCP | [/StormByte-Network](http://suite.stormbyte.org/StormByte-Network) |
-| [String](https://github.com/StormByte-Suite/StormByte-String) | Owned UTF-8 / wide text that can cross a DLL boundary | [/StormByte-String](http://suite.stormbyte.org/StormByte-String) |
 | [System](https://github.com/StormByte-Suite/StormByte-System) | Processes, pipes, `Device`, host and environment | [/StormByte-System](http://suite.stormbyte.org/StormByte-System) |
 
 ## Table of Contents
@@ -93,7 +92,7 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-String 1.0.0](https://github.com/StormByte-Suite/StormByte-String/releases/tag/1.0.0) or newer (vendors [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0)), [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) when pipeline pipes take a logger.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer via [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) for pipeline pipes.
 
 ```sh
 git clone --recursive https://github.com/StormByte-Suite/StormByte-Buffer.git
@@ -261,11 +260,11 @@ Explicit `0` is `0`. It does not probe.
 
 ### Telemetry
 
-Every IO office and every Bridge exposes `const StormByte::Shared<ReadTelemetry>` / `WriteTelemetry`. The handle is the same object for the life of the office. IO types add cache / origin / seek / wait counters. Non-IO Bridge tips use the basic type.
+Every IO office and every Bridge exposes `const StormByte::Safe::Shared<ReadTelemetry>` / `WriteTelemetry`. The handle is the same object for the life of the office. IO types add cache / origin / seek / wait counters. Non-IO Bridge tips use the basic type.
 
 `MeanRate` is octets per second of **requested user operations**, including cache hits. It is not a disk benchmark. A cached write can look like GiB/s. Worker, GC and internal flushes enter the rate only when they delay the caller. Explicit `Flush` / `Close` Flush pull it back.
 
-Flatten with `operator StormByte::String::String` or `operator std::string()` (the latter is `FORCE_INLINE` so the `std::string` lives in your TU):
+Flatten with `operator StormByte::Safe::String` or `operator std::string()` (the latter is `FORCE_INLINE` so the `std::string` lives in your TU):
 
 ```cpp
 auto tel = reader.Telemetry();
@@ -285,7 +284,7 @@ A pipe is a user leaf of `Pipe`. Implement `Run`, `Clone` and `Move`. `Add(const
 #include <StormByte/buffer/pipe.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 
 using StormByte::Buffer::Consumer;
 using StormByte::Buffer::ExecutionMode;
@@ -305,7 +304,7 @@ class StripCrPipe final: public Pipe {
 		StripCrPipe& operator=(StripCrPipe&&) noexcept = default;
 
 		void Run(ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) override {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) override {
 			StormByte::BinaryData raw;
 			in.Extract(0, raw);
 			StormByte::BinaryData unix_newlines;
@@ -319,11 +318,11 @@ class StripCrPipe final: public Pipe {
 		}
 
 		PointerType Clone() const noexcept override {
-			return StormByte::Unique<Pipe>::MakePointer<StripCrPipe>(*this);
+			return StormByte::Safe::Unique<Pipe>::MakePointer<StripCrPipe>(*this);
 		}
 
 		PointerType Move() noexcept override {
-			return StormByte::Unique<Pipe>::MakePointer<StripCrPipe>(std::move(*this));
+			return StormByte::Safe::Unique<Pipe>::MakePointer<StripCrPipe>(std::move(*this));
 		}
 };
 

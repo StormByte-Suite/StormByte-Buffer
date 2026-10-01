@@ -42,7 +42,7 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/buffer/io/telemetry.hxx>
-#include <StormByte/string/wstring.hxx>
+#include <StormByte/safe/wstring.hxx>
 #include <StormByte/system/file.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -85,16 +85,16 @@ namespace {
 		{ StormByte::ByteSize{4096}, StormByte::ByteSize{65536}, 8, "pages-ring" },
 	};
 
-	StormByte::String::String Loc(const std::filesystem::path& path) {
+	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS
-		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+		return StormByte::Safe::String(StormByte::Safe::WString(std::wstring_view(path.wstring())));
 #else
-		return StormByte::String::String(std::string_view(path.string()));
+		return StormByte::Safe::String(std::string_view(path.string()));
 #endif
 	}
 
 	std::filesystem::path Scratch(const char* tag) {
-		StormByte::String::String path;
+		StormByte::Safe::String path;
 		if (!StormByte::System::File::Temporary(path, tag))
 			return {};
 		return std::filesystem::path(std::string(path));

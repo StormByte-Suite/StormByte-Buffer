@@ -46,7 +46,7 @@
 
 using namespace StormByte::Buffer::IO;
 
-BufferedLocationReader::BufferedLocationReader(StormByte::String::String path, const enum Location location,
+BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait, const bool probe):
 	BufferedReader(std::move(path), location, read_ahead, max_memory, max_wait),
@@ -66,11 +66,11 @@ BufferedLocationReader& BufferedLocationReader::operator=(BufferedLocationReader
 	return *this;
 }
 
-StormByte::Shared<StormByte::System::Device> BufferedLocationReader::Device() const {
+StormByte::Safe::Shared<StormByte::System::Device> BufferedLocationReader::Device() const {
 	return OriginDevice();
 }
 
-bool BufferedLocationReader::OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept {
+bool BufferedLocationReader::OriginDeviceUsable(const StormByte::Safe::Shared<StormByte::System::Device>& device) const noexcept {
 	return device && static_cast<bool>(*device);
 }
 

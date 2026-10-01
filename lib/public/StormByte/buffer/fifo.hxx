@@ -43,7 +43,7 @@
 
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/typedefs.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <sstream>
 #include <span>
@@ -408,7 +408,7 @@ namespace StormByte::Buffer {
 			 * @return Formatted string: size / position / status, then hex/ASCII lines
 			 *         (no trailing newline).
 			 */
-			virtual StormByte::String::String HexDump(const StormByte::ByteSize& columns = 16,
+			virtual StormByte::Safe::String HexDump(const StormByte::ByteSize& columns = 16,
 										const StormByte::ByteSize& byte_limit = 0) const noexcept;
 
 			/** @} */
@@ -484,7 +484,7 @@ namespace StormByte::Buffer {
 			 * @param columns Bytes per line.
 			 * @return Formatted lines (no header).
 			 */
-			static StormByte::String::String FormatHexLines(std::span<const std::byte>& data,
+			static StormByte::Safe::String FormatHexLines(std::span<const std::byte>& data,
 											StormByte::ByteSize start_offset,
 											StormByte::ByteSize columns) noexcept;
 

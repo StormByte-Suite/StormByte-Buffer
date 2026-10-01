@@ -45,7 +45,8 @@
 #include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/byte_size.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/string.hxx>
+#include <StormByte/telemetry.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <filesystem>
@@ -62,11 +63,11 @@ using StormByte::Buffer::IO::MaxMemory;
 using StormByte::Buffer::IO::ReadAhead;
 
 namespace {
-	StormByte::String::String Loc(const std::filesystem::path& path) {
+	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS
-		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+		return StormByte::Safe::String(StormByte::Safe::WString(std::wstring_view(path.wstring())));
 #else
-		return StormByte::String::String(std::string_view(path.string()));
+		return StormByte::Safe::String(std::string_view(path.string()));
 #endif
 	}
 
@@ -102,7 +103,7 @@ int test_telemetry_survives_bridge_close() {
 int test_telemetry_survives_bridge_dtor() {
 	constexpr auto fn = "test_telemetry_survives_bridge_dtor";
 	int result = 0;
-	StormByte::Shared<StormByte::Buffer::ReadTelemetry> kept;
+	StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> kept;
 	{
 		FIFO in;
 		FIFO out;
@@ -250,6 +251,24 @@ int test_telemetry_tracks_delivered_and_accepted() {
 	RETURN_TEST(fn, result);
 }
 
+int test_telemetry_uses_base_clock() {
+	constexpr auto fn = "test_telemetry_uses_base_clock";
+	int result = 0;
+	const std::string payload(1024 * 1024, 'x');
+	FIFO in;
+	FIFO out;
+	in.Write(std::string_view(payload));
+	in.Close();
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ByteSize{payload.size()}, bridge.Passthrough(ByteSize{payload.size()}));
+	const auto read = bridge.ReadTelemetry();
+	ASSERT_TRUE(fn, static_cast<bool>(read));
+	const StormByte::Telemetry& base = *read;
+	ASSERT_TRUE(fn, !static_cast<std::string>(base).empty());
+	ASSERT_TRUE(fn, read->MeanRate() > ByteSize{0});
+	RETURN_TEST(fn, result);
+}
+
 int main() {
 	int result = 0;
 
@@ -284,6 +303,7 @@ int main() {
 	// Track
 	// -------------------
 	result += test_telemetry_tracks_delivered_and_accepted();
+	result += test_telemetry_uses_base_clock();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

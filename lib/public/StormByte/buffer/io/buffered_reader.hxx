@@ -48,8 +48,8 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <chrono>
 #include <cstddef>
@@ -196,7 +196,7 @@ namespace StormByte {
 			 * an origin pull.
 			 *
 			 * @par Telemetry
-			 * @ref Telemetry returns a const @c StormByte::Shared of
+				 * @ref Telemetry returns a const @c StormByte::Safe::Shared of
 			 * @ref StormByte::Buffer::ReadTelemetry. The user cannot reseat
 			 * the handle. The office updates the same object. The dynamic
 			 * type is @ref IO::ReadTelemetry unless a leaf overrides
@@ -273,7 +273,7 @@ namespace StormByte {
 					 *
 					 * @return Owned text. Empty if moved-from.
 					 */
-					const StormByte::String::String& Path() const noexcept;
+					const StormByte::Safe::String& Path() const noexcept;
 
 					/**
 					 * @brief Where @ref Path points. Does not change.
@@ -477,7 +477,7 @@ namespace StormByte {
 					 * the same object. Survivors keep the last values. A leaf
 					 * may store a wider dynamic type via @ref CreateTelemetry.
 					 */
-					const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
+					const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Telemetry() const noexcept;
 
 					/**
 					 * @}
@@ -545,7 +545,7 @@ namespace StormByte {
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param parameters Omitted knobs are 0 / 0 ms. Resolved in the caller.
 					 */
-					STORMBYTE_FORCE_INLINE BufferedReader(StormByte::String::String path, enum Location location,
+					STORMBYTE_FORCE_INLINE BufferedReader(StormByte::Safe::String path, enum Location location,
 							Parameters parameters = {}):
 						BufferedReader(std::move(path), location,
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
@@ -562,7 +562,7 @@ namespace StormByte {
 					 *
 					 * DLL boundary. Children that already resolved knobs call this.
 					 */
-					BufferedReader(StormByte::String::String path, enum Location location,
+					BufferedReader(StormByte::Safe::String path, enum Location location,
 						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
 						std::chrono::milliseconds max_wait);
 
@@ -591,7 +591,7 @@ namespace StormByte {
 					 * first time telemetry is needed. A remote leaf returns
 					 * a further-derived type. Must not return empty.
 					 */
-					virtual StormByte::Shared<StormByte::Buffer::ReadTelemetry> CreateTelemetry() const;
+					virtual StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> CreateTelemetry() const;
 
 					/**
 					 * @name Origin hooks

@@ -81,13 +81,13 @@ void Pumper::Toggle() noexcept {
 		m_backend->Toggle();
 }
 
-const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {
 	if (!m_backend)
 		return {};
 	return m_backend->ReadTelemetry();
 }
 
-const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Pumper::WriteTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> Pumper::WriteTelemetry() const noexcept {
 	if (!m_backend)
 		return {};
 	return m_backend->WriteTelemetry();

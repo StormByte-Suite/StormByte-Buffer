@@ -45,13 +45,13 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	const StormByte::String::String& EmptyPath() noexcept {
-		static const StormByte::String::String empty;
+	const StormByte::Safe::String& EmptyPath() noexcept {
+		static const StormByte::Safe::String empty;
 		return empty;
 	}
 }
 
-BufferedWriter::BufferedWriter(StormByte::String::String path, const enum Location location,
+BufferedWriter::BufferedWriter(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory):
 	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedWriter>(*this, std::move(path), location, write_chunk, back_pressure, max_wait, max_memory)) {}
@@ -78,7 +78,7 @@ BufferedWriter& BufferedWriter::operator=(BufferedWriter&& other) noexcept {
 	return *this;
 }
 
-const StormByte::String::String& BufferedWriter::Path() const noexcept {
+const StormByte::Safe::String& BufferedWriter::Path() const noexcept {
 	return m_io ? m_io->Path() : EmptyPath();
 }
 
@@ -106,8 +106,8 @@ void BufferedWriter::SetTell(const StormByte::ByteSize offset) noexcept {
 
 void BufferedWriter::Setup() {}
 
-StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::CreateTelemetry() const {
-	return StormByte::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<IO::WriteTelemetry>();
+StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::CreateTelemetry() const {
+	return StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<IO::WriteTelemetry>();
 }
 
 bool BufferedWriter::Open() {
@@ -187,7 +187,7 @@ Result BufferedWriter::OriginSeek(const StormByte::ByteSize) {
 	return { Status::Failed, 0 };
 }
 
-const StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
 	if (!m_io)
 		return {};
 	if (!m_io->Telemetry())

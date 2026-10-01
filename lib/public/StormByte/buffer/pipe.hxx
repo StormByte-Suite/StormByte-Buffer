@@ -43,9 +43,9 @@
 
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/clonable.hxx>
+#include <StormByte/safe/clonable.hxx>
 #include <StormByte/logger/log.hxx>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 
 /**
  * @namespace StormByte
@@ -65,7 +65,7 @@ namespace StormByte {
 		 * @ref Pipeline stores the @c Unique that @ref Clone /
 		 * @ref Move return. Allocation is on Base's heap.
 		 */
-		class STORMBYTE_BUFFER_PUBLIC Pipe: public Clonable<Pipe, StormByte::Unique<Pipe>> {
+		class STORMBYTE_BUFFER_PUBLIC Pipe: public StormByte::Safe::Clonable<Pipe, StormByte::Safe::Unique<Pipe>> {
 			public:
 				/**
 				 * @brief Copy constructor. Defined in this module.
@@ -106,7 +106,7 @@ namespace StormByte {
 				 *        Already scoped Buffer/Pipeline when set.
 				 */
 				virtual void Run(ReadOnly& in, WriteOnly& out,
-					const StormByte::Shared<StormByte::Logger::Log>& log) = 0;
+					const StormByte::Safe::Shared<StormByte::Logger::Log>& log) = 0;
 
 				/**
 				 * @brief Polymorphic copy. Allocated on Base's heap.

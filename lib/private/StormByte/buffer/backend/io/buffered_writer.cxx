@@ -52,7 +52,7 @@ using Status = StormByte::Buffer::IO::Status;
 using BinaryData = StormByte::BinaryData;
 using Position = StormByte::Buffer::Position;
 
-BufferedWriter::BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::String::String path,
+BufferedWriter::BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::Safe::String path,
 		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
 		const StormByte::ByteSize max_memory):
@@ -77,7 +77,7 @@ void BufferedWriter::Rebind(StormByte::Buffer::IO::BufferedWriter& owner) noexce
 	m_owner = &owner;
 }
 
-const StormByte::String::String& BufferedWriter::Path() const noexcept {
+const StormByte::Safe::String& BufferedWriter::Path() const noexcept {
 	return m_path;
 }
 
@@ -172,11 +172,11 @@ void BufferedWriter::CloseSeekEpoch() noexcept {
 	}
 }
 
-void BufferedWriter::BindTelemetry(StormByte::Shared<StormByte::Buffer::WriteTelemetry> telemetry) noexcept {
+void BufferedWriter::BindTelemetry(StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> telemetry) noexcept {
 	m_telemetry = std::move(telemetry);
 }
 
-const StormByte::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> BufferedWriter::Telemetry() const noexcept {
 	return m_telemetry;
 }
 
@@ -542,7 +542,9 @@ Result BufferedWriter::MaterializeAll() {
 }
 
 Result BufferedWriter::Flush() {
-	const auto started = std::chrono::steady_clock::now();
+	std::optional<StormByte::Buffer::Telemetry::OperationSample> telemetry_sample;
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
+		telemetry_sample.emplace(io->MeasureOperation());
 	const Result pages = MaterializeAll();
 	if (pages.status != Status::Ok)
 		return pages;
@@ -585,11 +587,8 @@ Result BufferedWriter::Flush() {
 			return visible;
 		}
 		NoteDirty();
-		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-			io->DeltaOperation(StormByte::ByteSize{0},
-				std::chrono::duration_cast<std::chrono::microseconds>(
-					std::chrono::steady_clock::now() - started));
-		}
+		if (telemetry_sample)
+			telemetry_sample->Commit(StormByte::ByteSize{0});
 	}
 	return { Status::Ok, 0 };
 }
@@ -709,6 +708,9 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		return { Status::Ok, 0 };
 
 	const auto started = std::chrono::steady_clock::now();
+	std::optional<StormByte::Buffer::Telemetry::OperationSample> telemetry_sample;
+	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
+		telemetry_sample.emplace(io->MeasureOperation());
 	const StormByte::ByteSize n{src.size()};
 
 	if (PageMode()) {
@@ -732,8 +734,8 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 				io->m_hit_back = m_hit_back;
 				io->m_miss = m_miss;
 				io->m_high_water = m_high_water;
-				io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
-					std::chrono::steady_clock::now() - started));
+				if (telemetry_sample)
+					telemetry_sample->Commit(n);
 			}
 		}
 		const Result gc = CollectGarbage();
@@ -790,8 +792,8 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			io->m_origin = m_origin_bytes;
 			io->m_materialized = m_materialized;
 			io->m_high_water = m_high_water;
-			io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now() - started));
+			if (telemetry_sample)
+				telemetry_sample->Commit(n);
 		}
 		return { Status::Ok, n };
 	}
@@ -836,8 +838,8 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			io->m_accepted = m_accepted;
 			io->m_behind = m_behind;
 			io->m_high_water = m_high_water;
-			io->DeltaOperation(n, std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now() - started));
+			if (telemetry_sample)
+				telemetry_sample->Commit(n);
 		}
 	}
 	RequestDrain();

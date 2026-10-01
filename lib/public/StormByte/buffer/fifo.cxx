@@ -40,7 +40,7 @@
  */
 
 #include <StormByte/buffer/fifo.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <algorithm>
 #include <cctype>
@@ -199,7 +199,7 @@ void FIFO::SetError() noexcept {
 	m_error = true;
 }
 
-StormByte::String::String FIFO::HexDump(const StormByte::ByteSize& columns, const StormByte::ByteSize& byte_limit) const noexcept {
+StormByte::Safe::String FIFO::HexDump(const StormByte::ByteSize& columns, const StormByte::ByteSize& byte_limit) const noexcept {
 	const StormByte::ByteSize cols = (columns == StormByte::ByteSize{0}) ? StormByte::ByteSize{16} : columns;
 	const StormByte::ByteSize stored = m_buffer.size();
 	const StormByte::ByteSize end = (byte_limit > StormByte::ByteSize{0})
@@ -211,13 +211,14 @@ StormByte::String::String FIFO::HexDump(const StormByte::ByteSize& columns, cons
 		const std::size_t off = static_cast<std::size_t>(m_position_offset);
 		const std::size_t len = static_cast<std::size_t>(end - m_position_offset);
 		std::span<const std::byte> view(m_buffer.data() + off, len);
-		oss << static_cast<const char*>(FormatHexLines(view, m_position_offset, cols));
+		const StormByte::Safe::String lines = FormatHexLines(view, m_position_offset, cols);
+		oss << lines.data();
 	}
 
-	return StormByte::String::String{oss.str()};
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
-StormByte::String::String FIFO::FormatHexLines(std::span<const std::byte>& data, StormByte::ByteSize start_offset, StormByte::ByteSize columns) noexcept {
+StormByte::Safe::String FIFO::FormatHexLines(std::span<const std::byte>& data, StormByte::ByteSize start_offset, StormByte::ByteSize columns) noexcept {
 	const std::size_t cols = static_cast<std::size_t>((columns == StormByte::ByteSize{0}) ? StormByte::ByteSize{16} : columns);
 	const int offset_width = 8;
 	std::vector<std::string> lines;
@@ -255,7 +256,7 @@ StormByte::String::String FIFO::FormatHexLines(std::span<const std::byte>& data,
 			oss << '\n';
 	}
 
-	return StormByte::String::String{oss.str()};
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
 std::ostringstream FIFO::HexDumpHeader() const noexcept {

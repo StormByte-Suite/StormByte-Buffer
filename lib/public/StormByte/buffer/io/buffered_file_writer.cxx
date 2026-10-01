@@ -40,7 +40,7 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
-#include <StormByte/string/wstring.hxx>
+#include <StormByte/safe/wstring.hxx>
 
 #include <filesystem>
 #include <cstdint>
@@ -56,9 +56,9 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	std::filesystem::path ToPath(const StormByte::String::String& location) {
+	std::filesystem::path ToPath(const StormByte::Safe::String& location) {
 #ifdef WINDOWS
-		const StormByte::String::WString wide(location);
+		const StormByte::Safe::WString wide(location);
 		return std::filesystem::path(static_cast<std::wstring_view>(wide));
 #else
 		return std::filesystem::path(static_cast<std::string_view>(location));
@@ -131,8 +131,8 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 	return *this;
 }
 
-StormByte::Shared<StormByte::System::Device> BufferedFileWriter::OriginDevice() const {
-	return StormByte::Shared<StormByte::System::Device>::MakePointer<StormByte::System::Device>(Path());
+StormByte::Safe::Shared<StormByte::System::Device> BufferedFileWriter::OriginDevice() const {
+	return StormByte::Safe::Shared<StormByte::System::Device>::MakePointer<StormByte::System::Device>(Path());
 }
 
 StormByte::ByteSize BufferedFileWriter::OriginSize() const noexcept {

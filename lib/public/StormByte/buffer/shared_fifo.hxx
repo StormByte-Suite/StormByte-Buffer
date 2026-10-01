@@ -349,7 +349,7 @@ namespace StormByte::Buffer {
 			 * @return Formatted dump (size / position / status + hex/ASCII; no trailing newline).
 			 * @details Acquires the mutex for a consistent snapshot.
 			 */
-			virtual StormByte::String::String HexDump(const StormByte::ByteSize& columns = 0,
+			virtual StormByte::Safe::String HexDump(const StormByte::ByteSize& columns = 0,
 										const StormByte::ByteSize& byte_limit = 0) const noexcept override;
 
 			/** @} */

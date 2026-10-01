@@ -51,7 +51,7 @@ namespace {
 	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
 }
 
-BufferedLocationWriter::BufferedLocationWriter(StormByte::String::String path, const enum Location location,
+BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory, const bool probe):
 	BufferedWriter(std::move(path), location, write_chunk, back_pressure, max_wait, max_memory),
@@ -71,11 +71,11 @@ BufferedLocationWriter& BufferedLocationWriter::operator=(BufferedLocationWriter
 	return *this;
 }
 
-StormByte::Shared<StormByte::System::Device> BufferedLocationWriter::Device() const {
+StormByte::Safe::Shared<StormByte::System::Device> BufferedLocationWriter::Device() const {
 	return OriginDevice();
 }
 
-bool BufferedLocationWriter::OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept {
+bool BufferedLocationWriter::OriginDeviceUsable(const StormByte::Safe::Shared<StormByte::System::Device>& device) const noexcept {
 	return device && static_cast<bool>(*device);
 }
 

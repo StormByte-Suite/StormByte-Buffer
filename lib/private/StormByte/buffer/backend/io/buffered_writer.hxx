@@ -48,8 +48,8 @@
 #include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <atomic>
 #include <chrono>
@@ -119,7 +119,7 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::String::String path,
+						BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::Safe::String path,
 							StormByte::Buffer::IO::Location location, StormByte::ByteSize write_chunk,
 							std::size_t back_pressure, std::chrono::milliseconds max_wait,
 							StormByte::ByteSize max_memory);
@@ -165,7 +165,7 @@ namespace StormByte {
 						 * @brief Locator stored at construction.
 						 * @return Owned text.
 						 */
-						const StormByte::String::String& Path() const noexcept;
+						const StormByte::Safe::String& Path() const noexcept;
 
 						/**
 						 * @brief Kind stored at construction.
@@ -309,13 +309,13 @@ namespace StormByte {
 						 * @brief Attach the telemetry object created by the leaf.
 						 * @param telemetry Shared handle. Must not be empty.
 						 */
-						void BindTelemetry(StormByte::Shared<StormByte::Buffer::WriteTelemetry> telemetry) noexcept;
+						void BindTelemetry(StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> telemetry) noexcept;
 
 						/**
 						 * @brief Shared write counters.
 						 * @return Handle. Empty until BindTelemetry.
 						 */
-						const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Telemetry() const noexcept;
+						const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> Telemetry() const noexcept;
 
 						/**
 						 * @}
@@ -534,7 +534,7 @@ namespace StormByte {
 						StormByte::Buffer::IO::WriteTelemetry* IoTelemetry() const noexcept;
 
 						StormByte::Buffer::IO::BufferedWriter* m_owner;						///< Public leaf (hooks).
-						StormByte::String::String m_path;					///< Locator
+						StormByte::Safe::String m_path;					///< Locator
 						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};		///< Local or remote
 
 						mutable std::mutex m_mutex;							///< Session + knobs.
@@ -562,7 +562,7 @@ namespace StormByte {
 						bool m_epoch_hit {false};							///< Epoch wrote into a resident page.
 						bool m_epoch_origin {false};						///< Epoch already OriginSeek'd.
 
-						mutable StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_telemetry;	///< Session counters.
+						mutable StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_telemetry;	///< Session counters.
 
 						mutable StormByte::ByteSize m_accepted {0};			///< Telemetry.Accepted.
 						mutable StormByte::ByteSize m_behind {0};			///< Telemetry.Behind.

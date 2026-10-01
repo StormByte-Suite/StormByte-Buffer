@@ -44,7 +44,7 @@
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 #include <StormByte/system/device.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -57,7 +57,7 @@
 #include <string_view>
 #include <utility>
 
-using StormByte::Shared;
+using StormByte::Safe::Shared;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileReader;
@@ -101,7 +101,7 @@ namespace {
 	class FakeReader final: public BufferedLocationReader {
 		public:
 			explicit FakeReader(const DevicePolicy policy):
-				BufferedLocationReader(StormByte::String::String(std::string_view("nic://eth0")),
+				BufferedLocationReader(StormByte::Safe::String(std::string_view("nic://eth0")),
 					Location::Remote, Parameters{}),
 				m_policy(policy) {}
 
@@ -148,7 +148,7 @@ namespace {
 	class FakeWriter final: public BufferedLocationWriter {
 		public:
 			explicit FakeWriter(const DevicePolicy policy):
-				BufferedLocationWriter(StormByte::String::String(std::string_view("nic://eth0")),
+				BufferedLocationWriter(StormByte::Safe::String(std::string_view("nic://eth0")),
 					Location::Remote, Parameters{}),
 				m_policy(policy) {}
 
@@ -203,11 +203,11 @@ namespace {
 		return std::filesystem::temp_directory_path() / name;
 	}
 
-	StormByte::String::String Loc(const std::filesystem::path& path) {
+	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS
-		return StormByte::String::String(StormByte::String::WString(std::wstring_view(path.wstring())));
+		return StormByte::Safe::String(StormByte::Safe::WString(std::wstring_view(path.wstring())));
 #else
-		return StormByte::String::String(std::string_view(path.string()));
+		return StormByte::Safe::String(std::string_view(path.string()));
 #endif
 	}
 

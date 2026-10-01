@@ -96,7 +96,7 @@ namespace {
 	}
 }
 
-BufferedReader::BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::String::String path,
+BufferedReader::BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::Safe::String path,
 		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize read_ahead,
 		const StormByte::ByteSize max_memory, const std::chrono::milliseconds max_wait):
 	m_owner(&owner),
@@ -117,7 +117,7 @@ void BufferedReader::Rebind(StormByte::Buffer::IO::BufferedReader& owner) noexce
 	m_owner = &owner;
 }
 
-const StormByte::String::String& BufferedReader::Path() const noexcept {
+const StormByte::Safe::String& BufferedReader::Path() const noexcept {
 	return m_path;
 }
 
@@ -316,11 +316,11 @@ std::optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
 	return m_owner->OriginSize();
 }
 
-void BufferedReader::BindTelemetry(StormByte::Shared<StormByte::Buffer::ReadTelemetry> telemetry) noexcept {
+void BufferedReader::BindTelemetry(StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> telemetry) noexcept {
 	m_telemetry = std::move(telemetry);
 }
 
-const StormByte::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Telemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Telemetry() const noexcept {
 	return m_telemetry;
 }
 
@@ -784,6 +784,11 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 
 Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool consume) const {
 	const auto started = std::chrono::steady_clock::now();
+	std::optional<StormByte::Buffer::Telemetry::OperationSample> telemetry_sample;
+	if (consume) {
+		if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
+			telemetry_sample.emplace(io->MeasureOperation());
+	}
 
 	std::chrono::milliseconds wait{0};
 	bool can_prefetch = false;
@@ -823,8 +828,8 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 					io->m_delivered = m_delivered;
 					io->m_hit_ahead = m_hit_ahead;
 					io->m_hit_back = m_hit_back;
-					io->DeltaOperation(count, std::chrono::duration_cast<std::chrono::microseconds>(
-						std::chrono::steady_clock::now() - started));
+					if (telemetry_sample)
+						telemetry_sample->Commit(count);
 				}
 			}
 		}
@@ -964,8 +969,8 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 				io->m_hit_ahead = m_hit_ahead;
 				io->m_hit_back = m_hit_back;
 				io->m_miss = m_miss;
-				io->DeltaOperation(take, std::chrono::duration_cast<std::chrono::microseconds>(
-					std::chrono::steady_clock::now() - started));
+				if (telemetry_sample)
+					telemetry_sample->Commit(take);
 			}
 		}
 		if (take > StormByte::ByteSize{0} || consume)

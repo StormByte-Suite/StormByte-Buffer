@@ -45,7 +45,7 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/platform.h>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 
 #include <memory>
 #include <optional>
@@ -301,13 +301,13 @@ namespace StormByte {
 				 * @brief Read counters copied from the owned Bridge.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
-				const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
+				const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 				/**
 				 * @brief Write counters copied from the owned Bridge.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
-				const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
+				const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
 
 			private:
 				/**

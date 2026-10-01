@@ -47,7 +47,7 @@
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 #include <StormByte/type_traits.hxx>
 
 #include <mutex>
@@ -76,7 +76,7 @@ namespace StormByte {
 		 * buffers must outlive the Bridge. IO tips are
 		 * taken by move as the concrete leaf so a second reader or writer
 		 * cannot race @ref Passthrough. Stolen leaves live in
-		 * @c StormByte::Unique on Base's heap.
+		 * @c StormByte::Safe::Unique on Base's heap.
 		 *
 		 * @par Lifecycle
 		 * A Bridge is one shot. @ref State::Open while tips are attached.
@@ -273,13 +273,13 @@ namespace StormByte {
 				 * @brief Read counters. Always the cached @c Shared handle.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
-				const StormByte::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
+				const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> ReadTelemetry() const noexcept;
 
 				/**
 				 * @brief Write counters. Always the cached @c Shared handle.
 				 * @return Const shared handle. Empty if moved-from.
 				 */
-				const StormByte::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
+				const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> WriteTelemetry() const noexcept;
 
 			private:
 				/**
@@ -345,7 +345,7 @@ namespace StormByte {
 				template<typename In>
 				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) noexcept {
 					m_io_in_blocking = (in.ReadAhead() == StormByte::ByteSize{0});
-					m_io_in = StormByte::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
+					m_io_in = StormByte::Safe::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
 						std::forward<In>(in));
 					CacheReadTelemetry();
 				}
@@ -357,17 +357,17 @@ namespace StormByte {
 				 */
 				template<typename Out>
 				STORMBYTE_FORCE_INLINE void AttachIoOut(Out&& out) noexcept {
-					m_io_out = StormByte::Unique<IO::BufferedWriter>::MakePointer<std::remove_cvref_t<Out>>(
+					m_io_out = StormByte::Safe::Unique<IO::BufferedWriter>::MakePointer<std::remove_cvref_t<Out>>(
 						std::forward<Out>(out));
 					CacheWriteTelemetry();
 				}
 
 				ReadOnly* m_ext_in {nullptr};											///< Non-IO source. Borrowed.
 				WriteOnly* m_ext_out {nullptr};											///< Non-IO sink. Borrowed.
-				StormByte::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
-				StormByte::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
-				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.
-				StormByte::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Cached write counters.
+				StormByte::Safe::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
+				StormByte::Safe::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
+				StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.
+				StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Cached write counters.
 				bool m_io_in_blocking {false};											///< Stolen reader ReadAhead was 0.
 				enum State m_state {State::Open};										///< Session lifetime.
 				mutable std::mutex m_mutex;												///< Session lock.

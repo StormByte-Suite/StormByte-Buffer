@@ -134,7 +134,7 @@ bool SharedFIFO::HasError() const noexcept {
 	return !FIFO::IsReadable();
 }
 
-StormByte::String::String SharedFIFO::HexDump(const StormByte::ByteSize& columns,
+StormByte::Safe::String SharedFIFO::HexDump(const StormByte::ByteSize& columns,
 								const StormByte::ByteSize& byte_limit) const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return FIFO::HexDump(columns, byte_limit);

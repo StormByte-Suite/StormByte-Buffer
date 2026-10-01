@@ -49,7 +49,7 @@
 using namespace StormByte::Buffer;
 
 struct Pipeline::Backend {
-	std::vector<StormByte::Unique<Pipe>> pipes;
+	std::vector<StormByte::Safe::Unique<Pipe>> pipes;
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;
 	mutable Producer final_producer;
 	mutable std::vector<std::thread> threads;
@@ -126,14 +126,14 @@ void Pipeline::SetError() const noexcept {
 }
 
 Consumer Pipeline::Process(Consumer buffer,
-		const StormByte::Shared<StormByte::Logger::Log>& log,
+		const StormByte::Safe::Shared<StormByte::Logger::Log>& log,
 		const ExecutionMode& mode) const noexcept {
 	m_io->WaitForCompletion();
 
 	if (m_io->pipes.empty())
 		return buffer;
 
-	const StormByte::Shared<StormByte::Logger::Log> stage_log =
+	const StormByte::Safe::Shared<StormByte::Logger::Log> stage_log =
 		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
 
 	const std::size_t num_pipes = m_io->pipes.size();

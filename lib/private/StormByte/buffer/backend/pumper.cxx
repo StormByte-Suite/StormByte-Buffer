@@ -59,11 +59,11 @@ void Pumper::Toggle() noexcept {
 	m_cv.notify_all();
 }
 
-const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Pumper::ReadTelemetry() const noexcept {
 	return m_read;
 }
 
-const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Pumper::WriteTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> Pumper::WriteTelemetry() const noexcept {
 	return m_write;
 }
 

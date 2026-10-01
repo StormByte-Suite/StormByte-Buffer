@@ -62,13 +62,13 @@ namespace {
 		return got;
 	}
 
-	const StormByte::String::String& EmptyPath() noexcept {
-		static const StormByte::String::String empty;
+	const StormByte::Safe::String& EmptyPath() noexcept {
+		static const StormByte::Safe::String empty;
 		return empty;
 	}
 }
 
-BufferedReader::BufferedReader(StormByte::String::String path, const enum Location location,
+BufferedReader::BufferedReader(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait):
 	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedReader>(*this, std::move(path), location, read_ahead, max_memory, max_wait)) {}
@@ -99,7 +99,7 @@ BufferedReader& BufferedReader::operator=(BufferedReader&& other) noexcept {
 	return *this;
 }
 
-const StormByte::String::String& BufferedReader::Path() const noexcept {
+const StormByte::Safe::String& BufferedReader::Path() const noexcept {
 	return m_io ? m_io->Path() : EmptyPath();
 }
 
@@ -122,8 +122,8 @@ void BufferedReader::SetState(const enum State state) noexcept {
 
 void BufferedReader::Setup() {}
 
-StormByte::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::CreateTelemetry() const {
-	return StormByte::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<IO::ReadTelemetry>();
+StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::CreateTelemetry() const {
+	return StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<IO::ReadTelemetry>();
 }
 
 bool BufferedReader::Open() {
@@ -215,7 +215,7 @@ std::optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
 	return m_io->Size();
 }
 
-const StormByte::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Telemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Telemetry() const noexcept {
 	if (!m_io)
 		return {};
 	if (!m_io->Telemetry())

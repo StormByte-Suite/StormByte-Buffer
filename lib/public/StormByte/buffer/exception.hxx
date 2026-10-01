@@ -43,9 +43,11 @@
 
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/exception.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <format>
 #include <string>
+#include <string_view>
 #include <utility>
 
 /**
@@ -82,6 +84,13 @@ namespace StormByte::Buffer {
 				: Exception("{}", std::move(message)) {}
 
 			/**
+			 * @brief Copies Base-owned text under `StormByte.Buffer`.
+			 * @param message Exception text.
+			 */
+			explicit Exception(const StormByte::Safe::String& message)
+				: StormByte::Exception(StormByte::Exception::Path{"Buffer"}, "{}", std::string_view(message)) {}
+
+			/**
 			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
 			 */
 			~Exception() noexcept override;
@@ -100,6 +109,17 @@ namespace StormByte::Buffer {
 					StormByte::Exception::Path{std::string("Buffer.") + std::string(child.text)},
 					fmt,
 					std::forward<Args>(args)...) {}
+
+			/**
+			 * @brief Copies Base-owned text under `StormByte.Buffer.<child>`.
+			 * @param child Segment under `Buffer`.
+			 * @param message Exception text.
+			 */
+			explicit Exception(StormByte::Exception::Path child, const StormByte::Safe::String& message)
+				: StormByte::Exception(
+					StormByte::Exception::Path{std::string("Buffer.") + std::string(child.text)},
+					"{}",
+					std::string_view(message)) {}
 	};
 
 	/**
@@ -142,6 +162,13 @@ namespace StormByte::Buffer {
 				: ReadError("{}", std::move(message)) {}
 
 			/**
+			 * @brief Copies Base-owned text under `StormByte.Buffer.Read`.
+			 * @param message Exception text.
+			 */
+			explicit ReadError(const StormByte::Safe::String& message)
+				: Error(StormByte::Exception::Path{"Read"}, "{}", std::string_view(message)) {}
+
+			/**
 			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
 			 */
 			~ReadError() noexcept override;
@@ -169,6 +196,13 @@ namespace StormByte::Buffer {
 			 */
 			explicit WriteError(std::string message)
 				: WriteError("{}", std::move(message)) {}
+
+			/**
+			 * @brief Copies Base-owned text under `StormByte.Buffer.Write`.
+			 * @param message Exception text.
+			 */
+			explicit WriteError(const StormByte::Safe::String& message)
+				: Error(StormByte::Exception::Path{"Write"}, "{}", std::string_view(message)) {}
 
 			/**
 			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.

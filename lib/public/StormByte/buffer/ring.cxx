@@ -234,7 +234,7 @@ void Ring::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
-StormByte::String::String Ring::HexDump(const StormByte::ByteSize& columns,
+StormByte::Safe::String Ring::HexDump(const StormByte::ByteSize& columns,
 						const StormByte::ByteSize& byte_limit) const noexcept {
 	std::shared_lock lock(m_mutex);
 	const StormByte::ByteSize cols = (columns == StormByte::ByteSize{0}) ? StormByte::ByteSize{16} : columns;
@@ -249,10 +249,11 @@ StormByte::String::String Ring::HexDump(const StormByte::ByteSize& columns,
 		tmp.assign(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset),
 					m_buffer.begin() + static_cast<std::ptrdiff_t>(end));
 		std::span<const std::byte> view(tmp.data(), static_cast<std::size_t>(tmp.size()));
-		oss << static_cast<const char*>(FormatHexLines(view, m_position_offset, cols));
+		const StormByte::Safe::String lines = FormatHexLines(view, m_position_offset, cols);
+		oss << lines.data();
 	}
 
-	return StormByte::String::String{oss.str()};
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
 std::ostringstream Ring::HexDumpHeader() const noexcept {
@@ -264,7 +265,7 @@ std::ostringstream Ring::HexDumpHeader() const noexcept {
 	return oss;
 }
 
-StormByte::String::String Ring::FormatHexLines(std::span<const std::byte> data,
+StormByte::Safe::String Ring::FormatHexLines(std::span<const std::byte> data,
 								StormByte::ByteSize start_offset,
 								StormByte::ByteSize columns) noexcept {
 	const std::size_t cols = static_cast<std::size_t>(
@@ -303,7 +304,7 @@ StormByte::String::String Ring::FormatHexLines(std::span<const std::byte> data,
 			oss << '\n';
 	}
 
-	return StormByte::String::String{oss.str()};
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
 bool Ring::Peek(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) const noexcept {

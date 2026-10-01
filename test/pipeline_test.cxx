@@ -71,8 +71,8 @@ namespace {
 	constexpr ExecutionMode kAsyncParallel = ExecutionMode::Async | ExecutionMode::Parallel;
 
 	std::ostringstream logging_stream;
-	const StormByte::Shared<StormByte::Logger::Log> logging =
-		StormByte::Shared<StormByte::Logger::Log>::MakePointer<StormByte::Logger::Log>(
+	const StormByte::Safe::Shared<StormByte::Logger::Log> logging =
+		StormByte::Safe::Shared<StormByte::Logger::Log>::MakePointer<StormByte::Logger::Log>(
 			logging_stream, StormByte::Logger::Level::Info);
 
 	std::string BytesToText(const BinaryData& data) {
@@ -121,22 +121,22 @@ namespace {
 	class FnPipe final: public Pipe {
 		public:
 			using Fn = std::function<void(ReadOnly&, WriteOnly&,
-				const StormByte::Shared<StormByte::Logger::Log>&)>;
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&)>;
 
 			explicit FnPipe(Fn fn):
 				m_fn(std::move(fn)) {}
 
 			void Run(ReadOnly& in, WriteOnly& out,
-					const StormByte::Shared<StormByte::Logger::Log>& log) override {
+					const StormByte::Safe::Shared<StormByte::Logger::Log>& log) override {
 				m_fn(in, out, log);
 			}
 
 			PointerType Clone() const noexcept override {
-				return StormByte::Unique<Pipe>::MakePointer<FnPipe>(*this);
+				return StormByte::Safe::Unique<Pipe>::MakePointer<FnPipe>(*this);
 			}
 
 			PointerType Move() noexcept override {
-				return StormByte::Unique<Pipe>::MakePointer<FnPipe>(std::move(*this));
+				return StormByte::Safe::Unique<Pipe>::MakePointer<FnPipe>(std::move(*this));
 			}
 
 		private:
@@ -196,7 +196,7 @@ int test_pipeline_empty_input() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
 	Producer input;
@@ -210,7 +210,7 @@ int test_pipeline_filter_stage() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -236,7 +236,7 @@ int test_pipeline_incremental_processing() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(1, data) && !data.empty()) {
@@ -259,7 +259,7 @@ int test_pipeline_multiple_writes() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -281,7 +281,7 @@ int test_pipeline_single_stage() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
 	Producer input;
@@ -296,11 +296,11 @@ int test_pipeline_three_stages() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -312,7 +312,7 @@ int test_pipeline_three_stages() {
 		out.Close();
 	}));
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		(void)out.Write("[");
 		while (!in.EoF()) {
 			BinaryData data;
@@ -334,11 +334,11 @@ int test_pipeline_two_stages() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -365,7 +365,7 @@ int test_pipeline_add_move() {
 	int result = 0;
 	Pipeline pipeline;
 	FnPipe pipe = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	});
 	pipeline.Add(std::move(pipe));
@@ -381,7 +381,7 @@ int test_pipeline_copy_constructor() {
 	int result = 0;
 	Pipeline pipeline1;
 	pipeline1.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
 	Pipeline pipeline2 = pipeline1;
@@ -397,7 +397,7 @@ int test_pipeline_move_constructor() {
 	int result = 0;
 	Pipeline pipeline1;
 	pipeline1.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -422,7 +422,7 @@ int test_pipeline_null_logger() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
 	Producer input;
@@ -437,7 +437,7 @@ int test_pipeline_reuse() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		(void)out.Write(">");
 		while (!in.EoF()) {
 			BinaryData data;
@@ -468,7 +468,7 @@ int test_pipeline_stage_must_close() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
 	Producer input;
@@ -488,7 +488,7 @@ int test_pipeline_async_reuse_many_times() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
 	for (int i = 0; i < 50; ++i) {
@@ -509,7 +509,7 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 	Pipeline pipeline;
 	for (int i = 0; i < 12; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				if (!out.IsWritable())
 					return;
@@ -543,7 +543,7 @@ int test_pipeline_interrupted_by_seterror() {
 	Pipeline pipeline;
 	for (int i = 0; i < 8; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
 				if (in.Read(0, data) && !data.empty()) {
@@ -578,7 +578,7 @@ int test_pipeline_large_async_many_stages() {
 	Pipeline pipeline;
 	for (int i = 0; i < 25; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			UpperAll(in, out);
 		}));
 	}
@@ -595,7 +595,7 @@ int test_pipeline_parallel_async_correctness() {
 	Pipeline pipeline;
 	for (int i = 0; i < 6; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			UpperAll(in, out);
 		}));
 	}
@@ -612,7 +612,7 @@ int test_pipeline_parallel_blocking() {
 	Pipeline pipeline;
 	for (int i = 0; i < 4; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
 				if (in.Read(0, data) && !data.empty()) {
@@ -643,11 +643,11 @@ int test_pipeline_sync_execution() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -674,7 +674,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	constexpr std::size_t kChunk = 2048;
 	constexpr int kInnerWork = 48;
 	auto cpu_fn = [](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(kChunk, data) && !data.empty()) {
@@ -737,7 +737,7 @@ int test_pipeline_available_bytes_during_process() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
 	Producer input;
@@ -753,7 +753,7 @@ int test_pipeline_byte_arithmetic() {
 	Pipeline pipeline;
 	auto map = [](auto op) {
 		return MakePipe([op](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
 				if (in.Read(0, data) && !data.empty())
@@ -788,7 +788,7 @@ int test_pipeline_identity_many_stages() {
 	Pipeline pipeline;
 	for (int i = 0; i < 10; ++i) {
 		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-				const StormByte::Shared<StormByte::Logger::Log>&) {
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			CopyAll(in, out);
 		}));
 	}
@@ -805,7 +805,7 @@ int test_pipeline_large_concurrent_stress() {
 	int result = 0;
 	Pipeline pipeline;
 	auto xor55 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -817,7 +817,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto add17 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -829,7 +829,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto bnot = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -841,7 +841,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto xorAA = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -853,7 +853,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto mul3 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -865,7 +865,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto rotl3 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -879,7 +879,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto sub42 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -891,7 +891,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto xor33 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -903,7 +903,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto mul171 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -915,7 +915,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto rotr3 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -929,7 +929,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto add42 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -941,7 +941,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	});
 	auto sub17 = MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -997,7 +997,7 @@ int test_pipeline_large_data() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::size_t count = 0;
 		while (!in.EoF()) {
 			BinaryData data;
@@ -1019,7 +1019,7 @@ int test_pipeline_reverse_string() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::string buffer;
 		while (!in.EoF()) {
 			BinaryData data;
@@ -1042,7 +1042,7 @@ int test_pipeline_streaming_data() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty())
@@ -1070,7 +1070,7 @@ int test_pipeline_word_count() {
 	int result = 0;
 	Pipeline pipeline;
 	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
-			const StormByte::Shared<StormByte::Logger::Log>&) {
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::string buffer;
 		while (!in.EoF()) {
 			BinaryData data;

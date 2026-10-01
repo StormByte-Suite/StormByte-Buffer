@@ -164,9 +164,9 @@ std::size_t ReadTelemetry::WaitSamples() const noexcept {
 	return m_wait_samples;
 }
 
-ReadTelemetry::operator StormByte::String::String() const {
+ReadTelemetry::operator StormByte::Safe::String() const {
 	std::string text = static_cast<std::string>(
-		StormByte::Buffer::ReadTelemetry::operator StormByte::String::String());
+		StormByte::Buffer::ReadTelemetry::operator StormByte::Safe::String());
 	Append(text, "HitAhead", m_hit_ahead);
 	Append(text, "HitBack", m_hit_back);
 	Append(text, "Miss", m_miss);
@@ -185,7 +185,7 @@ ReadTelemetry::operator StormByte::String::String() const {
 	AppendNs(text, "WaitMax", m_wait_max);
 	AppendNs(text, "WaitTotal", m_wait_total);
 	Append(text, "WaitSamples", static_cast<std::uint64_t>(m_wait_samples));
-	return StormByte::String::String(std::string_view(text));
+	return StormByte::Safe::String(std::string_view(text));
 }
 
 WriteTelemetry::WriteTelemetry() noexcept:
@@ -302,9 +302,9 @@ std::size_t WriteTelemetry::WaitSamples() const noexcept {
 	return m_wait_samples;
 }
 
-WriteTelemetry::operator StormByte::String::String() const {
+WriteTelemetry::operator StormByte::Safe::String() const {
 	std::string text = static_cast<std::string>(
-		StormByte::Buffer::WriteTelemetry::operator StormByte::String::String());
+		StormByte::Buffer::WriteTelemetry::operator StormByte::Safe::String());
 	Append(text, "Behind", m_behind);
 	Append(text, "Direct", m_direct);
 	Append(text, "Origin", m_origin);
@@ -327,5 +327,5 @@ WriteTelemetry::operator StormByte::String::String() const {
 	AppendNs(text, "WaitMax", m_wait_max);
 	AppendNs(text, "WaitTotal", m_wait_total);
 	Append(text, "WaitSamples", static_cast<std::uint64_t>(m_wait_samples));
-	return StormByte::String::String(std::string_view(text));
+	return StormByte::Safe::String(std::string_view(text));
 }

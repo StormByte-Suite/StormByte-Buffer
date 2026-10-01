@@ -78,11 +78,29 @@ int test_buffer_exception_message() {
 	RETURN_TEST(fn, result);
 }
 
+int test_buffer_exception_safe_string() {
+	constexpr auto fn = "test_buffer_exception_safe_string";
+	int result = 0;
+	const StormByte::Safe::String message(std::string_view("base text"));
+	Exception exception(message);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: base text"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
+}
+
 int test_read_error_message() {
 	constexpr auto fn = "test_read_error_message";
 	int result = 0;
 	ReadError exception("read {}", "failed");
 	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: read failed"), std::string(exception.what()));
+	RETURN_TEST(fn, result);
+}
+
+int test_read_error_safe_string() {
+	constexpr auto fn = "test_read_error_safe_string";
+	int result = 0;
+	const StormByte::Safe::String message(std::string_view("base read"));
+	ReadError exception(message);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: base read"), std::string(exception.what()));
 	RETURN_TEST(fn, result);
 }
 
@@ -103,7 +121,9 @@ int main() {
 	result += test_buffer_error_message();
 	result += test_buffer_exception_format();
 	result += test_buffer_exception_message();
+	result += test_buffer_exception_safe_string();
 	result += test_read_error_message();
+	result += test_read_error_safe_string();
 	result += test_write_error_message();
 
 	if (result == 0)

@@ -42,17 +42,18 @@
 #include <StormByte/buffer/bridge.hxx>
 
 #include <chrono>
+#include <optional>
 #include <utility>
 
 using namespace StormByte::Buffer;
 
 namespace {
-	StormByte::Shared<StormByte::Buffer::ReadTelemetry> MakeReadTelemetry() {
-		return StormByte::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<StormByte::Buffer::ReadTelemetry>();
+	StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> MakeReadTelemetry() {
+		return StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry>::MakePointer<StormByte::Buffer::ReadTelemetry>();
 	}
 
-	StormByte::Shared<StormByte::Buffer::WriteTelemetry> MakeWriteTelemetry() {
-		return StormByte::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<StormByte::Buffer::WriteTelemetry>();
+	StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> MakeWriteTelemetry() {
+		return StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry>::MakePointer<StormByte::Buffer::WriteTelemetry>();
 	}
 }
 
@@ -173,12 +174,12 @@ enum Bridge::State Bridge::State() const noexcept {
 	return m_state;
 }
 
-const StormByte::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_owned_read;
 }
 
-const StormByte::Shared<StormByte::Buffer::WriteTelemetry> Bridge::WriteTelemetry() const noexcept {
+const StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> Bridge::WriteTelemetry() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_owned_write;
 }
@@ -281,7 +282,12 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 	if (m_state != State::Open)
 		return StormByte::ByteSize{0};
 
-	const auto started = std::chrono::steady_clock::now();
+	std::optional<StormByte::Buffer::Telemetry::OperationSample> read_sample;
+	std::optional<StormByte::Buffer::Telemetry::OperationSample> write_sample;
+	if (m_ext_in && m_owned_read)
+		read_sample.emplace(m_owned_read->MeasureOperation());
+	if (m_ext_out && m_owned_write)
+		write_sample.emplace(m_owned_write->MeasureOperation());
 	FIFO work;
 	const IO::Result pulled = Pull(n, work, operation);
 	if (pulled.status == IO::Status::Failed || pulled.status == IO::Status::Error) {
@@ -306,14 +312,12 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 		return StormByte::ByteSize{0};
 	}
 
-	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-		std::chrono::steady_clock::now() - started);
-	if (m_ext_in && m_owned_read) {
-		m_owned_read->DeltaOperation(got, elapsed);
+	if (read_sample) {
+		read_sample->Commit(got);
 		m_owned_read->m_delivered = m_owned_read->m_delivered + got;
 	}
-	if (m_ext_out && m_owned_write) {
-		m_owned_write->DeltaOperation(got, elapsed);
+	if (write_sample) {
+		write_sample->Commit(got);
 		m_owned_write->m_accepted = m_owned_write->m_accepted + got;
 	}
 

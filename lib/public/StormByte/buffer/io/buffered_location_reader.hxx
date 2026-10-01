@@ -43,8 +43,8 @@
 
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe_pointers.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/string.hxx>
 #include <StormByte/system/device.hxx>
 
 #include <chrono>
@@ -105,7 +105,7 @@ namespace StormByte {
 			 * @ref Location::Local and its path is a local filesystem path.
 			 *
 			 * @ref Device is not virtual. @ref OriginDevice is pure and hands
-			 * out a @ref StormByte::Shared owner, so a leaf may supply a
+			 * out a @ref StormByte::Safe::Shared owner, so a leaf may supply a
 			 * @ref StormByte::System::Device subclass and the dynamic type
 			 * survives. @ref Setup applies
 			 * @ref StormByte::System::Device::Window when the caller omitted
@@ -164,7 +164,7 @@ namespace StormByte {
 					 * The dynamic type of the leaf device is preserved and the
 					 * caller may keep the object alive.
 					 */
-					StormByte::Shared<StormByte::System::Device> Device() const;
+					StormByte::Safe::Shared<StormByte::System::Device> Device() const;
 
 				protected:
 					/**
@@ -174,7 +174,7 @@ namespace StormByte {
 					 * @param parameters Omitted @ref ReadAhead → @ref Setup probes @ref Device.
 					 *        Omitted @ref MaxMemory / @ref MaxWait → 0 / 0 ms.
 					 */
-					STORMBYTE_FORCE_INLINE BufferedLocationReader(StormByte::String::String path,
+					STORMBYTE_FORCE_INLINE BufferedLocationReader(StormByte::Safe::String path,
 							enum Location location, Parameters parameters = {}):
 						BufferedLocationReader(std::move(path), location,
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
@@ -193,7 +193,7 @@ namespace StormByte {
 					 *
 					 * DLL boundary. @c m_io is created here.
 					 */
-					BufferedLocationReader(StormByte::String::String path, enum Location location,
+					BufferedLocationReader(StormByte::Safe::String path, enum Location location,
 						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
 						std::chrono::milliseconds max_wait, bool probe);
 
@@ -201,10 +201,10 @@ namespace StormByte {
 					 * @brief Leaf measurement. Not necessarily a filesystem type.
 					 * @return Owner of the device built by the leaf. May be empty.
 					 *
-					 * Build it with @c StormByte::Shared<StormByte::System::Device>::MakePointer
+					 * Build it with @c StormByte::Safe::Shared<StormByte::System::Device>::MakePointer
 					 * so a @ref StormByte::System::Device subclass keeps its overrides.
 					 */
-					virtual StormByte::Shared<StormByte::System::Device> OriginDevice() const = 0;
+					virtual StormByte::Safe::Shared<StormByte::System::Device> OriginDevice() const = 0;
 
 					/**
 					 * @brief Whether @ref Setup may read windows from @p device.
@@ -217,7 +217,7 @@ namespace StormByte {
 					 * overrides this and never reaches that non-virtual probe. An empty
 					 * owner is always unusable.
 					 */
-					virtual bool OriginDeviceUsable(const StormByte::Shared<StormByte::System::Device>& device) const noexcept;
+					virtual bool OriginDeviceUsable(const StormByte::Safe::Shared<StormByte::System::Device>& device) const noexcept;
 
 					/**
 					 * @brief A location can seek.

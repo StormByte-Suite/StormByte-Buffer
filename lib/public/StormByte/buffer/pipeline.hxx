@@ -48,7 +48,7 @@
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/logger/log.hxx>
-#include <StormByte/safe_pointers.hxx>
+#include <StormByte/safe/pointers.hxx>
 
 #include <memory>
 
@@ -175,7 +175,7 @@ namespace StormByte {
 				 * @return Consumer of the last pipe.
 				 */
 				Consumer Process(Consumer buffer,
-					const StormByte::Shared<StormByte::Logger::Log>& log,
+					const StormByte::Safe::Shared<StormByte::Logger::Log>& log,
 					const ExecutionMode& mode) const noexcept;
 
 				/**

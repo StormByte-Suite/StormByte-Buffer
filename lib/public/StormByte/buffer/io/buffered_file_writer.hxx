@@ -124,7 +124,7 @@ namespace StormByte {
 					 * omitted chunk / backpressure is 0.
 					 * Omitted @ref MaxWait → 0 ms.
 					 */
-					STORMBYTE_FORCE_INLINE explicit BufferedFileWriter(StormByte::String::String path,
+					STORMBYTE_FORCE_INLINE explicit BufferedFileWriter(StormByte::Safe::String path,
 							Parameters parameters = {}):
 						BufferedLocationWriter(std::move(path), Location::Local,
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
@@ -175,7 +175,7 @@ namespace StormByte {
 					 *
 					 * The base type is used as is, so usability is the real path probe.
 					 */
-					StormByte::Shared<StormByte::System::Device> OriginDevice() const override;
+					StormByte::Safe::Shared<StormByte::System::Device> OriginDevice() const override;
 
 					/**
 					 * @brief On-disk size or the write cursor, whichever is larger.

@@ -43,11 +43,13 @@
 
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/byte_size.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/string.hxx>
+#include <StormByte/telemetry.hxx>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <string_view>
 #include <string>
 
 /**
@@ -64,7 +66,7 @@ namespace StormByte {
 
 		/**
 		 * @class Telemetry
-		 * @brief Base session counters. Offices call @ref DeltaOperation.
+		 * @brief Buffer session counters layered on Base's named clocks.
 		 *
 		 * @par MeanRate
 		 * Octets per second of requested user operations, not of the
@@ -77,10 +79,64 @@ namespace StormByte {
 		 * duration. Flatten prints @ref StormByte::ByteSize IEC text
 		 * plus "/s".
 		 *
-		 * Rate fields are atomics. @ref DeltaOperation takes no mutex.
+		 * Rate accumulators are atomic. Each concurrent thread/depth receives
+		 * a distinct Base clock so the clock's Start/Stop pair is not shared.
 		 */
-		class STORMBYTE_BUFFER_PUBLIC Telemetry {
+		class STORMBYTE_BUFFER_PUBLIC Telemetry: public StormByte::Telemetry {
 			public:
+				/**
+				 * @class OperationSample
+				 * @brief Measures one operation with a Base named clock.
+				 */
+				class OperationSample {
+					public:
+						/**
+						 * @brief Copy construction is disabled.
+					 */
+						OperationSample(const OperationSample&) = delete;
+						/**
+						 * @brief Transfers the active sample on its creating thread.
+					 * @param other Sample to take.
+					 */
+						OperationSample(OperationSample&& other) noexcept;
+						/**
+						 * @brief Copy assignment is disabled.
+					 */
+						OperationSample& operator=(const OperationSample&) = delete;
+						/**
+						 * @brief Move assignment is disabled.
+						 */
+						OperationSample& operator=(OperationSample&&) = delete;
+
+						/**
+						 * @brief Stops the clock and records a committed operation.
+						 * @note Destroy on the thread that created this sample.
+						 */
+						~OperationSample() noexcept;
+
+						/**
+						 * @brief Includes this sample in the rate calculation.
+						 * @param bytes Bytes delivered or accepted by the operation.
+						 */
+						void Commit(StormByte::ByteSize bytes) noexcept;
+
+					private:
+						friend class Telemetry;
+
+						/**
+						 * @brief Starts a per-thread Base clock for one operation.
+						 * @param owner Telemetry receiving the sample.
+						 */
+						explicit OperationSample(Telemetry& owner);
+
+						Telemetry& m_owner; ///< Telemetry receiving the sample.
+						StormByte::Clock& m_clock; ///< Base clock assigned to this call.
+						std::chrono::microseconds m_before; ///< Clock duration before this call.
+						std::size_t* m_depth; ///< Per-thread nesting depth.
+						StormByte::ByteSize m_bytes {0}; ///< Committed operation bytes.
+						bool m_committed {false}; ///< Whether to include the sample.
+				};
+
 				/**
 				 * @brief Virtual destructor. Out-of-line for the DLL boundary.
 				 */
@@ -95,17 +151,23 @@ namespace StormByte {
 				StormByte::ByteSize MeanRate() const noexcept;
 
 				/**
-				 * @brief Flatten counters. Safe across the DLL boundary.
-				 * @return Owned @ref StormByte::String::String.
+				 * @brief Starts measuring an operation with Base's named clock drawer.
+				 * @return A scope sample. Call Commit only when the operation counts.
 				 */
-				virtual operator StormByte::String::String() const = 0;
+				OperationSample MeasureOperation();
 
 				/**
-				 * @brief Flatten via @c StormByte::String::String in this TU.
+				 * @brief Flatten counters. Safe across the DLL boundary.
+				 * @return Owned @ref StormByte::Safe::String.
+				 */
+				virtual operator StormByte::Safe::String() const = 0;
+
+				/**
+				 * @brief Flatten via @c StormByte::Safe::String in this TU.
 				 * @return @c std::string on the caller heap.
 				 */
 				STORMBYTE_FORCE_INLINE operator std::string() const {
-					return static_cast<std::string>(static_cast<StormByte::String::String>(*this));
+					return static_cast<std::string>(static_cast<StormByte::Safe::String>(*this));
 				}
 
 			protected:
@@ -120,11 +182,11 @@ namespace StormByte {
 				Telemetry& operator=(Telemetry&&) = delete;
 
 				/**
-				 * @brief Accumulate one requested operation and refresh @ref MeanRate.
+				 * @brief Accumulate the committed bytes and duration from a Base clock.
 				 * @param bytes Octets this operation delivered or accepted.
-				 * @param elapsed Duration of that operation. 0 does not divide.
+				 * @param elapsed Duration recorded by its named Base clock.
 				 */
-				void DeltaOperation(StormByte::ByteSize bytes, std::chrono::microseconds elapsed) noexcept;
+				void RecordOperation(StormByte::ByteSize bytes, std::chrono::microseconds elapsed) noexcept;
 
 			private:
 				friend class Bridge;
@@ -166,7 +228,7 @@ namespace StormByte {
 				 * @brief Flatten base read counters.
 				 * @return IEC ByteSize text. MeanRate ends with /s.
 				 */
-				operator StormByte::String::String() const override;
+				operator StormByte::Safe::String() const override;
 
 			protected:
 				friend class Bridge;
@@ -206,7 +268,7 @@ namespace StormByte {
 				 * @brief Flatten base write counters.
 				 * @return IEC ByteSize text. MeanRate ends with /s.
 				 */
-				operator StormByte::String::String() const override;
+				operator StormByte::Safe::String() const override;
 
 			protected:
 				friend class Bridge;

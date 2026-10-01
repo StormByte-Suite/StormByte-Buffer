@@ -43,7 +43,7 @@
 
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/typedefs.hxx>
-#include <StormByte/string/string.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <condition_variable>
 #include <deque>
@@ -311,7 +311,7 @@ namespace StormByte::Buffer {
 			 * @param byte_limit Max bytes to include (0 → no limit).
 			 * @return Formatted diagnostic string.
 			 */
-			StormByte::String::String HexDump(const StormByte::ByteSize& columns = 16,
+				StormByte::Safe::String HexDump(const StormByte::ByteSize& columns = 16,
 								const StormByte::ByteSize& byte_limit = 0) const noexcept;
 
 			/** @} */
@@ -468,7 +468,7 @@ namespace StormByte::Buffer {
 			 * @param columns Bytes per line.
 			 * @return Formatted lines (no header).
 			 */
-			static StormByte::String::String FormatHexLines(std::span<const std::byte> data,
+			static StormByte::Safe::String FormatHexLines(std::span<const std::byte> data,
 											StormByte::ByteSize start_offset,
 											StormByte::ByteSize columns) noexcept;
 
@@ -538,7 +538,7 @@ namespace StormByte::Buffer {
 			mutable StormByte::ByteSize m_position_offset{0};	///< Logical read offset
 			bool m_closed{false};							///< Closed-for-writes flag
 			bool m_error{false};							///< Permanent error flag
-			StormByte::String::String m_error_message;		///< Optional error detail
+			StormByte::Safe::String m_error_message;		///< Optional error detail
 
 			mutable StormByte::BinaryData m_data_cache;				///< Cache for @ref ReadOnly::Data()
 			mutable std::shared_mutex m_mutex;				///< Shared for readers, exclusive for writers

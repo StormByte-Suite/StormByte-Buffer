@@ -230,7 +230,7 @@ namespace StormByte {
 					 * @brief Flatten base and IO read counters.
 					 * @return IEC ByteSize text. MeanRate ends with /s.
 					 */
-					operator StormByte::String::String() const override;
+					operator StormByte::Safe::String() const override;
 
 				protected:
 					friend class StormByte::Buffer::Backend::IO::BufferedReader;
@@ -433,7 +433,7 @@ namespace StormByte {
 					 * @brief Flatten base and IO write counters.
 					 * @return IEC ByteSize text. MeanRate ends with /s.
 					 */
-					operator StormByte::String::String() const override;
+					operator StormByte::Safe::String() const override;
 
 				protected:
 					friend class StormByte::Buffer::Backend::IO::BufferedWriter;
