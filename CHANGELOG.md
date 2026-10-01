@@ -24,34 +24,28 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
-- **Breaking:** Port Buffer to StormByte Base 2.0.0: public owned text is `StormByte::Safe::String` / `Safe::WString`, owners and clonable types live in `StormByte::Safe`, and Buffer telemetry derives from Base `StormByte::Telemetry` and records operation rates through its named clocks. Buffer exceptions accept Base-owned `Safe::String` messages.
-
 ### Fixed
 
 ### Removed
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-10-01
+## [2.0.0] - 2026-10-02
 
 ### Added
 
 - `option(BUILD_SHARED_LIBS "Build shared libraries" ON)` in the project root. Shared is the default so a consumer can redistribute without triggering LGPL static-link obligations. Static is opt-in (`-DBUILD_SHARED_LIBS=OFF`). CI passes `-DBUILD_SHARED_LIBS=ON`. Third-party StormByte pins pass `ENABLE_TEST=OFF`.
-- Nested `Parameters` on `BufferedReader`, `BufferedLocationReader`, `BufferedFileReader`, `BufferedWriter`, `BufferedLocationWriter` and `BufferedFileWriter`. Each level declares its own type (leaves inherit the parent and add nothing). Knobs are optional: omitted means the previous default; all device knobs omitted means `Setup()` probes. Brace-init and a named `Parameters` object are both valid. Variadic knobs resolve in the caller under `STORMBYTE_FORCE_INLINE`; the DLL sees only numbers and a probe flag.
-- Knob types `ReadAhead`, `MaxMemory`, `MaxWait`, `WriteChunk`, `BackPressure` in `parameters.hxx`.
-- `BufferedReader` page cache. Consumed bytes can stay in RAM up to `MaxMemory`. CollectGarbage evicts farthest from `Tell`. Readahead and the page map work together; a later `Seek` into a live page is served from cache.
-- Reader logical seek. `Seek` updates `Tell` immediately. If the target is already cached, the origin is not moved. When the next `Read` runs off the cached range, one real `OriginSeek` resumes prefetch. Documented on the public reader: `Tell` never lies.
-- `BufferedWriter` `MaxMemory` and a dirty page map. Writes are lazy until `MaxMemory`, `Flush` or `Close`. Typical case is a nearby backward correction plus continue-at-Tell. Far-future islands are supported while RAM lasts; eviction prefers the oldest dirty page behind the origin cursor (a real write, possibly with a real seek).
-- Writer logical seek. Same idea as the reader: `Seek` is logical. A patch that lands on a dirty page does not touch the device. Materializing a page (evict / flush / close) is when the origin moves.
-- Layered telemetry in `StormByte::Buffer` (`telemetry.hxx`) and `StormByte::Buffer::IO` (`io/telemetry.hxx`). Buffer `ReadTelemetry` / `WriteTelemetry` derive from Base `StormByte::Telemetry`, use its named clocks for operation timing, and hold delivered/written bytes. IO types add cache/origin/seek/wait counters. `MeanRate` is the caller-visible effective rate (`ByteSize/s`), including cache hits; it is not device throughput.
-- `BufferedReader::Telemetry()` / `BufferedWriter::Telemetry()` return `const StormByte::Safe::Shared<…>`. Same object for the life of the office; the handle cannot be reseated. A leaf may widen the dynamic type via `CreateTelemetry()`. Accumulators do not reset on Close. Writer public `Flush` (and the Flush inside `Close`) counts toward `MeanRate`; internal worker / GC drains do not.
-- Flatten: `operator StormByte::Safe::String` (out of line) and `STORMBYTE_FORCE_INLINE operator std::string()` so `Logger << *telemetry` stays on the caller TU.
+- Nested `Parameters` on all buffered reader/writer levels, with knobs `ReadAhead`, `MaxMemory`, `MaxWait`, `WriteChunk` and `BackPressure`. Omitted knobs retain the previous defaults; omitting all device knobs makes `Setup()` probe. Brace-init and named `Parameters` are supported. Variadic knobs resolve in the caller under `STORMBYTE_FORCE_INLINE`; the DLL receives only numbers and a probe flag.
+- `BufferedReader` page cache and logical seek. Consumed bytes remain in RAM up to `MaxMemory`; garbage collection evicts farthest from `Tell`. `Seek` updates `Tell` immediately, avoids moving the origin on a cache hit, and resumes prefetch with one `OriginSeek` when a later read leaves the cached range. `Tell` never lies.
+- `BufferedWriter` dirty-page cache and logical seek. Writes are lazy until `MaxMemory`, `Flush` or `Close`; nearby corrections and far-future islands are supported while memory allows. Eviction prefers the oldest dirty page behind the origin cursor. `Seek` is logical; materializing a page (eviction, flush or close) moves the origin.
+- Layered telemetry in `StormByte::Buffer` and `StormByte::Buffer::IO`. Read/write counters hold delivered/accepted bytes; IO telemetry adds cache/origin/seek/wait counters. `MeanRate` is the caller-visible effective rate (`ByteSize/s`), including cache hits, not device throughput. Telemetry handles are `const StormByte::Safe::Shared<…>`, stable for the life of the office; accumulators do not reset on close. Public writer `Flush` and the flush in `Close` count toward the rate; internal worker/GC drains do not. Flattening provides `operator StormByte::Safe::String` out of line and caller-side `STORMBYTE_FORCE_INLINE operator std::string()`.
 - `BufferedReader::Available()`. Contiguous cached bytes at `Tell`. Does not call `OriginPull` / `OriginSeek` and does not wait for prefetch.
 - `StormByte::Buffer::Pumper`. Takes a `Bridge` by move and runs `Passthrough` on a worker until EoF or failure. Starts in the constructor; the destructor joins. Nested `Parameters` with knobs `Chunk` and `HighWater`. `Chunk` `0` is automatic cycle size, not Bridge “current contents”. `HighWater` applies to the **input** only: omitted = `0` if the source is IO, otherwise the backend default (constexpr in the PIMPL `.cxx`); explicit `0` = no Pumper cap (intended when the IO source already limits itself). Non-IO sources are unbounded by design. `Toggle` pauses/resumes. `Cancel` is terminal (`Failed`, no restart). Telemetry is forwarded from the owned Bridge.
 - `StormByte::Buffer::Pipe` (`pipe.hxx` / `pipe.cxx`). Abstract stream stage (`StormByte::Safe::Clonable` + `StormByte::Safe::Unique<Pipe>`). Copyable and movable (special members out of line). `Run(ReadOnly&, WriteOnly&, const Shared<Logger::Log>&)`. `Clone` and `Move` are public and must be implemented by the leaf with `Unique::MakePointer` in the leaf TU.
 
 ### Changed
 
+- **Breaking:** Port Buffer to StormByte Base 2.0.0. Owned text is now `StormByte::Safe::String` / `Safe::WString`; pointer and clonable APIs use `StormByte::Safe`; Buffer telemetry derives from Base `StormByte::Telemetry` and measures operations with its named clocks; Buffer exceptions accept Base-owned `Safe::String` messages.
 - **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
 - **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
 - **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
@@ -63,7 +57,7 @@ If you landed here from a release link and have not read the tree:
   - `Setup()` stays `final`, calls `OriginDevice()` once, asks `OriginDeviceUsable()` and only then applies `Window()` on the dynamic object. When the device is not usable the per-leaf defaults (`ReadAhead`, or `WriteChunk` / `BackPressure` / `MaxMemory`) are kept. The device is never copied or sliced to the base type.
 - **Breaking:** `BufferedFileReader` and `BufferedFileWriter` are `final`. `CreateDevice()` is gone. `Path()` (`const String&`) and `Location()` (`IO::Location`) are set on `BufferedReader` / `BufferedWriter` and do not change. A file leaf passes `Location::Local`. A socket on the lower layer can pass `Location::Remote`. The file leaves keep the plain `System::Device` and the real path probe, so their windows and defaults are unchanged.
 - **Breaking:** IO constructors no longer take positional windows (`read_ahead`, `max_memory`, `write_chunk`, `back_pressure`, `max_wait`). One constructor per leaf: path plus that class’s `Parameters` (default `{}` = probe). Explicit zeros stay zeros; they do not probe.
-- **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`. `ReadError` is `StormByte.Buffer.Read`. `WriteError` is `StormByte.Buffer.Write`. `Component` is gone. Destructors are defined in this module.
+- **Breaking:** `Buffer::Exception` uses `Exception::Path{"Buffer"}`. `what()` is `StormByte.Buffer: message`; `ReadError` and `WriteError` use `StormByte.Buffer.Read` and `StormByte.Buffer.Write`. Buffer-specific destructors are defined in this module.
 - **Breaking:** `Bridge` is a manual transfer again, not a worker. Public `Passthrough(ByteSize, Operation)` is the only transfer; `Operation::{Blocking, NonBlocking}` applies to the **read** tip; write `TryAgain` is retried until that call completes. `n == 0` is current contents (`Available()`). Non-IO tips are `ReadOnly&` / `WriteOnly&`. IO tips are stolen by move as the concrete leaf. `Failed()` is sticky. Continuous pumping is `Pumper`.
 - Reader `Seek` is no longer “always `OriginSeek`”. A cache hit is O(1) on the origin. A miss still costs a real seek plus whatever the device does.
 - Writer `Seek` exists and is part of the public contract. It is not guaranteed O(1) when the target is not in the dirty map or when eviction must drain pages first.
