@@ -4,12 +4,12 @@
 ![C++26](https://img.shields.io/badge/C%2B%2B-26-00599C?logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.28+-064F8C?logo=cmake&logoColor=white)
 ![License: LGPL v3 or commercial](https://img.shields.io/badge/License-LGPL_v3_or_commercial-blue.svg)
-[![CI](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml)
+[![CI](https://github.com/StormByte-Suite/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormByte-Suite/StormByte-Buffer/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-StormBytePP-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/StormBytePP)
 
 This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pumper, pipelines and buffered I/O for the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Public headers live under `StormByte/buffer/`.
+It depends on [StormByte-String 1.0.0](https://github.com/StormByte-Suite/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network, String and System are **other repositories**. This one does not implement them.
 
@@ -51,16 +51,16 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 
 | Module | Role | API |
 | --- | --- | --- |
-| [Base](https://github.com/StormBytePP/StormByte) | Exceptions, Expected, serialization, UUID, concepts | [/StormByte](https://dev.stormbyte.org/StormByte) |
-| **Buffer** | This repository | [/StormByte-Buffer](https://dev.stormbyte.org/StormByte-Buffer) |
-| [Config](https://github.com/StormBytePP/StormByte-Config) | Human-readable text and versioned binary documents | [/StormByte-Config](https://dev.stormbyte.org/StormByte-Config) |
-| [Crypto](https://github.com/StormBytePP/StormByte-Crypto) | Hash, compress, encrypt, sign — Crypto++ stays private | [/StormByte-Crypto](https://dev.stormbyte.org/StormByte-Crypto) |
-| [Database](https://github.com/StormBytePP/StormByte-Database) | One API over SQLite, PostgreSQL and MariaDB | [/StormByte-Database](https://dev.stormbyte.org/StormByte-Database) |
-| [Logger](https://github.com/StormBytePP/StormByte-Logger) | Stream logger with levels, headers, components and `Scope` | [/StormByte-Logger](https://dev.stormbyte.org/StormByte-Logger) |
-| [Multimedia](https://github.com/StormBytePP/StormByte-Multimedia) | Decode, encode and containers without raw FFmpeg types | [/StormByte-Multimedia](https://dev.stormbyte.org/StormByte-Multimedia) |
-| [Network](https://github.com/StormBytePP/StormByte-Network) | Framed packets, Client/Server, IPv4/IPv6 TCP | [/StormByte-Network](https://dev.stormbyte.org/StormByte-Network) |
-| [String](https://github.com/StormBytePP/StormByte-String) | Owned UTF-8 / wide text that can cross a DLL boundary | [/StormByte-String](https://dev.stormbyte.org/StormByte-String) |
-| [System](https://github.com/StormBytePP/StormByte-System) | Processes, pipes, `Device`, host and environment | [/StormByte-System](https://dev.stormbyte.org/StormByte-System) |
+| [Base](https://github.com/StormByte-Suite/StormByte) | Exceptions, Expected, serialization, UUID, concepts | [/StormByte](http://suite.stormbyte.org/StormByte) |
+| **Buffer** | This repository | [/StormByte-Buffer](http://suite.stormbyte.org/StormByte-Buffer) |
+| [Config](https://github.com/StormByte-Suite/StormByte-Config) | Human-readable text and versioned binary documents | [/StormByte-Config](http://suite.stormbyte.org/StormByte-Config) |
+| [Crypto](https://github.com/StormByte-Suite/StormByte-Crypto) | Hash, compress, encrypt, sign — Crypto++ stays private | [/StormByte-Crypto](http://suite.stormbyte.org/StormByte-Crypto) |
+| [Database](https://github.com/StormByte-Suite/StormByte-Database) | One API over SQLite, PostgreSQL and MariaDB | [/StormByte-Database](http://suite.stormbyte.org/StormByte-Database) |
+| [Logger](https://github.com/StormByte-Suite/StormByte-Logger) | Stream logger with levels, headers, components and `Scope` | [/StormByte-Logger](http://suite.stormbyte.org/StormByte-Logger) |
+| [Multimedia](https://github.com/StormByte-Suite/StormByte-Multimedia) | Decode, encode and containers without raw FFmpeg types | [/StormByte-Multimedia](http://suite.stormbyte.org/StormByte-Multimedia) |
+| [Network](https://github.com/StormByte-Suite/StormByte-Network) | Framed packets, Client/Server, IPv4/IPv6 TCP | [/StormByte-Network](http://suite.stormbyte.org/StormByte-Network) |
+| [String](https://github.com/StormByte-Suite/StormByte-String) | Owned UTF-8 / wide text that can cross a DLL boundary | [/StormByte-String](http://suite.stormbyte.org/StormByte-String) |
+| [System](https://github.com/StormByte-Suite/StormByte-System) | Processes, pipes, `Device`, host and environment | [/StormByte-System](http://suite.stormbyte.org/StormByte-System) |
 
 ## Table of Contents
 
@@ -89,14 +89,14 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 ## Documentation
 
 - This README: how to build, ownership, examples.
-- Doxygen class reference: [https://dev.stormbyte.org/StormByte-Buffer/](https://dev.stormbyte.org/StormByte-Buffer/).
+- Doxygen class reference: [http://suite.stormbyte.org/StormByte-Buffer/](http://suite.stormbyte.org/StormByte-Buffer/).
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer (vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0)), [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) when pipeline pipes take a logger.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-String 1.0.0](https://github.com/StormByte-Suite/StormByte-String/releases/tag/1.0.0) or newer (vendors [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0)), [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) when pipeline pipes take a logger.
 
 ```sh
-git clone --recursive https://github.com/StormBytePP/StormByte-Buffer.git
+git clone --recursive https://github.com/StormByte-Suite/StormByte-Buffer.git
 cd StormByte-Buffer
 cmake -S . -B build
 cmake --build build

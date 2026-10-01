@@ -10,7 +10,7 @@ string(STRIP "${_sb_ver}" _sb_ver)
 project("StormByte C++ Library: Buffer module"
 	VERSION ${_sb_ver}
 	DESCRIPTION "StormByte-Buffer is the buffer module of the StormByte C++ suite."
-	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
+	HOMEPAGE_URL "http://suite.stormbyte.org/StormByte-Buffer"
 )
 
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)

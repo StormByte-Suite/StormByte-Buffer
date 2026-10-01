@@ -9,14 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte Logger](https://github.com/StormBytePP/StormByte-Logger) and [StormByte System](https://github.com/StormBytePP/StormByte-System), which bring Base and String. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Logger](https://github.com/StormByte-Suite/StormByte-Logger) and [StormByte System](https://github.com/StormByte-Suite/StormByte-System), which bring Base and String. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::BinaryData`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
 If you landed here from a release link and have not read the tree:
 
-- What this module is, how to build it, and short examples: [README.md](https://github.com/StormBytePP/StormByte-Buffer/blob/master/README.md)
-- License: GNU Lesser General Public License version 3 or later, [LICENSE](https://github.com/StormBytePP/StormByte-Buffer/blob/master/LICENSE)
+- What this module is, how to build it, and short examples: [README.md](https://github.com/StormByte-Suite/StormByte-Buffer/blob/master/README.md)
+- License: GNU Lesser General Public License version 3 or later, [LICENSE](https://github.com/StormByte-Suite/StormByte-Buffer/blob/master/LICENSE)
 
 ## [Unreleased]
 
@@ -28,9 +28,9 @@ If you landed here from a release link and have not read the tree:
 
 ### Removed
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-09-30
+## [2.0.0] - 2026-10-01
 
 ### Added
 
@@ -87,7 +87,7 @@ If you landed here from a release link and have not read the tree:
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
 
-[2.0.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...2.0.0
+[2.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.4.0...2.0.0
 
 ## [1.4.0] - 2026-09-23
 
@@ -125,7 +125,7 @@ If you landed here from a release link and have not read the tree:
 - `BufferedMeteredFileTests`. Selective override example (`BytesRead` / `BytesWritten`).
 - Bridge coverage for pipe close-while-started, `high_water` 0, and the two-argument writer ctors (`test_io_uncapped_ctor`, `test_buf_to_io_uncapped_ctor`).
 
-[1.4.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...1.4.0
+[1.4.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.3.0...1.4.0
 
 ## [1.3.0] - 2026-09-20
 
@@ -141,7 +141,7 @@ If you landed here from a release link and have not read the tree:
 - `test_sink_pop_key`, `test_sink_query_unwired`, `test_sink_query_wired`.
 - Hopper and Sink test files ordered by section name, then by test name.
 
-[1.3.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.2.0...1.3.0
+[1.3.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.2.0...1.3.0
 
 ## [1.2.0] - 2026-09-17
 
@@ -166,7 +166,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
-- Optional Logger pin is [1.2.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.2.0)
+- Optional Logger pin is [1.2.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/1.2.0)
   (`Scope` and hierarchical components).
 
 ### Tests
@@ -176,7 +176,7 @@ If you landed here from a release link and have not read the tree:
 - `test_sink_unnotify_before_cv_dies`, `test_sink_stream_operators`.
   Existing Sink tests use `To` / `>>` / `<<` instead of `Bind`.
 
-[1.2.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.2...1.2.0
+[1.2.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.1.2...1.2.0
 
 ## [1.1.2] - 2026-09-16
 
@@ -189,15 +189,15 @@ If you landed here from a release link and have not read the tree:
 - `Sink::Bind(key)` of a hopper this Sink already holds attaches the other Sink as a co-writer. `Sink::Eof` then closes that hopper only when the last writer closes, so extra producers can still `Push`. No new public methods.
 - `Sink::Bind(key)` does not add a writer if the other Sink already writes that hopper. A second Bind of the same producer no longer leaves the hopper open after one `Eof`. `test_sink_rebind_same_writer_eof` waits up to 1s for that EoF (the remuxer hang).
 
-[1.1.2]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.1...1.1.2
+[1.1.2]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.1.1...1.1.2
 
 ## [1.1.1] - 2026-09-15
 
 ### Changed
 
-- Bundled StormByte Logger is [1.1.1](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.1) (and transitively [StormByte Base 1.1.1](https://github.com/StormBytePP/StormByte/releases/tag/1.1.1)). The declared requirement stays Logger [1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) or newer.
+- Bundled StormByte Logger is [1.1.1](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/1.1.1) (and transitively [StormByte Base 1.1.1](https://github.com/StormByte-Suite/StormByte/releases/tag/1.1.1)). The declared requirement stays Logger [1.1.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/1.1.0) or newer.
 
-[1.1.1]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.0...1.1.1
+[1.1.1]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.1.0...1.1.1
 
 ## [1.1.0] - 2026-09-13
 
@@ -209,7 +209,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
-- Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0)).
+- Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormByte-Suite/StormByte/releases/tag/1.1.0)).
 - Routed range and iterator byte APIs through StormByte Base type concepts (`Type::ByteInputRange`, `Type::ByteInputIterator`, `Type::SentinelFor`, `Type::SameAs`) instead of local standard-library constraints.
 - Limited `Hopper<T>` and `Sink<T>` null-item filtering to `Type::NullablePointer` so only pointer-like values that can be tested for emptiness use the `!item` path.
 - Documented `Sink::EoF()` contract: with hoppers, evaluates `true` when all hoppers are empty and `Hopper::EoF()` is `true`, even if this `Sink` itself did not call `Eof()`; binding a new key after `EoF()` returned `true` may return `EoF()` to `false`.
@@ -221,7 +221,7 @@ If you landed here from a release link and have not read the tree:
 - Closed `Sink` and marked hoppers `Eof` atomically under `m_mutex` in `Sink::Eof` and checked closed state and `consumer.m_consumer` under lock in `Sink::Bind` to prevent concurrent `Bind` calls from creating un-marked hoppers or skipping consumer `Notify`.
 - Marked `Sink` closed in destructor to safely unblock threads waiting in `Push` and `Pop`.
 
-[1.1.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.0.0..1.1.0
+[1.1.0]: https://github.com/StormByte-Suite/StormByte-Buffer/releases/tag/1.0.0..1.1.0
 
 ## [1.0.0] - 2026-09-05
 
@@ -252,4 +252,4 @@ Initial public release of StormByte Buffer.
 - Pipeline stages must `out.Close()` or `out.SetError()` when finished.
 - Needs a C++26 compiler and StormByte Base ≥ 1.0.0.
 
-[1.0.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.0.0
+[1.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/releases/tag/1.0.0
