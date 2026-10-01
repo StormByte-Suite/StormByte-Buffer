@@ -353,7 +353,7 @@ int main() {
 - `Operation` applies to the **read** tip only: `Blocking` waits for `n` or EoF; `NonBlocking` takes what is available now, up to `n`.
 - `n == 0` is current contents (`Available()` on IO does not touch the origin).
 - `State` is `Open`, `Closed` or `Failed`. `Failed()` is only a real tip fault. A moved-from Bridge is `Closed`, not `Failed`.
-- `Close()` ends the session. Owned adapters and stolen IO leaves are released. After `Close`, a consumed source EoF, or a move-from, the instance is `Closed` and cannot be re-armed. Construct a new Bridge to transfer again. `Close()` is idempotent and does not set `Failed`.
+- `Close()` ends the session. Borrowed in-memory tips are detached and stolen IO leaves are released. After `Close`, a consumed source EoF, or a move-from, the instance is `Closed` and cannot be re-armed. Construct a new Bridge to transfer again. `Close()` is idempotent and does not set `Failed`.
 - A NonBlocking `Passthrough` that returns `0` is not the end of the session.
 - Telemetry: the Bridge always keeps a `Shared` copy of the read and write counters. Non-IO tips use a basic telemetry owned and updated by the Bridge. IO tips donate the leaf handle at attach; the leaf updates that object. After `Close` the same handles remain valid. A `Shared` you already copied stays valid when the Bridge dies.
 

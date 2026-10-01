@@ -50,7 +50,6 @@
 #include <StormByte/safe_pointers.hxx>
 #include <StormByte/type_traits.hxx>
 
-#include <memory>
 #include <mutex>
 #include <utility>
 
@@ -64,33 +63,6 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
-		class ExternalBufferReader;
-		class ExternalBufferWriter;
-
-		/**
-		 * @struct ExternalReaderDeleter
-		 * @brief Destroys a non-IO read adapter in this module.
-		 */
-		struct STORMBYTE_BUFFER_PUBLIC ExternalReaderDeleter {
-			/**
-			 * @brief Destroy @p ptr. No-op if null.
-			 * @param ptr Adapter or null.
-			 */
-			void operator()(ExternalBufferReader* ptr) const noexcept;
-		};
-
-		/**
-		 * @struct ExternalWriterDeleter
-		 * @brief Destroys a non-IO write adapter in this module.
-		 */
-		struct STORMBYTE_BUFFER_PUBLIC ExternalWriterDeleter {
-			/**
-			 * @brief Destroy @p ptr. No-op if null.
-			 * @param ptr Adapter or null.
-			 */
-			void operator()(ExternalBufferWriter* ptr) const noexcept;
-		};
-
 		/**
 		 * @class Bridge
 		 * @brief Manual bridge between two StormByte-Buffer ends.
@@ -101,8 +73,7 @@ namespace StormByte {
 		 *
 		 * @par Ownership
 		 * Non-IO tips are @ref ReadOnly / @ref WriteOnly references. The
-		 * buffers must outlive the Bridge. Adapters over those tips are
-		 * owned here and are not part of the public contract. IO tips are
+		 * buffers must outlive the Bridge. IO tips are
 		 * taken by move as the concrete leaf so a second reader or writer
 		 * cannot race @ref Passthrough. Stolen leaves live in
 		 * @c StormByte::Unique on Base's heap.
@@ -116,7 +87,7 @@ namespace StormByte {
 		 * @ref State::Failed the instance cannot be re-armed; construct
 		 * a new Bridge to transfer again.
 		 *
-		 * @ref Close releases adapters and stolen IO leaves. IO
+		 * @ref Close detaches non-IO tips and releases stolen IO leaves. IO
 		 * destructors close the origin, so Windows can unlink the path.
 		 * In-memory tips do not lock a file. Idempotent. @ref Close does
 		 * not set @ref Failed. A session that is already @ref State::Failed
@@ -175,7 +146,7 @@ namespace StormByte {
 				};
 
 				/**
-				 * @brief Two non-IO tips. Referenced. Adapters owned here.
+				 * @brief Two non-IO tips. Referenced, not owned.
 				 * @param in Source. Must outlive *this.
 				 * @param out Sink. Must outlive *this.
 				 */
@@ -231,7 +202,7 @@ namespace StormByte {
 				Bridge(Bridge&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Releases adapters and stolen IO tips.
+				 * @brief Destructor. Releases stolen IO tips.
 				 */
 				~Bridge() noexcept;
 
@@ -247,7 +218,7 @@ namespace StormByte {
 				/**
 				 * @brief Release owned tips. Mark @ref State::Closed if it was Open.
 				 *
-				 * Drops non-IO adapters and stolen IO leaves. IO
+				 * Detaches non-IO tips and drops stolen IO leaves. IO
 				 * destructors close the origin. Idempotent. Does not
 				 * set @ref Failed. A @ref State::Failed session stays
 				 * Failed and still drops the tips. After @ref State::Closed
@@ -312,13 +283,13 @@ namespace StormByte {
 
 			private:
 				/**
-				 * @brief Own an adapter over a non-IO source. Defined in this module.
+				 * @brief Attach a non-owning non-IO source. Defined in this module.
 				 * @param in Source. Must outlive *this.
 				 */
 				void AttachNonIoIn(ReadOnly& in) noexcept;
 
 				/**
-				 * @brief Own an adapter over a non-IO sink. Defined in this module.
+				 * @brief Attach a non-owning non-IO sink. Defined in this module.
 				 * @param out Sink. Must outlive *this.
 				 */
 				void AttachNonIoOut(WriteOnly& out) noexcept;
@@ -340,7 +311,7 @@ namespace StormByte {
 				void CacheWriteTelemetry() noexcept;
 
 				/**
-				 * @brief Drop adapters and stolen leaves. Does not change @ref State.
+				 * @brief Detach non-IO tips and drop stolen leaves. Does not change @ref State.
 				 */
 				void ReleaseTips() noexcept;
 
@@ -391,8 +362,8 @@ namespace StormByte {
 					CacheWriteTelemetry();
 				}
 
-				std::unique_ptr<ExternalBufferReader, ExternalReaderDeleter> m_ext_in;	///< Non-IO read adapter. Owned.
-				std::unique_ptr<ExternalBufferWriter, ExternalWriterDeleter> m_ext_out;	///< Non-IO write adapter. Owned.
+				ReadOnly* m_ext_in {nullptr};											///< Non-IO source. Borrowed.
+				WriteOnly* m_ext_out {nullptr};											///< Non-IO sink. Borrowed.
 				StormByte::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
 				StormByte::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
 				StormByte::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.

@@ -40,7 +40,6 @@
  */
 
 #include <StormByte/buffer/bridge.hxx>
-#include <StormByte/buffer/external.hxx>
 
 #include <chrono>
 #include <utility>
@@ -57,18 +56,6 @@ namespace {
 	}
 }
 
-void ExternalReaderDeleter::operator()(ExternalBufferReader* ptr) const noexcept {
-	if (!ptr)
-		return;
-	std::unique_ptr<ExternalBufferReader, StormByte::Heap::ObjectDeleter> reclaim {ptr};
-}
-
-void ExternalWriterDeleter::operator()(ExternalBufferWriter* ptr) const noexcept {
-	if (!ptr)
-		return;
-	std::unique_ptr<ExternalBufferWriter, StormByte::Heap::ObjectDeleter> reclaim {ptr};
-}
-
 Bridge::Bridge(ReadOnly& in, WriteOnly& out) noexcept:
 	m_owned_read(MakeReadTelemetry()),
 	m_owned_write(MakeWriteTelemetry()) {
@@ -77,19 +64,13 @@ Bridge::Bridge(ReadOnly& in, WriteOnly& out) noexcept:
 }
 
 void Bridge::AttachNonIoIn(ReadOnly& in) noexcept {
-	StormByte::Unique<ExternalBufferReader> owned =
-		StormByte::Unique<ExternalBufferReader>::MakePointer<ExternalBufferReader>(in);
-	std::unique_ptr<ExternalBufferReader, StormByte::Heap::ObjectDeleter> heap {std::move(owned)};
-	m_ext_in.reset(heap.release());
+	m_ext_in = &in;
 	if (!m_owned_read)
 		m_owned_read = MakeReadTelemetry();
 }
 
 void Bridge::AttachNonIoOut(WriteOnly& out) noexcept {
-	StormByte::Unique<ExternalBufferWriter> owned =
-		StormByte::Unique<ExternalBufferWriter>::MakePointer<ExternalBufferWriter>(out);
-	std::unique_ptr<ExternalBufferWriter, StormByte::Heap::ObjectDeleter> heap {std::move(owned)};
-	m_ext_out.reset(heap.release());
+	m_ext_out = &out;
 	if (!m_owned_write)
 		m_owned_write = MakeWriteTelemetry();
 }
@@ -106,8 +87,10 @@ void Bridge::CacheWriteTelemetry() noexcept {
 
 Bridge::Bridge(Bridge&& other) noexcept {
 	std::lock_guard lock(other.m_mutex);
-	m_ext_in = std::move(other.m_ext_in);
-	m_ext_out = std::move(other.m_ext_out);
+	m_ext_in = other.m_ext_in;
+	m_ext_out = other.m_ext_out;
+	other.m_ext_in = nullptr;
+	other.m_ext_out = nullptr;
 	m_io_in = std::move(other.m_io_in);
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
@@ -125,8 +108,10 @@ Bridge& Bridge::operator=(Bridge&& other) noexcept {
 		return *this;
 	std::scoped_lock lock(m_mutex, other.m_mutex);
 	ReleaseTips();
-	m_ext_in = std::move(other.m_ext_in);
-	m_ext_out = std::move(other.m_ext_out);
+	m_ext_in = other.m_ext_in;
+	m_ext_out = other.m_ext_out;
+	other.m_ext_in = nullptr;
+	other.m_ext_out = nullptr;
 	m_io_in = std::move(other.m_io_in);
 	m_io_out = std::move(other.m_io_out);
 	m_owned_read = std::move(other.m_owned_read);
@@ -139,8 +124,8 @@ Bridge& Bridge::operator=(Bridge&& other) noexcept {
 }
 
 void Bridge::ReleaseTips() noexcept {
-	m_ext_in.reset();
-	m_ext_out.reset();
+	m_ext_in = nullptr;
+	m_ext_out = nullptr;
 	m_io_in.reset();
 	m_io_out.reset();
 	m_io_in_blocking = false;
@@ -274,7 +259,7 @@ IO::Result Bridge::Push(FIFO& src) {
 		BinaryData chunk;
 		if (!src.Extract(n, chunk))
 			return { IO::Status::Failed, 0 };
-		if (!m_ext_out->Write(std::move(chunk)))
+		if (!m_ext_out->Write(StormByte::ByteSize{0}, std::move(chunk)))
 			return { IO::Status::Failed, 0 };
 		return { IO::Status::Ok, n };
 	}
