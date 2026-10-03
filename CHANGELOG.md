@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-10-02
+## [2.0.0] - 2026-10-03
 
 ### Added
 
@@ -76,12 +76,19 @@ If you landed here from a release link and have not read the tree:
 - `LockFreeRing` `Close`, `SetError`, `Clean`, `Drop` and `Consume` publish under the wait mutex. A parallel pipeline stage waiting on an intermediate ring could miss the wake and leave `Process` spinning on `IsWritable()`.
 - Doxygen: broken `\ref` on the public reader header; private storage types not listed as public API.
 - Missing virtual destructors on `BufferedLocationReader` / `BufferedLocationWriter`. Leaves stay `final` and do not declare `virtual` on the destructor.
+- `BufferedReader` cache cost on large sequential reads (also through `BufferedLocationReader` / `BufferedFileReader`). Every contiguous pull rebuilt and copied the whole accumulated span, so a sequential scan was quadratic in the span size (a 182 MB file effectively stalled with the cache on). Spans are now extended and trimmed in place:
+  - Contiguous or overlapping pulls reuse the span that opens the merged range and append only the new bytes.
+  - Cache hits and span splits copy only the requested slice instead of the whole span.
+  - Trimming the front of the span at `Tell` advances its read position and compacts lazily (amortized O(1) per evicted byte).
+  - Prefetch no longer pulls past `MaxMemory` ahead of `Tell`, avoiding a tail rebuild on every refill.
+  - Random-access semantics (overlaps, seeks, `MaxMemory`, eviction order, `ReadAhead`, telemetry, prefetch cancellation) are unchanged.
 
 ### Tests
 
 - `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
+- Reader sequential regressions: many contiguous blocks merge into one replayable span (bytes and telemetry), capped sliding window, islands bridged by an overlapping sequential pass, and a 64 MiB sequential benchmark with cache / read-ahead off, cache only, windowed and full.
 
 [2.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.4.0...2.0.0
 

@@ -49,6 +49,7 @@ using namespace StormByte::Buffer::Backend::IO;
 using Result = StormByte::Buffer::IO::Result;
 using Status = StormByte::Buffer::IO::Status;
 using FIFO = StormByte::Buffer::FIFO;
+using Position = StormByte::Buffer::Position;
 
 namespace {
 	constexpr StormByte::ByteSize PullBatch{4096};
@@ -69,6 +70,28 @@ namespace {
 
 	bool OffsetFits(const StormByte::ByteSize value) noexcept {
 		return value <= StormByte::ByteSize{static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max())};
+	}
+
+	StormByte::ByteSize SpanOffset(const FIFO& span) noexcept {
+		return span.Size() - span.Available();
+	}
+
+	bool SliceSpan(const FIFO& span, const StormByte::ByteSize skip, const StormByte::ByteSize n, FIFO& dest) {
+		if (n == StormByte::ByteSize{0})
+			return true;
+		const StormByte::ByteSize base = SpanOffset(span);
+		span.Seek(static_cast<std::ptrdiff_t>(base + skip), Position::Absolute);
+		const bool copied = span.Peek(n, dest);
+		span.Seek(static_cast<std::ptrdiff_t>(base), Position::Absolute);
+		return copied;
+	}
+
+	void TrimFront(FIFO& span, const StormByte::ByteSize n) noexcept {
+		span.Seek(static_cast<std::ptrdiff_t>(n), Position::Relative);
+		// Compact only once the dead prefix reaches a quarter of the live bytes: amortized O(1) per trimmed byte.
+		const StormByte::ByteSize dead = SpanOffset(span);
+		if (dead > StormByte::ByteSize{0} && dead * 4 >= span.Available())
+			span.Clean();
 	}
 
 	void AppendFifo(FIFO& dest, FIFO& piece) {
@@ -497,6 +520,11 @@ void BufferedReader::Worker() {
 						if (CachedBytes() >= m_max_memory)
 							break;
 					}
+					// Never prefetch past the cap ahead of Tell; that would force a tail copy on trim.
+					if (covered >= m_max_memory)
+						break;
+					if (need > m_max_memory - covered)
+						need = m_max_memory - covered;
 				}
 			}
 			if (!m_owner)
@@ -557,41 +585,46 @@ bool BufferedReader::CopyFromCache(const StormByte::ByteSize pos, const StormByt
 		return false;
 	if (n > SpanEnd(it->first, it->second) - pos)
 		return false;
-	FIFO view = it->second;
-	view.Seek(static_cast<std::ptrdiff_t>(pos - it->first), Position::Absolute);
-	return view.Peek(n, dest);
+	return SliceSpan(it->second, pos - it->first, n, dest);
 }
 
 void BufferedReader::EraseRange(const StormByte::ByteSize from, const StormByte::ByteSize to) const {
 	if (from >= to)
 		return;
 
-	auto it = m_spans.begin();
-	while (it != m_spans.end()) {
+	auto it = m_spans.upper_bound(from);
+	if (it != m_spans.begin()) {
+		const auto prev = std::prev(it);
+		if (SpanEnd(prev->first, prev->second) > from)
+			it = prev;
+	}
+
+	while (it != m_spans.end() && it->first < to) {
 		const StormByte::ByteSize start = it->first;
 		const StormByte::ByteSize end = SpanEnd(start, it->second);
-		if (end <= from || start >= to) {
-			++it;
-			continue;
+
+		if (start >= from && end > to) {
+			auto node = m_spans.extract(it);
+			TrimFront(node.mapped(), to - start);
+			node.key() = to;
+			m_spans.insert(std::move(node));
+			return;
 		}
 
 		FIFO left;
 		FIFO right;
-		if (start < from) {
-			FIFO view = it->second;
-			static_cast<void>(view.Peek(from - start, left));
-		}
-		if (end > to) {
-			FIFO view = it->second;
-			view.Seek(static_cast<std::ptrdiff_t>(to - start), Position::Absolute);
-			static_cast<void>(view.Peek(end - to, right));
-		}
+		if (start < from)
+			static_cast<void>(SliceSpan(it->second, StormByte::ByteSize{0}, from - start, left));
+		if (end > to)
+			static_cast<void>(SliceSpan(it->second, to - start, end - to, right));
 
 		it = m_spans.erase(it);
 		if (left.Available() > StormByte::ByteSize{0})
 			m_spans.emplace(start, std::move(left));
-		if (right.Available() > StormByte::ByteSize{0})
+		if (right.Available() > StormByte::ByteSize{0}) {
 			m_spans.emplace(to, std::move(right));
+			return;
+		}
 	}
 }
 
@@ -622,20 +655,23 @@ void BufferedReader::CommitSpan(const StormByte::ByteSize start, FIFO&& piece) c
 		it = m_spans.erase(it);
 	}
 
+	// The part opening the merged range is reused in place, so contiguous appends only copy new bytes.
 	FIFO merged;
 	StormByte::ByteSize cursor = merged_start;
+	for (auto& [part_start, part] : parts) {
+		if (part_start == merged_start) {
+			cursor = SpanEnd(part_start, part);
+			merged = std::move(part);
+			break;
+		}
+	}
 	while (cursor < merged_end) {
 		bool progressed = false;
 		for (auto& [part_start, part] : parts) {
 			const StormByte::ByteSize part_end = SpanEnd(part_start, part);
 			if (cursor < part_start || cursor >= part_end)
 				continue;
-			FIFO view = part;
-			view.Seek(static_cast<std::ptrdiff_t>(cursor - part_start), Position::Absolute);
-			FIFO slice;
-			static_cast<void>(view.Peek(part_end - cursor, slice));
-			if (slice.Available() > StormByte::ByteSize{0})
-				static_cast<void>(merged.Write(slice.Available(), std::move(slice)));
+			static_cast<void>(SliceSpan(part, cursor - part_start, part_end - cursor, merged));
 			cursor = part_end;
 			progressed = true;
 			break;

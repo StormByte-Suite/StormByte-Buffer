@@ -114,14 +114,14 @@ namespace {
 		return std::filesystem::temp_directory_path() / "stormbyte_buffer_hex_4m.bin";
 	}
 
-	bool WriteHexFile(const std::filesystem::path& path) {
+	bool WriteHexFile(const std::filesystem::path& path, const std::size_t size = kHexFile) {
 		std::ofstream out(path, std::ios::binary | std::ios::trunc);
 		if (!out)
 			return false;
 		std::vector<char> block(64 * 1024);
 		std::size_t off = 0;
-		while (off < kHexFile) {
-			const std::size_t n = (kHexFile - off) < block.size() ? (kHexFile - off) : block.size();
+		while (off < size) {
+			const std::size_t n = (size - off) < block.size() ? (size - off) : block.size();
 			for (std::size_t i = 0; i < n; ++i)
 				block[i] = static_cast<char>(HexAt(off + i));
 			out.write(block.data(), static_cast<std::streamsize>(n));
@@ -174,6 +174,31 @@ namespace {
 		if (!tel)
 			return nullptr;
 		return dynamic_cast<const StormByte::Buffer::IO::ReadTelemetry*>(tel.get());
+	}
+
+	/** Read sequentially in @p chunk steps until End, checking every byte. Returns bytes read or -1. */
+	long long DrainHex(BufferedFileReader& in, const std::size_t chunk) {
+		std::size_t total = static_cast<std::size_t>(in.Tell());
+		const std::size_t first = total;
+		for (;;) {
+			FIFO dest;
+			const auto got = in.Read(StormByte::ByteSize{chunk}, dest);
+			if (got.status != Status::Ok && got.status != Status::End)
+				return -1;
+			const auto bytes = Bytes(dest);
+			if (static_cast<std::size_t>(bytes.size()) != static_cast<std::size_t>(got.count))
+				return -1;
+			for (std::size_t i = 0; i < static_cast<std::size_t>(bytes.size()); ++i) {
+				if (static_cast<unsigned char>(bytes[i]) != HexAt(total + i))
+					return -1;
+			}
+			total += static_cast<std::size_t>(got.count);
+			if (in.Tell() != StormByte::ByteSize{total})
+				return -1;
+			if (got.status == Status::End || got.count < StormByte::ByteSize{chunk})
+				break;
+		}
+		return static_cast<long long>(total - first);
 	}
 }
 
@@ -623,6 +648,141 @@ int test_readahead_knobs() {
 	BufferedFileReader in(Loc(File("ahead.bin")), P(25, 1024));
 	ASSERT_EQUAL(fn, StormByte::ByteSize{25}, in.ReadAhead());
 	ASSERT_EQUAL(fn, StormByte::ByteSize{1024}, in.MaxMemory());
+	RETURN_TEST(fn, 0);
+}
+
+int test_sequential_contiguous_blocks_single_span() {
+	const std::string fn = "test_sequential_contiguous_blocks_single_span";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(Loc(path), P(64 * 1024, 8 * 1024 * 1024));
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_EQUAL(fn, static_cast<long long>(kHexFile), DrainHex(in, 1000));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Delivered());
+	ASSERT_EQUAL(fn, io->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Origin());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Cached());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), io->Evicted());
+	const std::size_t seek_origin = io->SeekOrigin();
+
+	// Every contiguous block must have merged into one span that replays without the origin.
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, in.Available());
+	for (std::size_t at = 0; at < kHexFile; at += 4096) {
+		if (ReadExpect(fn, in, at, 4096) != 0)
+			return 1;
+	}
+	ASSERT_EQUAL(fn, StormByte::ByteSize{2 * kHexFile}, io->Delivered());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->HitBack());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Origin());
+	ASSERT_EQUAL(fn, seek_origin, io->SeekOrigin());
+
+	// A mid-span seek must still serve exact bytes from the merged span.
+	if (SeekExpectTell(fn, in, 1234567) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 1234567, 70000) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Origin());
+	RETURN_TEST(fn, 0);
+}
+
+int test_sequential_capped_window_slides() {
+	const std::string fn = "test_sequential_capped_window_slides";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	constexpr std::size_t cap = 64 * 1024;
+	BufferedFileReader in(Loc(path), P(16 * 1024, cap));
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_EQUAL(fn, static_cast<long long>(kHexFile), DrainHex(in, 3000));
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Delivered());
+	ASSERT_EQUAL(fn, io->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Origin());
+	ASSERT_TRUE(fn, io->CachedPeak() <= StormByte::ByteSize{cap});
+	ASSERT_TRUE(fn, io->Cached() <= StormByte::ByteSize{cap});
+	ASSERT_TRUE(fn, io->Evicted() > 0);
+
+	// The retained window must still be the bytes right behind Tell.
+	const std::size_t back = 8 * 1024;
+	if (SeekExpectTell(fn, in, kHexFile - back) != 0)
+		return 1;
+	if (ReadExpect(fn, in, kHexFile - back, back) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, StormByte::ByteSize{kHexFile}, io->Origin());
+	RETURN_TEST(fn, 0);
+}
+
+int test_sequential_overlapping_pulls_merge() {
+	const std::string fn = "test_sequential_overlapping_pulls_merge";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(Loc(path), P(0, 1024 * 1024));
+	ASSERT_TRUE(fn, in.Open());
+	// Disjoint islands first, then a sequential pass bridging and overlapping them.
+	for (const std::size_t at : {std::size_t{20000}, std::size_t{50000}, std::size_t{90000}}) {
+		if (SeekExpectTell(fn, in, at) != 0)
+			return 1;
+		if (ReadExpect(fn, in, at, 5000) != 0)
+			return 1;
+	}
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	for (std::size_t at = 0; at + 777 <= 128 * 1024; at += 777) {
+		if (ReadExpect(fn, in, at, 777) != 0)
+			return 1;
+	}
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	const auto* io = IoTel(in);
+	ASSERT_TRUE(fn, io != nullptr);
+	const auto origin = io->Origin();
+	ASSERT_TRUE(fn, in.Available() >= StormByte::ByteSize{120 * 1024});
+	if (ReadExpect(fn, in, 0, 120 * 1024) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, origin, io->Origin());
+	ASSERT_EQUAL(fn, io->Delivered(), io->HitAhead() + io->HitBack() + io->Miss());
+	RETURN_TEST(fn, 0);
+}
+
+int test_sequential_large_benchmark() {
+	const std::string fn = "test_sequential_large_benchmark";
+	constexpr std::size_t size = 64 * 1024 * 1024;
+	const auto path = std::filesystem::temp_directory_path() / "stormbyte_buffer_hex_64m.bin";
+	ASSERT_TRUE(fn, WriteHexFile(path, size));
+
+	struct Config {
+		const char* name;
+		std::size_t read_ahead;
+		std::size_t max_memory;
+	};
+	constexpr std::array<Config, 4> configs {{
+		{ "no-cache", 0, 0 },
+		{ "cache-only", 0, 2 * size },
+		{ "window", 256 * 1024, 4 * 1024 * 1024 },
+		{ "full", 1024 * 1024, 2 * size },
+	}};
+	std::array<double, configs.size()> seconds {};
+	for (std::size_t c = 0; c < configs.size(); ++c) {
+		BufferedFileReader in(Loc(path), P(configs[c].read_ahead, configs[c].max_memory));
+		ASSERT_TRUE(fn, in.Open());
+		const auto started = std::chrono::steady_clock::now();
+		ASSERT_EQUAL(fn, static_cast<long long>(size), DrainHex(in, 32 * 1024));
+		seconds[c] = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+		const auto* io = IoTel(in);
+		ASSERT_TRUE(fn, io != nullptr);
+		ASSERT_EQUAL(fn, StormByte::ByteSize{size}, io->Origin());
+		std::cout << "[benchmark " << configs[c].name << "] " << seconds[c] << " s, "
+			<< (static_cast<double>(size) / (1024.0 * 1024.0)) / seconds[c] << " MiB/s" << std::endl;
+	}
+	std::filesystem::remove(path);
+
+	// Rebuilding the whole span per pull is quadratic; linear cost keeps caching in the same order as no cache.
+	for (std::size_t c = 1; c < configs.size(); ++c)
+		ASSERT_TRUE(fn, seconds[c] <= seconds[0] * 20.0 + 2.0);
 	RETURN_TEST(fn, 0);
 }
 
@@ -1458,6 +1618,10 @@ int main() {
 	result += test_max_memory_zero_span_reads();
 	result += test_max_memory_zero_still_reads();
 	result += test_readahead_knobs();
+	result += test_sequential_contiguous_blocks_single_span();
+	result += test_sequential_capped_window_slides();
+	result += test_sequential_overlapping_pulls_merge();
+	result += test_sequential_large_benchmark();
 
 	// -------------------
 	// Read / Peek
