@@ -97,9 +97,9 @@ Bridge::Bridge(Bridge&& other) noexcept {
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
 	m_io_in_blocking = other.m_io_in_blocking;
-	m_state = other.m_state;
+	m_session_state = other.m_session_state;
 	other.m_io_in_blocking = false;
-	other.m_state = State::Closed;
+	other.m_session_state = State::Closed;
 }
 
 Bridge::~Bridge() noexcept = default;
@@ -118,9 +118,9 @@ Bridge& Bridge::operator=(Bridge&& other) noexcept {
 	m_owned_read = std::move(other.m_owned_read);
 	m_owned_write = std::move(other.m_owned_write);
 	m_io_in_blocking = other.m_io_in_blocking;
-	m_state = other.m_state;
+	m_session_state = other.m_session_state;
 	other.m_io_in_blocking = false;
-	other.m_state = State::Closed;
+	other.m_session_state = State::Closed;
 	return *this;
 }
 
@@ -135,8 +135,8 @@ void Bridge::ReleaseTips() noexcept {
 void Bridge::Close() noexcept {
 	std::lock_guard lock(m_mutex);
 	ReleaseTips();
-	if (m_state == State::Open)
-		m_state = State::Closed;
+	if (m_session_state == State::Open)
+		m_session_state = State::Closed;
 }
 
 bool Bridge::SourceEoF() const noexcept {
@@ -149,14 +149,14 @@ bool Bridge::SourceEoF() const noexcept {
 
 bool Bridge::EoF() const noexcept {
 	std::lock_guard lock(m_mutex);
-	if (m_state != State::Open)
+	if (m_session_state != State::Open)
 		return true;
 	return SourceEoF();
 }
 
 bool Bridge::Failed() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_state == State::Failed;
+	return m_session_state == State::Failed;
 }
 
 bool Bridge::InputIsIO() const noexcept {
@@ -171,7 +171,7 @@ bool Bridge::InputPullBlocking() const noexcept {
 
 enum Bridge::State Bridge::State() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_state;
+	return m_session_state;
 }
 
 const StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> Bridge::ReadTelemetry() const noexcept {
@@ -279,7 +279,7 @@ IO::Result Bridge::Push(FIFO& src) {
 
 StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Operation operation) {
 	std::lock_guard lock(m_mutex);
-	if (m_state != State::Open)
+	if (m_session_state != State::Open)
 		return StormByte::ByteSize{0};
 
 	std::optional<StormByte::Buffer::Telemetry::OperationSample> read_sample;
@@ -291,7 +291,7 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 	FIFO work;
 	const IO::Result pulled = Pull(n, work, operation);
 	if (pulled.status == IO::Status::Failed || pulled.status == IO::Status::Error) {
-		m_state = State::Failed;
+		m_session_state = State::Failed;
 		ReleaseTips();
 		return StormByte::ByteSize{0};
 	}
@@ -299,7 +299,7 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 	const StormByte::ByteSize got = work.Available();
 	if (got == StormByte::ByteSize{0}) {
 		if (pulled.status == IO::Status::End) {
-			m_state = State::Closed;
+			m_session_state = State::Closed;
 			ReleaseTips();
 		}
 		return StormByte::ByteSize{0};
@@ -307,7 +307,7 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 
 	const IO::Result pushed = Push(work);
 	if (pushed.status != IO::Status::Ok) {
-		m_state = State::Failed;
+		m_session_state = State::Failed;
 		ReleaseTips();
 		return StormByte::ByteSize{0};
 	}
@@ -322,7 +322,7 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 	}
 
 	if (SourceEoF()) {
-		m_state = State::Closed;
+		m_session_state = State::Closed;
 		ReleaseTips();
 	}
 	return got;

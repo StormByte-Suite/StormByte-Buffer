@@ -96,7 +96,7 @@ namespace StormByte {
 		 * @par Passthrough
 		 * One call is one atomic transfer. @c TryAgain on the write tip
 		 * is retried until the requested write completes or the tip
-		 * fails. That is not the same as @ref Operation::Blocking:
+		 * fails. That is not the same as @c Operation::Blocking:
 		 * Blocking applies only to the read side.
 		 *
 		 * @p n == 0 is the current contents of the read tip
@@ -369,7 +369,13 @@ namespace StormByte {
 				StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.
 				StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Cached write counters.
 				bool m_io_in_blocking {false};											///< Stolen reader ReadAhead was 0.
-				enum State m_state {State::Open};										///< Session lifetime.
+				/**
+				 * @typedef SessionState
+				 * @brief Unambiguous enum type for the private session state member.
+				 */
+				using SessionState = enum State;
+
+				SessionState m_session_state {SessionState::Open};					///< Session lifetime.
 				mutable std::mutex m_mutex;												///< Session lock.
 		};
 	}

@@ -184,7 +184,7 @@ namespace StormByte {
 			 * Materialized become 0.
 			 *
 			 * Public @ref Flush and the Flush inside @ref Close count
-			 * toward @ref MeanRate. Internal worker / GC drains do not.
+			 * toward @c MeanRate. Internal worker / GC drains do not.
 			 * A cache Write can look like GiB/s; that is the caller
 			 * rate. The explicit Flush is what reflects the origin.
 			 *
@@ -221,7 +221,7 @@ namespace StormByte {
 			 * Default dynamic type is @ref IO::WriteTelemetry.
 			 * Accumulators start at construction and do not reset on Close.
 			 * @c Materialized and @c HighWater are levels, not accumulators.
-			 * @ref MeanRate is the caller rate, not disk throughput.
+			 * @c MeanRate is the caller rate, not disk throughput.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
@@ -335,7 +335,7 @@ namespace StormByte {
 					 *
 					 * Idempotent on an already closed instance. Blocking.
 					 * Flush failure leaves @ref State::Fault and returns false.
-					 * The Flush counts toward @ref MeanRate.
+					 * The Flush counts toward @c MeanRate.
 					 */
 					virtual bool Close() final;
 
@@ -357,7 +357,7 @@ namespace StormByte {
 					 *         @ref Status::Failed. Never @ref Status::TryAgain.
 					 *
 					 * Blocking. @ref Tell is unchanged. Counts toward
-					 * @ref MeanRate. Internal worker drains do not.
+					 * @c MeanRate. Internal worker drains do not.
 					 */
 					virtual Result Flush() final;
 

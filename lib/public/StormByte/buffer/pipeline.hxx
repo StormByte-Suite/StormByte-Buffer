@@ -69,7 +69,7 @@ namespace StormByte {
 		 * This type is for @ref ReadOnly / @ref WriteOnly ends
 		 * (`Consumer`, `Producer`, `FIFO`, `Ring`, and the like).
 		 * It does not take IO leaves. File or device origins join
-		 * the tube through @ref Bridge / @ref Pumper: run
+		 * the tube through @ref Bridge / @c Pumper: run
 		 * @ref Process on a @ref Consumer and pass that
 		 * @ref Consumer to a Bridge, or the other way around.
 		 *

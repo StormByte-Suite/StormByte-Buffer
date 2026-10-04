@@ -133,7 +133,7 @@ namespace StormByte {
 		 *
 		 * Starts the worker in the constructor. The destructor joins; it
 		 * may block until the current cycle finishes. There is no Stop.
-		 * The destructor does not @ref Cancel: it lets the worker finish.
+		 * The destructor does not call @c Cancel; it lets the worker finish.
 		 * @ref Cancel is terminal (@ref Canceled, no restart). @ref Toggle
 		 * pauses and resumes. @ref Failed is only a real @ref Bridge fault.
 		 *

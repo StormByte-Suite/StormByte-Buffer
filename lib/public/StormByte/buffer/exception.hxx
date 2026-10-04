@@ -111,7 +111,7 @@ namespace StormByte::Buffer {
 					std::forward<Args>(args)...) {}
 
 			/**
-			 * @brief Copies Base-owned text under `StormByte.Buffer.<child>`.
+			 * @brief Copies Base-owned text under `StormByte.Buffer.child`.
 			 * @param child Segment under `Buffer`.
 			 * @param message Exception text.
 			 */

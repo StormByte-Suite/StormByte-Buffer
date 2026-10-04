@@ -17,9 +17,9 @@ if(ENABLE_DOC)
 		set(${name}_TAG_FILE "${tag_file}" PARENT_SCOPE)
 	endfunction()
 
-	download_doxygen_tag(StormByte "http://suite.stormbyte.org/StormByte/StormByte.tag")
-	download_doxygen_tag(StormByte-System "http://suite.stormbyte.org/StormByte-System/StormByte-System.tag")
-	download_doxygen_tag(StormByte-Logger "http://suite.stormbyte.org/StormByte-Logger/StormByte-Logger.tag")
+	download_doxygen_tag(StormByte "https://suite.stormbyte.org/StormByte/StormByte.tag")
+	download_doxygen_tag(StormByte-System "https://suite.stormbyte.org/StormByte-System/StormByte-System.tag")
+	download_doxygen_tag(StormByte-Logger "https://suite.stormbyte.org/StormByte-Logger/StormByte-Logger.tag")
 
 	set(DOXYGEN_PROJECT_NAME "StormByte-Buffer")
 	set(DOXYGEN_PROJECT_NUMBER "${PROJECT_VERSION}")
@@ -38,8 +38,6 @@ if(ENABLE_DOC)
 		"${CMAKE_SOURCE_DIR}/lib/public"
 		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/logger/src/lib/public"
 		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/lib/public"
-		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/thirdparty/StormByte/string/src"
-		"${CMAKE_SOURCE_DIR}/thirdparty/StormByte/system/src/thirdparty/StormByte/string/src/thirdparty/StormByte/base/src"
 	)
 	set(DOXYGEN_STRIP_FROM_PATH "${CMAKE_SOURCE_DIR}")
 	set(DOXYGEN_STRIP_FROM_INC_PATH "${CMAKE_SOURCE_DIR}/lib/public")
@@ -89,9 +87,9 @@ if(ENABLE_DOC)
 
 	set(DOXYGEN_GENERATE_TAGFILE "${CMAKE_SOURCE_DIR}/docs/StormByte-Buffer.tag")
 	set(DOXYGEN_TAGFILES
-		"${StormByte_TAG_FILE}=http://suite.stormbyte.org/StormByte"
-		"${StormByte-System_TAG_FILE}=http://suite.stormbyte.org/StormByte-System"
-		"${StormByte-Logger_TAG_FILE}=http://suite.stormbyte.org/StormByte-Logger"
+		"${StormByte_TAG_FILE}=https://suite.stormbyte.org/StormByte"
+		"${StormByte-System_TAG_FILE}=https://suite.stormbyte.org/StormByte-System"
+		"${StormByte-Logger_TAG_FILE}=https://suite.stormbyte.org/StormByte-Logger"
 	)
 
 	set(DOXYGEN_GENERATE_MAN NO)

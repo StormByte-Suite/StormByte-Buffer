@@ -81,7 +81,7 @@ namespace StormByte {
 			 * @brief Reader counters on top of @ref StormByte::Buffer::ReadTelemetry.
 			 *
 			 * Same fields as @c BufferedReader::Telemetry in SHA c1d44cb.
-			 * @ref StormByte::Buffer::Backend::IO::BufferedReader writes them.
+				 * The private buffered reader coordinator writes them.
 			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC ReadTelemetry: public StormByte::Buffer::ReadTelemetry {
@@ -260,7 +260,7 @@ namespace StormByte {
 			 * @brief Writer counters on top of @ref StormByte::Buffer::WriteTelemetry.
 			 *
 			 * Same fields as @c BufferedWriter::Telemetry in SHA c1d44cb.
-			 * @ref StormByte::Buffer::Backend::IO::BufferedWriter writes them.
+				 * The private buffered writer coordinator writes them.
 			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC WriteTelemetry: public StormByte::Buffer::WriteTelemetry {

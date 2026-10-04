@@ -131,15 +131,15 @@ namespace StormByte {
 			 * @enum Location
 			 * @brief Where the bytes of a file-like source or sink live.
 			 *
-			 * @ref Path is the locator text. This says what that text means.
+				 * @c Path is the locator text. This says what that text means.
 			 * @c Local is a filesystem path. @c Remote is anything else
 			 * (a socket URL, an HTTP URL, a custom scheme).
 			 *
 			 * @see BufferedLocationReader, BufferedLocationWriter
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Location {
-				Local,	///< @ref Path is a filesystem path on this machine.
-				Remote	///< @ref Path names a non-local target.
+				Local,	///< @c Path is a filesystem path on this machine.
+				Remote	///< @c Path names a non-local target.
 			};
 
 			/**
@@ -172,7 +172,7 @@ namespace StormByte {
 
 			/**
 			 * @namespace StormByte::Buffer::IO::Drainer
-			 * @brief Status and operations of a Bridge pump thread.
+				 * @brief Status and operations of a Bridge pump thread.
 			 */
 			namespace Drainer {
 				/**
@@ -190,7 +190,7 @@ namespace StormByte {
 
 				/**
 				 * @enum Operation
-				 * @brief Verbs for @ref StormByte::Buffer::Bridge::Drainer.
+				 * @brief Verbs for @c Bridge::Drainer.
 				 */
 				enum class STORMBYTE_BUFFER_PUBLIC Operation {
 					Toggle,		///< Started ↔ Paused.

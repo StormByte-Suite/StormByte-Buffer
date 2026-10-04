@@ -234,7 +234,7 @@ namespace StormByte {
 					 * @return @c true when the device may be measured.
 					 *
 					 * The default is a non-empty owner whose
-					 * @ref StormByte::System::Device::operator bool is true, which probes
+					 * @c operator bool is true, which probes
 					 * the stored path. A leaf whose identifier is not a filesystem path
 					 * overrides this and never reaches that non-virtual probe. An empty
 					 * owner is always unusable.

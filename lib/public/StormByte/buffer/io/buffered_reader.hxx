@@ -197,12 +197,12 @@ namespace StormByte {
 			 * an origin pull.
 			 *
 			 * @par Telemetry
-				 * @ref Telemetry returns a const @c StormByte::Safe::Shared of
+			 * @ref Telemetry returns a const @c StormByte::Safe::Shared of
 			 * @ref StormByte::Buffer::ReadTelemetry. The user cannot reseat
 			 * the handle. The office updates the same object. The dynamic
 			 * type is @ref IO::ReadTelemetry unless a leaf overrides
 			 * @ref CreateTelemetry. Accumulators start at construction
-			 * and do not reset on Close. @ref MeanRate is the caller rate.
+			 * and do not reset on Close. @c MeanRate is the caller rate.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. Moved-from is Unavailable.
