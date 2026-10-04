@@ -41,13 +41,13 @@
 
 #pragma once
 
+#include <StormByte/safe/pointers.hxx>
 #include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
 #include <concepts>
 #include <condition_variable>
 #include <cstddef>
-#include <memory>
 #include <utility>
 
 namespace StormByte::Buffer {
@@ -68,7 +68,7 @@ namespace StormByte::Buffer {
 	 *   items or EoF are available.
 	 * - Item flow: @c hopper << item and @c item >> hopper enqueue; @c hopper >> item dequeues.
 	 * - Query: Size, Capacity, Full, Empty, EoF, Ready, Writers, Front (peek, copy).
-	 * - Non-copyable, non-movable: Shared via std::shared_ptr.
+	 * - Non-copyable, non-movable: Shared via StormByte::Safe::Shared.
 	 *
 	 * @tparam T Item type stored in the queue (must be MoveConstructible).
 	 */
@@ -311,7 +311,7 @@ namespace StormByte::Buffer {
 			 */
 			class Implementation;
 
-			std::unique_ptr<Implementation> m_io;	///< Private coordinator.
+			StormByte::Safe::Unique<Implementation> m_io;	///< Base-owned private coordinator.
 	};
 }
 

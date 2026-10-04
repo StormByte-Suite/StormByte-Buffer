@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-10-03
+## [2.0.0] - 2026-10-04
 
 ### Added
 
@@ -46,6 +46,7 @@ If you landed here from a release link and have not read the tree:
 ### Changed
 
 - **Breaking:** Port Buffer to StormByte Base 2.0.0. Owned text is now `StormByte::Safe::String` / `Safe::WString`; pointer and clonable APIs use `StormByte::Safe`; Buffer telemetry derives from Base `StormByte::Telemetry` and measures operations with its named clocks; Buffer exceptions accept Base-owned `Safe::String` messages.
+- **Breaking:** `Sink<T>::Keys()` returns an independent, ascending `StormByte::Safe::Vector<int>` snapshot instead of `std::vector<int>`. Sink and Hopper coordinators use `Safe::Unique`, and wired hoppers use `Safe::Shared`. Private Sink maps, writer sets and order/snapshot vectors, plus normally aligned Hopper queue storage, use Base's heap allocator so storage is released on the allocating heap without restricting existing movable item types. Over-aligned items retain their standard allocator because Base's heap API does not support extended alignment; they still require a shared allocation runtime. This does not certify arbitrary payloads or incompatible STL/compiler ABIs for cross-DLL use; snapshot creator modules must remain loaded until release.
 - **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
 - **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
 - **Breaking:** `AvailableBytes()` is `Available()`. The return type is already `StormByte::ByteSize`.
@@ -89,6 +90,7 @@ If you landed here from a release link and have not read the tree:
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
 - Reader sequential regressions: many contiguous blocks merge into one replayable span (bytes and telemetry), capped sliding window, islands bridged by an overlapping sequential pass, and a 64 MiB sequential benchmark with cache / read-ahead off, cache only, windowed and full.
+- Sink key snapshots: negative/zero/positive ordering, independence from later wiring, deep-copy and move behaviour, and use after Sink destruction. Shared hoppers retain queued items and EoF after producer destruction; over-aligned payloads preserve queue and move alignment.
 
 [2.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.4.0...2.0.0
 

@@ -210,6 +210,10 @@ int main() {
 
 `Sink<T>` maps integer keys to `Hopper<T>` buckets. Wire with `To(key)` / `>>` / `<<`.
 
+`Keys()` returns an independent, ascending `StormByte::Safe::Vector<int>` snapshot that remains valid after the Sink is destroyed. Copies are independent; keep Base and the snapshot's creator module loaded until all copies are released.
+
+Sink coordinators, shared Hopper owners and internal collection storage use Base's heap. Hopper queue storage also uses Base's heap for normally aligned items; over-aligned items retain their standard allocator because Base's raw heap API does not provide extended alignment. This controls allocation and release across DLL boundaries, but does not make arbitrary item types or different STL/compiler ABIs compatible. Use boundary-safe payloads when wiring across modules; over-aligned payloads still require a shared allocation runtime. `Select` is a borrowed `std::function`, invoked synchronously and never retained; its caller and callee need a compatible ABI. Conditions passed to `Notify` are borrowed: call `Unnotify` before destroying them.
+
 ```cpp
 #include <StormByte/buffer/sink.hxx>
 #include <memory>

@@ -47,9 +47,11 @@
 #include <concepts>
 #include <condition_variable>
 #include <cstddef>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <type_traits>
 #include <utility>
 
 namespace StormByte::Buffer {
@@ -62,6 +64,8 @@ namespace StormByte::Buffer {
 	 */
 	template<Type::MoveConstructible T>
 	class Hopper<T>::Implementation {
+		using ItemAllocator = std::conditional_t<(alignof(T) > alignof(std::max_align_t)), std::allocator<T>, StormByte::Safe::Heap::Allocator<T>>;	///< Preserve extended alignment when Base's heap cannot provide it.
+
 		public:
 			/**
 			 * @brief Constructs an unbounded Implementation instance.
@@ -258,7 +262,7 @@ namespace StormByte::Buffer {
 
 			mutable std::mutex m_mutex;						///< Guards queue access.
 			std::condition_variable m_space;				///< Producer wait condition when full.
-			std::queue<T> m_items;							///< Queue of stored items.
+			std::queue<T, std::deque<T, ItemAllocator>> m_items;	///< Base-allocated queue, except for over-aligned payloads.
 			std::atomic<bool> m_eof;						///< End of production flag.
 			std::atomic<std::condition_variable*> m_wake;	///< Consumer condition variable.
 			std::atomic<std::size_t> m_cap;					///< Capacity ceiling (0 = unbounded).
@@ -267,11 +271,11 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::Hopper() noexcept
-	: m_io(std::make_unique<Implementation>()) {}
+	: m_io(StormByte::Safe::Unique<Implementation>::template MakePointer<Implementation>()) {}
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::Hopper(StormByte::Size capacity) noexcept
-	: m_io(std::make_unique<Implementation>(capacity)) {}
+	: m_io(StormByte::Safe::Unique<Implementation>::template MakePointer<Implementation>(capacity)) {}
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::~Hopper() noexcept = default;

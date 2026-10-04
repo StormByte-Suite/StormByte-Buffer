@@ -46,6 +46,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -428,6 +429,67 @@ int test_sink_pop_key() {
 }
 
 /**
+ * @brief Over-aligned payloads retain correct queue and move alignment.
+ * @return 0 on success.
+ */
+int test_sink_overaligned_payload() {
+	struct alignas(64) Item {
+		bool aligned;
+
+		Item() noexcept
+		: aligned(reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0) {}
+
+		Item(const Item&) noexcept = default;
+
+		Item(Item&& other) noexcept
+		: aligned(other.aligned && reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0) {}
+
+		Item& operator=(Item&& other) noexcept {
+			aligned = other.aligned && reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0;
+			return *this;
+		}
+	};
+	Sink<Item> producer;
+	Sink<Item> consumer;
+	producer.To(1) >> consumer;
+	producer.Push(1, Item{});
+	producer.Eof();
+	const auto item = consumer.Pop(1);
+	ASSERT_TRUE("test_sink_overaligned_payload aligned", item.aligned);
+	ASSERT_TRUE("test_sink_overaligned_payload drained", consumer.Empty(1));
+	RETURN_TEST("test_sink_overaligned_payload", 0);
+}
+
+/**
+ * @brief Safe key snapshots are ordered, independent and survive their Sink.
+ * @return 0 on success.
+ */
+int test_sink_query_snapshot() {
+	StormByte::Safe::Vector<int> keys;
+	{
+		Sink<int> producer;
+		Sink<int> consumer;
+		producer.To(20) >> consumer;
+		producer.To(-10) >> consumer;
+		producer.To(0) >> consumer;
+		keys = consumer.Keys();
+		producer.To(5) >> consumer;
+		ASSERT_EQUAL("test_sink_query_snapshot wired buckets", StormByte::Size{4}, consumer.Buckets());
+		ASSERT_EQUAL("test_sink_query_snapshot unchanged size", std::size_t{3}, keys.size());
+		producer.Eof();
+	}
+	const StormByte::Safe::Vector<int> copy = keys;
+	keys[0] = -20;
+	const StormByte::Safe::Vector<int> moved = std::move(keys);
+	ASSERT_EQUAL("test_sink_query_snapshot copy negative", -10, copy[0]);
+	ASSERT_EQUAL("test_sink_query_snapshot copy zero", 0, copy[1]);
+	ASSERT_EQUAL("test_sink_query_snapshot copy positive", 20, copy[2]);
+	ASSERT_EQUAL("test_sink_query_snapshot moved size", std::size_t{3}, moved.size());
+	ASSERT_EQUAL("test_sink_query_snapshot moved value", -20, moved[0]);
+	RETURN_TEST("test_sink_query_snapshot", 0);
+}
+
+/**
  * @brief Keys, Buckets, Contains, Empty/EoF/Ready per key on an empty Sink.
  * @return 0 on success.
  */
@@ -462,7 +524,7 @@ int test_sink_query_wired() {
 	ASSERT_FALSE("test_sink_query_wired ready 10 empty", consumer.Ready(10));
 	ASSERT_FALSE("test_sink_query_wired eof 10", consumer.EoF(10));
 
-	const auto keys = consumer.Keys();
+	const StormByte::Safe::Vector<int> keys = consumer.Keys();
 	ASSERT_EQUAL("test_sink_query_wired keys size", static_cast<std::size_t>(2), keys.size());
 	ASSERT_EQUAL("test_sink_query_wired keys 0", 10, keys[0]);
 	ASSERT_EQUAL("test_sink_query_wired keys 1", 20, keys[1]);
@@ -679,6 +741,26 @@ int test_sink_wire_and_push_pop() {
 }
 
 /**
+ * @brief Shared hoppers retain queued items after the producer is destroyed.
+ * @return 0 on success.
+ */
+int test_sink_shared_hopper_lifetime() {
+	Sink<int> consumer;
+	{
+		Sink<int> producer;
+		producer.To(-1) >> consumer;
+		producer.Push(-1, 42);
+		producer.Push(-1, 43);
+		producer.Eof();
+	}
+	ASSERT_EQUAL("test_sink_shared_hopper_lifetime first", 42, consumer.Pop(-1));
+	ASSERT_EQUAL("test_sink_shared_hopper_lifetime second", 43, consumer.Pop(-1));
+	ASSERT_TRUE("test_sink_shared_hopper_lifetime drained", consumer.Empty(-1));
+	ASSERT_TRUE("test_sink_shared_hopper_lifetime eof", consumer.EoF());
+	RETURN_TEST("test_sink_shared_hopper_lifetime", 0);
+}
+
+/**
  * @brief Main entry point for Sink tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -696,6 +778,7 @@ int main() {
 	failed += test_sink_drain_mode();
 	failed += test_sink_eof_unblocks_waiters();
 	failed += test_sink_non_nullable_smart_pointer();
+	failed += test_sink_overaligned_payload();
 	failed += test_sink_pop_custom_select();
 	failed += test_sink_push_waiting_for_wire();
 
@@ -705,12 +788,14 @@ int main() {
 
 	// Query / keyed Pop
 	failed += test_sink_pop_key();
+	failed += test_sink_query_snapshot();
 	failed += test_sink_query_unwired();
 	failed += test_sink_query_wired();
 
 	// Wiring (To / >> / <<)
 	failed += test_sink_extra_writer_eof();
 	failed += test_sink_rewire_same_writer_eof();
+	failed += test_sink_shared_hopper_lifetime();
 	failed += test_sink_stream_operators();
 	failed += test_sink_wire_after_eof();
 	failed += test_sink_wire_all_hoppers();

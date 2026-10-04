@@ -42,14 +42,14 @@
 #pragma once
 
 #include <StormByte/buffer/hopper.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <StormByte/safe/vector.hxx>
 #include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
-#include <memory>
-#include <vector>
 
 namespace StormByte::Buffer {
 	/**
@@ -249,11 +249,11 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Keys of hoppers currently wired on this Sink.
-			 * @return Keys in ascending order. Empty if none.
+			 * @return Owned @ref StormByte::Safe::Vector of keys in ascending order. Empty if none.
 			 *
 			 * Snapshot. Does not create buckets. Sink does not interpret keys.
 			 */
-			std::vector<int> Keys() const noexcept;
+			StormByte::Safe::Vector<int> Keys() const noexcept;
 
 			/**
 			 * @brief Number of hoppers wired on this Sink.
@@ -399,7 +399,7 @@ namespace StormByte::Buffer {
 			 */
 			class Implementation;
 
-			std::unique_ptr<Implementation> m_io;	///< Private coordinator.
+			StormByte::Safe::Unique<Implementation> m_io;	///< Base-owned private coordinator.
 	};
 }
 
