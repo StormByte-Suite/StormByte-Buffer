@@ -215,7 +215,7 @@ namespace {
 				m_hook(hook) {}
 
 		protected:
-			Shared<Device> OriginDevice() const override {
+			Shared<StormByte::System::Device> OriginDevice() const override {
 				if (m_hook == ThrowingHook::Device)
 					throw std::runtime_error("device hook failed");
 				return {};
