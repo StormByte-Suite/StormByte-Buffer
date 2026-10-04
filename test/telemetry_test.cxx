@@ -54,6 +54,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>
 
 using StormByte::ByteSize;
 using StormByte::Buffer::Bridge;
@@ -66,7 +67,7 @@ static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::Telemetry::Operation
 static_assert(!StormByte::Type::IsSafe<StormByte::Buffer::Telemetry::OperationSample>::value);
 
 namespace {
-	class SampleTelemetry final: public StormByte::Telemetry {
+	class SampleTelemetry final: public StormByte::Buffer::Telemetry {
 		public:
 			operator StormByte::Safe::String() const override {
 				return StormByte::Safe::String(std::string_view{});
