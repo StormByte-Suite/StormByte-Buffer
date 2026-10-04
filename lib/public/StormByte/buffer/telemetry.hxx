@@ -90,7 +90,7 @@ namespace StormByte {
 				 * @brief Measures one operation with an independent Base clock sample.
 				 * @note The sample borrows its owning Telemetry; it must not outlive it.
 				 */
-				class OperationSample {
+				class STORMBYTE_BUFFER_PUBLIC OperationSample {
 					public:
 						/**
 						 * @brief Copy construction is disabled.

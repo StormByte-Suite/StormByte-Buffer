@@ -72,6 +72,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+- Export `Telemetry::OperationSample` from the Buffer DLL so consumers can use its out-of-line move, destruction and commit operations on Windows.
 - Buffer operation telemetry no longer builds clock names from owner addresses, thread IDs or nesting depth. Each operation uses Base's independently timed `Clock::Sample`, allowing nested and concurrent measurements without name collisions.
 - Exceptions from `Pipe::Run` and `Sink::Select` no longer escape `noexcept` execution paths: pipeline outputs enter error state, while a failed selector returns default `T` without removing queued items.
 - Exceptions from IO origin hooks are converted to `Status::Error`; `Open` reports setup failures as `false`, and `Device()` translates foreign exceptions to `StormByte::Buffer::Exception`. Reader and writer close results now include failures from their origin close hooks.
