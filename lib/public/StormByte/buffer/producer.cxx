@@ -40,39 +40,71 @@
  */
 
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/buffer/ring_owner.hxx>
 
 using namespace StormByte::Buffer;
 
+Producer::Producer():
+	m_buffer{Backend::MakeRingOwner()} {}
+
+Producer::Producer(const StormByte::Buffer::Consumer& consumer):
+	m_buffer{consumer.m_buffer} {}
+
+Producer::Producer(const Producer& other):
+	m_buffer{other.m_buffer} {}
+
+Producer::Producer(Producer&& other) noexcept = default;
+
 Producer::~Producer() noexcept = default;
 
+Producer& Producer::operator=(const Producer& other) {
+	if (this != &other)
+		m_buffer = other.m_buffer;
+	return *this;
+}
+
+Producer& Producer::operator=(Producer&& other) noexcept = default;
+
+bool Producer::operator==(const Producer& other) const noexcept {
+	return Backend::GetRing(m_buffer) == Backend::GetRing(other.m_buffer);
+}
+
+Ring& Producer::Storage() const noexcept {
+	return *Backend::GetRing(m_buffer);
+}
+
+StormByte::Buffer::Consumer Producer::Consumer() {
+	return StormByte::Buffer::Consumer{m_buffer};
+}
+
 void Producer::Close() noexcept {
-	m_buffer->Close();
+	Storage().Close();
 }
 
 void Producer::SetError() noexcept {
-	m_buffer->SetError();
+	Storage().SetError();
 }
 
 bool Producer::IsWritable() const noexcept {
-	return m_buffer->IsWritable();
+	return Storage().IsWritable();
 }
 
 StormByte::ByteSize Producer::Size() const noexcept {
-	return m_buffer->Size();
+	return Storage().Size();
 }
 
 bool Producer::Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept {
-	return m_buffer->Write(count, data);
+	return Storage().Write(count, data);
 }
 
 bool Producer::Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept {
-	return m_buffer->Write(count, std::move(data));
+	return Storage().Write(count, std::move(data));
 }
 
 bool Producer::Write(const StormByte::ByteSize& count, const ReadOnly& data) noexcept {
-	return m_buffer->Write(count, data);
+	return Storage().Write(count, data);
 }
 
 bool Producer::Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept {
-	return m_buffer->Write(count, std::move(data));
+	return Storage().Write(count, std::move(data));
 }

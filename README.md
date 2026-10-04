@@ -38,12 +38,12 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 - **FIFO** — grow-on-demand byte buffer. Not thread-safe. `Read` / `Peek` keep data; `Extract` consumes it.
 - **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
 - **Ring** — concurrent ring (many-to-many).
-- **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
+- **Producer / Consumer** — write-only / read-only handles over a shared `Ring`. `StormByte::Safe::Owner` keeps ownership callbacks inside Buffer; these handles are conditional (`MaybeSafe`), not universally `IsSafe`.
 - **Hopper / Sink** — SPSC typed items and a keyed map of hoppers.
 - **Pipeline** — user leaves of `Pipe`. Stream buffers only. `Add` clones or moves.
 - **Bridge** — manual transfer. `Passthrough(n, Operation)` only. No worker.
 - **Pumper** — owns a Bridge and pumps until EoF or `Cancel`.
-- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Safe::Shared<…>`, derived from Base `StormByte::Telemetry`. Named Base clocks measure operation rates. `MeanRate` is caller rate, not disk rate.
+- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Safe::Shared<…>`, derived from Base `StormByte::Telemetry`. Independent samples aggregate under a stable Base clock name and can overlap or move between threads. `MeanRate` is caller rate, not disk rate.
 - **IO** — `BufferedReader` / `BufferedWriter` bases and file leaves. Nested `Parameters` and knobs.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
@@ -137,7 +137,7 @@ int main() {
 
 ### Producer and Consumer
 
-A `Producer` yields a `Consumer` over the same ring. The `Consumer` is a `ReadOnly`; the `Producer` is a `WriteOnly`. Either tip can be passed to a [Bridge](#bridge).
+A `Producer` yields a `Consumer` over the same ring. The `Consumer` is a `ReadOnly`; the `Producer` is a `WriteOnly`. Either tip can be passed to a [Bridge](#bridge). Ring ownership uses opaque `StormByte::Safe::Owner` callbacks implemented in Buffer, not `std::shared_ptr<Ring>` in the public ABI. The owner and any `Producer`/`Consumer` copy can outlive its handle, but the Buffer and Base modules must stay loaded until all handles are destroyed. This conditional contract does not certify arbitrary cross-module payloads or compiler/STL ABI compatibility.
 
 ```cpp
 #include <StormByte/buffer/consumer.hxx>
@@ -268,6 +268,8 @@ Every IO office and every Bridge exposes `const StormByte::Safe::Shared<ReadTele
 
 `MeanRate` is octets per second of **requested user operations**, including cache hits. It is not a disk benchmark. A cached write can look like GiB/s. Worker, GC and internal flushes enter the rate only when they delay the caller. Explicit `Flush` / `Close` Flush pull it back.
 
+Each measured operation owns an independent Base clock sample, so concurrent and nested operations do not share a start/stop state. A sample borrows its `Telemetry` owner and must not outlive it.
+
 Flatten with `operator StormByte::Safe::String` or `operator std::string()` (the latter is `FORCE_INLINE` so the `std::string` lives in your TU):
 
 ```cpp
@@ -280,9 +282,11 @@ if (tel)
 
 `Pipeline` transforms **stream** buffers (`ReadOnly` / `WriteOnly`). It does not take IO leaves. A file or device is attached later with a [Bridge](#bridge).
 
-A pipe is a user leaf of `Pipe`. Implement `Run`, `Clone` and `Move`. `Add(const Pipe&)` clones onto Base's heap and does not touch the caller object. `Add(Pipe&&)` takes `Move()`.
+A pipe is a user leaf of `Pipe`. Implement `Run`, `Clone` and `Move`. `Add(const Pipe&)` clones onto Base's heap and does not touch the caller object. `Add(Pipe&&)` takes `Move()`. The module providing each leaf must remain loaded while the pipeline owns it, because `Run` and destruction dispatch through that provider.
 
 `Pipe::Run(ReadOnly&, WriteOnly&, const Shared<Logger::Log>&)`. Close or `SetError` the sink before return. `Pipeline::Process(buffer, log, mode)` — mode last. When a logger is set, each pipe receives a scoped handle.
+
+`Run` receives borrowed input and output references that are valid only for the call; a pipe must not retain them. This virtual callback keeps its typed borrowed references and is not wrapped in `Safe::Function`, whose ABI-safe callback arguments do not admit mutable references. A pipe exception is caught by `Process`, which sets the pipeline outputs to error instead of allowing an exception to escape the `noexcept` API. `Sink::Select` is likewise a synchronous borrowed `std::function`, not retained or certified for cross-DLL use; if it throws, `Pop` returns default `T` without consuming queued items.
 
 ```cpp
 #include <StormByte/buffer/pipe.hxx>
@@ -481,6 +485,8 @@ int main() {
 
 Public base for a binary origin. Leaves implement `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize`, `OriginSize`. Construction is `Unavailable`; a successful `Open` is `Idle`.
 
+Exceptions from `OriginOpen`, `OriginClose`, `OriginPull` and `OriginSeek` are converted to `Status::Error`. Exceptions from `Setup` or `CreateTelemetry` make `Open` return `false`. The public `Device()` accessor rethrows StormByte exceptions and translates foreign exceptions to `StormByte::Buffer::Exception`.
+
 `Available()` is cached bytes at `Tell`. It does not call the origin.
 
 `Seek` is logical. A cache hit does not move the device. `Tell` never lies.
@@ -488,6 +494,8 @@ Public base for a binary origin. Leaves implement `OriginOpen`, `OriginClose`, `
 ### IO::BufferedWriter
 
 Public base for a binary sink. Leaves implement `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush`, `OriginTruncate`. Writes are lazy up to `MaxMemory`. Public `Flush` and the Flush inside `Close` count toward `MeanRate`. Internal drains do not.
+
+Exceptions from origin hooks are converted to `Status::Error`; `Open` returns `false` when setup or telemetry creation throws, and `Close` returns `false` when closing the origin fails.
 
 ### BufferedFileReader / BufferedFileWriter
 

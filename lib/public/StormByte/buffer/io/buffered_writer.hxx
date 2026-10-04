@@ -50,6 +50,7 @@
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/safe/string.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <chrono>
 #include <cstddef>
@@ -666,3 +667,8 @@ namespace StormByte {
 		}
 	}
 }
+
+/**
+ * @brief Moving a writer through Safe::Unique requires its leaf provider module to remain loaded.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BufferedWriter);

@@ -40,7 +40,9 @@
  */
 
 #include <StormByte/buffer/backend/io/buffered_location_writer.hxx>
+#include <StormByte/buffer/exception.hxx>
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
+#include <StormByte/exception.hxx>
 
 #include <utility>
 
@@ -72,7 +74,15 @@ BufferedLocationWriter& BufferedLocationWriter::operator=(BufferedLocationWriter
 }
 
 StormByte::Safe::Shared<StormByte::System::Device> BufferedLocationWriter::Device() const {
-	return OriginDevice();
+	try {
+		return OriginDevice();
+	}
+	catch (const StormByte::Exception&) {
+		throw;
+	}
+	catch (...) {
+		throw StormByte::Buffer::Exception("Device provider failed for buffered writer");
+	}
 }
 
 bool BufferedLocationWriter::OriginDeviceUsable(const StormByte::Safe::Shared<StormByte::System::Device>& device) const noexcept {

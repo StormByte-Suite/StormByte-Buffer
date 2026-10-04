@@ -128,61 +128,79 @@ void Pipeline::SetError() const noexcept {
 Consumer Pipeline::Process(Consumer buffer,
 		const StormByte::Safe::Shared<StormByte::Logger::Log>& log,
 		const ExecutionMode& mode) const noexcept {
+	if (!m_io)
+		return buffer;
 	m_io->WaitForCompletion();
 
 	if (m_io->pipes.empty())
 		return buffer;
 
-	const StormByte::Safe::Shared<StormByte::Logger::Log> stage_log =
-		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
+	try {
+		const StormByte::Safe::Shared<StormByte::Logger::Log> stage_log =
+			log ? log->Scope("StormByte/Buffer/Pipeline") : log;
 
-	const std::size_t num_pipes = m_io->pipes.size();
+		const std::size_t num_pipes = m_io->pipes.size();
 
-	m_io->intermediates.clear();
-	m_io->intermediates.reserve(num_pipes > 1 ? num_pipes - 1 : 0);
-	for (std::size_t i = 0; i + 1 < num_pipes; ++i)
-		m_io->intermediates.emplace_back(std::make_unique<LockFreeRing>());
+		m_io->intermediates.clear();
+		m_io->intermediates.reserve(num_pipes > 1 ? num_pipes - 1 : 0);
+		for (std::size_t i = 0; i + 1 < num_pipes; ++i)
+			m_io->intermediates.emplace_back(std::make_unique<LockFreeRing>());
 
-	m_io->final_producer = Producer();
-	m_io->threads.clear();
+		m_io->final_producer = Producer();
+		m_io->threads.clear();
 
-	const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
-	const bool async = HasExecutionFlag(mode, ExecutionMode::Async);
+		const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
+		const bool async = HasExecutionFlag(mode, ExecutionMode::Async);
 
-	auto run_one = [this, stage_log, num_pipes](const std::size_t i, Consumer& input) {
-		ReadOnly& in = (i == 0)
-			? static_cast<ReadOnly&>(input)
-			: static_cast<ReadOnly&>(*m_io->intermediates[i - 1]);
-		WriteOnly& out = (i + 1 == num_pipes)
-			? static_cast<WriteOnly&>(m_io->final_producer)
-			: static_cast<WriteOnly&>(*m_io->intermediates[i]);
-		m_io->pipes[i]->Run(in, out, stage_log);
-	};
-
-	auto run_sequential =
-		[run_one, buffer = buffer, num_pipes]() mutable {
-			for (std::size_t i = 0; i < num_pipes; ++i)
-				run_one(i, buffer);
+		auto run_one = [this, stage_log, num_pipes](const std::size_t i, Consumer& input) {
+			ReadOnly& in = (i == 0)
+				? static_cast<ReadOnly&>(input)
+				: static_cast<ReadOnly&>(*m_io->intermediates[i - 1]);
+			WriteOnly& out = (i + 1 == num_pipes)
+				? static_cast<WriteOnly&>(m_io->final_producer)
+				: static_cast<WriteOnly&>(*m_io->intermediates[i]);
+			try {
+				m_io->pipes[i]->Run(in, out, stage_log);
+				return true;
+			}
+			catch (...) {
+				SetError();
+				return false;
+			}
 		};
 
-	if (parallel) {
-		Consumer input = buffer;
-		m_io->threads.reserve(num_pipes);
-		for (std::size_t i = 0; i < num_pipes; ++i) {
-			m_io->threads.emplace_back(
-				[run_one, i, input]() mutable {
-					run_one(i, input);
-				});
-		}
-		if (!async)
-			m_io->WaitForCompletion();
-	}
-	else if (async) {
-		m_io->threads.emplace_back(std::move(run_sequential));
-	}
-	else {
-		run_sequential();
-	}
+		auto run_sequential =
+			[run_one, buffer = buffer, num_pipes]() mutable {
+				for (std::size_t i = 0; i < num_pipes; ++i) {
+					if (!run_one(i, buffer))
+						break;
+				}
+			};
 
-	return m_io->final_producer.Consumer();
+		if (parallel) {
+			Consumer input = buffer;
+			m_io->threads.reserve(num_pipes);
+			for (std::size_t i = 0; i < num_pipes; ++i) {
+				m_io->threads.emplace_back(
+					[run_one, i, input]() mutable {
+						run_one(i, input);
+					});
+			}
+			if (!async)
+				m_io->WaitForCompletion();
+		}
+		else if (async) {
+			m_io->threads.emplace_back(std::move(run_sequential));
+		}
+		else {
+			run_sequential();
+		}
+
+		return m_io->final_producer.Consumer();
+	}
+	catch (...) {
+		SetError();
+		m_io->WaitForCompletion();
+		return m_io->final_producer.Consumer();
+	}
 }

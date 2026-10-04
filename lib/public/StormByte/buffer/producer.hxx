@@ -42,6 +42,9 @@
 #pragma once
 
 #include <StormByte/buffer/consumer.hxx>
+#include <StormByte/safe/owner.hxx>
+
+#include <utility>
 
 /**
  * @namespace StormByte
@@ -72,34 +75,29 @@ namespace StormByte {
 
 				/**
 				 * @brief Construct a Producer with a new shared @ref Ring.
+				 * @throws StormByte::AllocationError If Ring ownership cannot be allocated.
 				 */
-				inline Producer() noexcept : m_buffer(std::make_shared<Ring>()) {}
-
-				/**
-				 * @brief Share an existing Ring.
-				 * @param buffer Shared ring. Must not be null.
-				 */
-				inline explicit Producer(std::shared_ptr<Ring> buffer) noexcept
-					: m_buffer(std::move(buffer)) {}
+				Producer();
 
 				/**
 				 * @brief Share the Ring of a @ref Consumer.
 				 * @param consumer Consumer whose Ring is shared.
+				 * @throws StormByte::Exception If the shared owner cannot be retained.
 				 */
-				inline Producer(const Consumer& consumer) noexcept
-					: m_buffer(consumer.m_buffer) {}
+				Producer(const Consumer& consumer);
 
 				/**
 				 * @brief Copy constructor. Shares the same Ring.
 				 * @param other Source Producer.
+				 * @throws StormByte::Exception If the shared owner cannot be retained.
 				 */
-				inline Producer(const Producer& other) noexcept : m_buffer(other.m_buffer) {}
+				Producer(const Producer& other);
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Source Producer.
 				 */
-				inline Producer(Producer&& other) noexcept : m_buffer(std::move(other.m_buffer)) {}
+				Producer(Producer&& other) noexcept;
 
 				/**
 				 * @brief Destructor.
@@ -110,23 +108,16 @@ namespace StormByte {
 				 * @brief Copy assignment. Shares the same Ring afterwards.
 				 * @param other Source Producer.
 				 * @return *this.
+				 * @throws StormByte::Exception If the shared owner cannot be retained.
 				 */
-				inline Producer& operator=(const Producer& other) noexcept {
-					if (this != &other)
-						m_buffer = other.m_buffer;
-					return *this;
-				}
+				Producer& operator=(const Producer& other);
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Source Producer.
 				 * @return *this.
 				 */
-				inline Producer& operator=(Producer&& other) noexcept {
-					if (this != &other)
-						m_buffer = std::move(other.m_buffer);
-					return *this;
-				}
+				Producer& operator=(Producer&& other) noexcept;
 
 				/**
 				 * @}
@@ -142,9 +133,7 @@ namespace StormByte {
 				 * @param other Other Producer.
 				 * @return @c true if both refer to the same Ring.
 				 */
-				inline bool operator==(const Producer& other) const noexcept {
-					return m_buffer.get() == other.m_buffer.get();
-				}
+				bool operator==(const Producer& other) const noexcept;
 
 				/**
 				 * @brief Inequality.
@@ -259,12 +248,21 @@ namespace StormByte {
 				 * @brief Consumer that shares this Producer’s Ring.
 				 * @return Consumer bound to the same store.
 				 */
-				inline class Consumer Consumer() {
-					return StormByte::Buffer::Consumer{ m_buffer };
-				}
+				class Consumer Consumer();
 
-			protected:
-				std::shared_ptr<Ring> m_buffer;	///< Shared ring. Not null after construction.
+			private:
+				StormByte::Safe::Owner m_buffer;	///< Opaque shared Ring ownership; callbacks stay in Buffer.
+
+				/**
+				 * @brief Borrow the Ring held by this handle.
+				 * @return Ring reference valid for this Producer's lifetime.
+				 */
+				Ring& Storage() const noexcept;
 		};
 	}
 }
+
+/**
+ * @brief Producer ownership relies on Buffer's module-local Ring callbacks.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Producer);

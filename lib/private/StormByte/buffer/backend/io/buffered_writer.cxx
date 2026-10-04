@@ -52,6 +52,18 @@ using Status = StormByte::Buffer::IO::Status;
 using BinaryData = StormByte::BinaryData;
 using Position = StormByte::Buffer::Position;
 
+namespace {
+	template<typename Call>
+	Result InvokeOrigin(Call&& call) noexcept {
+		try {
+			return call();
+		}
+		catch (...) {
+			return { Status::Error, 0 };
+		}
+	}
+}
+
 BufferedWriter::BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::Safe::String path,
 		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
@@ -235,7 +247,7 @@ bool BufferedWriter::Open() {
 	Result opened;
 	{
 		std::lock_guard origin(m_origin_io);
-		opened = m_owner->OriginOpen();
+		opened = InvokeOrigin([this] { return m_owner->OriginOpen(); });
 	}
 
 	std::lock_guard lock(m_mutex);
@@ -274,9 +286,10 @@ bool BufferedWriter::Close() {
 		CloseSeekEpoch();
 	}
 
+	Result closed{ Status::Ok, 0 };
 	if (was_open && m_owner) {
 		std::lock_guard origin(m_origin_io);
-		static_cast<void>(m_owner->OriginClose());
+		closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
 	}
 
 	std::lock_guard lock(m_mutex);
@@ -287,6 +300,11 @@ bool BufferedWriter::Close() {
 		return false;
 	}
 	if (flushed.status == Status::Failed && was_open) {
+		m_failed = true;
+		m_state = StormByte::Buffer::IO::State::Fault;
+		return false;
+	}
+	if (closed.status != Status::Ok) {
 		m_failed = true;
 		m_state = StormByte::Buffer::IO::State::Fault;
 		return false;
@@ -336,7 +354,7 @@ Result BufferedWriter::EnsureOrigin(const StormByte::ByteSize absolute) {
 	if (skip)
 		return { Status::Ok, 0 };
 
-	const Result moved = m_owner->OriginSeek(absolute);
+	const Result moved = InvokeOrigin([this, absolute] { return m_owner->OriginSeek(absolute); });
 	if (moved.status != Status::Ok)
 		return moved;
 
@@ -575,7 +593,7 @@ Result BufferedWriter::Flush() {
 	Result visible;
 	{
 		std::lock_guard origin(m_origin_io);
-		visible = m_owner->OriginFlush();
+		visible = InvokeOrigin([this] { return m_owner->OriginFlush(); });
 	}
 	{
 		std::lock_guard dirty(m_mutex);
@@ -607,7 +625,7 @@ Result BufferedWriter::Truncate() {
 	Result truncated;
 	{
 		std::lock_guard origin(m_origin_io);
-		truncated = m_owner->OriginTruncate();
+		truncated = InvokeOrigin([this] { return m_owner->OriginTruncate(); });
 	}
 	std::lock_guard lock(m_mutex);
 	if (truncated.status != Status::Ok) {
@@ -754,7 +772,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			if (aligned.status == Status::Ok)
 				pushed = PushAll(src);
 			if (aligned.status == Status::Ok && pushed.status == Status::Ok)
-				visible = m_owner->OriginFlush();
+				visible = InvokeOrigin([this] { return m_owner->OriginFlush(); });
 		}
 		if (aligned.status != Status::Ok)
 			return aligned;
@@ -1063,7 +1081,7 @@ Result BufferedWriter::PushAll(const std::span<const std::byte> data) const {
 			return { Status::Error, off };
 
 		const auto rest = data.subspan(static_cast<std::size_t>(off));
-		const Result pushed = m_owner->OriginPush(rest);
+		const Result pushed = InvokeOrigin([this, rest] { return m_owner->OriginPush(rest); });
 		if (pushed.status == Status::Failed || pushed.status == Status::Error)
 			return { pushed.status, off };
 		if (pushed.count == StormByte::ByteSize{0})

@@ -52,6 +52,7 @@
 #include <functional>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -666,6 +667,30 @@ int test_pipeline_sync_execution() {
 	return ExpectText(fn, result, out, "SYNC-MODE-TEST");
 }
 
+int test_pipeline_pipe_exception_sets_error() {
+	constexpr auto fn = "test_pipeline_pipe_exception_sets_error";
+	int result = 0;
+	constexpr ExecutionMode modes[] = {
+		ExecutionMode::Sync,
+		ExecutionMode::Async,
+		ExecutionMode::Parallel,
+		kAsyncParallel
+	};
+	for (const ExecutionMode mode : modes) {
+		Pipeline pipeline;
+		pipeline.Add(MakePipe([](ReadOnly&, WriteOnly&,
+				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+			throw std::runtime_error("pipe failure");
+		}));
+		Producer input;
+		Consumer output = pipeline.Process(input.Consumer(), {}, mode);
+		WaitDone(output);
+		ASSERT_TRUE(fn, output.HasError());
+		ASSERT_TRUE(fn, output.EoF());
+	}
+	RETURN_TEST(fn, result);
+}
+
 int test_pipeline_sync_vs_parallel_cpu_bound() {
 	constexpr auto fn = "test_pipeline_sync_vs_parallel_cpu_bound";
 	int result = 0;
@@ -1132,6 +1157,7 @@ int main() {
 	result += test_pipeline_parallel_async_correctness();
 	result += test_pipeline_parallel_blocking();
 	result += test_pipeline_sync_execution();
+	result += test_pipeline_pipe_exception_sets_error();
 	result += test_pipeline_sync_vs_parallel_cpu_bound();
 
 	// -------------------

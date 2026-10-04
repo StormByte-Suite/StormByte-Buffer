@@ -50,23 +50,6 @@ using StormByte::Buffer::Telemetry;
 using StormByte::Buffer::WriteTelemetry;
 
 namespace {
-	std::size_t& OperationDepth() noexcept {
-		static thread_local std::size_t depth = 0;
-		return depth;
-	}
-
-	std::uint64_t OperationThreadId() noexcept {
-		static std::atomic<std::uint64_t> next_id {0};
-		static thread_local const std::uint64_t id = next_id.fetch_add(1, std::memory_order_relaxed);
-		return id;
-	}
-
-	std::string OperationClockName(Telemetry& owner) {
-		const std::size_t depth = OperationDepth()++;
-		return "Buffer.Operation." + std::to_string(reinterpret_cast<std::uintptr_t>(&owner)) + "."
-			+ std::to_string(OperationThreadId()) + "." + std::to_string(depth);
-	}
-
 	void Append(std::string& dest, const char* name, const StormByte::ByteSize value) {
 		if (!dest.empty())
 			dest.push_back(' ');
@@ -89,31 +72,22 @@ Telemetry::Telemetry() noexcept:
 
 Telemetry::~Telemetry() noexcept = default;
 
-Telemetry::OperationSample::OperationSample(Telemetry& owner):
+Telemetry::OperationSample::OperationSample(Telemetry& owner) noexcept:
 	m_owner{owner},
-	m_clock{owner.Clock(OperationClockName(owner))},
-	m_before{m_clock.Time()},
-	m_depth{&OperationDepth()} {
-	m_clock.Start();
-}
+	m_sample{owner.MeasureClock("Buffer.Operation")} {}
 
 Telemetry::OperationSample::OperationSample(OperationSample&& other) noexcept:
 	m_owner{other.m_owner},
-	m_clock{other.m_clock},
-	m_before{other.m_before},
-	m_depth{std::exchange(other.m_depth, nullptr)},
+	m_sample{std::move(other.m_sample)},
 	m_bytes{other.m_bytes},
-	m_committed{other.m_committed} {
-	other.m_committed = false;
-}
+	m_committed{other.m_committed} {}
 
 Telemetry::OperationSample::~OperationSample() noexcept {
-	if (!m_depth)
+	if (!m_sample.Active())
 		return;
-	m_clock.Stop();
+	const std::chrono::microseconds elapsed = m_sample.Stop();
 	if (m_committed)
-		m_owner.RecordOperation(m_bytes, m_clock.Time() - m_before);
-	--*m_depth;
+		m_owner.RecordOperation(m_bytes, elapsed);
 }
 
 void Telemetry::OperationSample::Commit(const StormByte::ByteSize bytes) noexcept {
@@ -125,7 +99,7 @@ StormByte::ByteSize Telemetry::MeanRate() const noexcept {
 	return StormByte::ByteSize{static_cast<std::size_t>(m_mean_rate.load(std::memory_order_acquire))};
 }
 
-Telemetry::OperationSample Telemetry::MeasureOperation() {
+Telemetry::OperationSample Telemetry::MeasureOperation() noexcept {
 	return OperationSample(*this);
 }
 
@@ -152,6 +126,7 @@ StormByte::ByteSize ReadTelemetry::Delivered() const noexcept {
 
 ReadTelemetry::operator StormByte::Safe::String() const {
 	std::string text;
+	text.reserve(64);
 	Append(text, "Delivered", m_delivered);
 	AppendRate(text, MeanRate());
 	return StormByte::Safe::String(std::string_view(text));
@@ -168,6 +143,7 @@ StormByte::ByteSize WriteTelemetry::Accepted() const noexcept {
 
 WriteTelemetry::operator StormByte::Safe::String() const {
 	std::string text;
+	text.reserve(64);
 	Append(text, "Accepted", m_accepted);
 	AppendRate(text, MeanRate());
 	return StormByte::Safe::String(std::string_view(text));

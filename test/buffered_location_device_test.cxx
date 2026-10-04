@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/exception.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
@@ -54,6 +55,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -199,6 +201,56 @@ namespace {
 			DevicePolicy m_policy;
 	};
 
+	enum class ThrowingHook {
+		Open,
+		Pull,
+		Device
+	};
+
+	class ThrowingReader final: public BufferedLocationReader {
+		public:
+			explicit ThrowingReader(const ThrowingHook hook):
+				BufferedLocationReader(StormByte::Safe::String(std::string_view("test://reader")),
+					Location::Remote, Parameters{}),
+				m_hook(hook) {}
+
+		protected:
+			Shared<Device> OriginDevice() const override {
+				if (m_hook == ThrowingHook::Device)
+					throw std::runtime_error("device hook failed");
+				return {};
+			}
+
+			Result OriginOpen() override {
+				if (m_hook == ThrowingHook::Open)
+					throw std::runtime_error("open hook failed");
+				SetState(State::Idle);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginClose() override {
+				SetState(State::Unavailable);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginPull(StormByte::ByteSize, FIFO&) override {
+				if (m_hook == ThrowingHook::Pull)
+					throw std::runtime_error("pull hook failed");
+				return { Status::End, 0 };
+			}
+
+			Result OriginSeek(std::ptrdiff_t, Position) override {
+				return { Status::Ok, 0 };
+			}
+
+			std::optional<StormByte::ByteSize> OriginSize() const noexcept override {
+				return std::nullopt;
+			}
+
+		private:
+			ThrowingHook m_hook;
+	};
+
 	std::filesystem::path TempFile(const char* name) {
 		return std::filesystem::temp_directory_path() / name;
 	}
@@ -321,6 +373,30 @@ namespace {
 		std::filesystem::remove(path);
 		RETURN_TEST(fn, 0);
 	}
+
+	int OriginHookExceptionsBecomeDomainFailures() {
+		const char* fn = "OriginHookExceptionsBecomeDomainFailures";
+		ThrowingReader open_reader(ThrowingHook::Open);
+		ASSERT_FALSE(fn, open_reader.Open());
+
+		ThrowingReader pull_reader(ThrowingHook::Pull);
+		ASSERT_TRUE(fn, pull_reader.Open());
+		FIFO data;
+		const Result pulled = pull_reader.Read(StormByte::ByteSize{1}, data);
+		ASSERT_EQUAL(fn, Status::Error, pulled.status);
+		static_cast<void>(pull_reader.Close());
+
+		ThrowingReader device_reader(ThrowingHook::Device);
+		bool translated = false;
+		try {
+			static_cast<void>(device_reader.Device());
+		}
+		catch (const StormByte::Buffer::Exception&) {
+			translated = true;
+		}
+		ASSERT_TRUE(fn, translated);
+		RETURN_TEST(fn, 0);
+	}
 }
 
 int main() {
@@ -332,6 +408,7 @@ int main() {
 	result += WriterSetupFallsBackOnUnusableDevice();
 	result += FileReaderKeepsProbeBehaviour();
 	result += FileWriterKeepsProbeBehaviour();
+	result += OriginHookExceptionsBecomeDomainFailures();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

@@ -45,6 +45,7 @@
 #include <StormByte/byte_size.hxx>
 #include <StormByte/safe/string.hxx>
 #include <StormByte/telemetry.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <atomic>
 #include <chrono>
@@ -66,7 +67,7 @@ namespace StormByte {
 
 		/**
 		 * @class Telemetry
-		 * @brief Buffer session counters layered on Base's named clocks.
+		 * @brief Buffer session counters layered on Base's independent clock samples.
 		 *
 		 * @par MeanRate
 		 * Octets per second of requested user operations, not of the
@@ -79,29 +80,30 @@ namespace StormByte {
 		 * duration. Flatten prints @ref StormByte::ByteSize IEC text
 		 * plus "/s".
 		 *
-		 * Rate accumulators are atomic. Each concurrent thread/depth receives
-		 * a distinct Base clock so the clock's Start/Stop pair is not shared.
+		 * Rate accumulators are atomic. Each operation records an independent
+		 * sample against the stable @c Buffer.Operation clock name.
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Telemetry: public StormByte::Telemetry {
 			public:
 				/**
 				 * @class OperationSample
-				 * @brief Measures one operation with a Base named clock.
+				 * @brief Measures one operation with an independent Base clock sample.
+				 * @note The sample borrows its owning Telemetry; it must not outlive it.
 				 */
 				class OperationSample {
 					public:
 						/**
 						 * @brief Copy construction is disabled.
-					 */
+						 */
 						OperationSample(const OperationSample&) = delete;
 						/**
-						 * @brief Transfers the active sample on its creating thread.
-					 * @param other Sample to take.
-					 */
+						 * @brief Transfers the active sample.
+						 * @param other Sample to take.
+						 */
 						OperationSample(OperationSample&& other) noexcept;
 						/**
 						 * @brief Copy assignment is disabled.
-					 */
+						 */
 						OperationSample& operator=(const OperationSample&) = delete;
 						/**
 						 * @brief Move assignment is disabled.
@@ -109,8 +111,7 @@ namespace StormByte {
 						OperationSample& operator=(OperationSample&&) = delete;
 
 						/**
-						 * @brief Stops the clock and records a committed operation.
-						 * @note Destroy on the thread that created this sample.
+						 * @brief Stops the sample and records a committed operation.
 						 */
 						~OperationSample() noexcept;
 
@@ -124,15 +125,13 @@ namespace StormByte {
 						friend class Telemetry;
 
 						/**
-						 * @brief Starts a per-thread Base clock for one operation.
+						 * @brief Starts one independent Base sample for an operation.
 						 * @param owner Telemetry receiving the sample.
 						 */
-						explicit OperationSample(Telemetry& owner);
+						explicit OperationSample(Telemetry& owner) noexcept;
 
 						Telemetry& m_owner; ///< Telemetry receiving the sample.
-						StormByte::Clock& m_clock; ///< Base clock assigned to this call.
-						std::chrono::microseconds m_before; ///< Clock duration before this call.
-						std::size_t* m_depth; ///< Per-thread nesting depth.
+						StormByte::Clock::Sample m_sample; ///< Independent Base interval; owner remains borrowed.
 						StormByte::ByteSize m_bytes {0}; ///< Committed operation bytes.
 						bool m_committed {false}; ///< Whether to include the sample.
 				};
@@ -151,10 +150,10 @@ namespace StormByte {
 				StormByte::ByteSize MeanRate() const noexcept;
 
 				/**
-				 * @brief Starts measuring an operation with Base's named clock drawer.
+				 * @brief Starts an independent measurement on the aggregate operation clock.
 				 * @return A scope sample. Call Commit only when the operation counts.
 				 */
-				OperationSample MeasureOperation();
+				OperationSample MeasureOperation() noexcept;
 
 				/**
 				 * @brief Flatten counters. Safe across the DLL boundary.
@@ -182,9 +181,9 @@ namespace StormByte {
 				Telemetry& operator=(Telemetry&&) = delete;
 
 				/**
-				 * @brief Accumulate the committed bytes and duration from a Base clock.
+				 * @brief Accumulate committed bytes and duration from a Base sample.
 				 * @param bytes Octets this operation delivered or accepted.
-				 * @param elapsed Duration recorded by its named Base clock.
+				 * @param elapsed Duration recorded by its independent Base sample.
 				 */
 				void RecordOperation(StormByte::ByteSize bytes, std::chrono::microseconds elapsed) noexcept;
 
@@ -277,3 +276,16 @@ namespace StormByte {
 		};
 	}
 }
+
+/**
+ * @brief Shared telemetry handles require the Buffer and Base providers to remain loaded.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::ReadTelemetry);
+/**
+ * @brief Shared telemetry handles require the Buffer and Base providers to remain loaded.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::WriteTelemetry);
+/**
+ * @brief A moved sample requires its borrowed Telemetry owner and providers to remain alive.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Telemetry::OperationSample);

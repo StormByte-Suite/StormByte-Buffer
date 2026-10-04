@@ -129,10 +129,19 @@ StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> BufferedReader::Create
 bool BufferedReader::Open() {
 	if (!m_io)
 		return false;
-	Setup();
-	if (!m_io->Telemetry())
-		m_io->BindTelemetry(CreateTelemetry());
-	return m_io->Open();
+	try {
+		Setup();
+		if (!m_io->Telemetry())
+			m_io->BindTelemetry(CreateTelemetry());
+		return m_io->Open();
+	}
+	catch (const StormByte::Exception&) {
+		throw;
+	}
+	catch (...) {
+		m_io->SetState(State::Fault);
+		return false;
+	}
 }
 
 Result BufferedReader::Close() {

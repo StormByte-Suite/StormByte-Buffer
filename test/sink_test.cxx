@@ -50,6 +50,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -303,6 +304,26 @@ int test_sink_pop_custom_select() {
 	ASSERT_EQUAL("test_sink_pop_custom_select remaining bucket index 0", 111, val_rem);
 
 	RETURN_TEST("test_sink_pop_custom_select", 0);
+}
+
+int test_sink_pop_selector_exception_preserves_items() {
+	constexpr auto fn = "test_sink_pop_selector_exception_preserves_items";
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
+	producer.To(2) >> consumer;
+	producer.Push(1, 111);
+	producer.Push(2, 222);
+
+	const auto fail = [](StormByte::Size) -> StormByte::Size {
+		throw std::runtime_error("selector failure");
+	};
+	ASSERT_EQUAL(fn, 0, consumer.Pop(fail));
+	ASSERT_EQUAL(fn, StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(fn, StormByte::Size{1}, consumer.Size(2));
+	ASSERT_EQUAL(fn, 111, consumer.Pop());
+	ASSERT_EQUAL(fn, 222, consumer.Pop());
+	RETURN_TEST(fn, 0);
 }
 
 /**
@@ -780,6 +801,7 @@ int main() {
 	failed += test_sink_non_nullable_smart_pointer();
 	failed += test_sink_overaligned_payload();
 	failed += test_sink_pop_custom_select();
+	failed += test_sink_pop_selector_exception_preserves_items();
 	failed += test_sink_push_waiting_for_wire();
 
 	// Notify / Unnotify

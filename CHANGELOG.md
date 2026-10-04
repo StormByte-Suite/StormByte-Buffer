@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-10-04
+## [2.0.0] - 2026-10-05
 
 ### Added
 
@@ -45,7 +45,8 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
-- **Breaking:** Port Buffer to StormByte Base 2.0.0. Owned text is now `StormByte::Safe::String` / `Safe::WString`; pointer and clonable APIs use `StormByte::Safe`; Buffer telemetry derives from Base `StormByte::Telemetry` and measures operations with its named clocks; Buffer exceptions accept Base-owned `Safe::String` messages.
+- **Breaking:** Port Buffer to StormByte Base 2.0.0. Owned text is now `StormByte::Safe::String` / `Safe::WString`; pointer and clonable APIs use `StormByte::Safe`; Buffer telemetry derives from Base `StormByte::Telemetry` and measures operations with independent clock samples; Buffer exceptions accept Base-owned `Safe::String` messages.
+- **Breaking:** `Producer` and `Consumer` now keep the shared `Ring` behind `StormByte::Safe::Owner`; the `Producer(std::shared_ptr<Ring>)` constructor is removed. The Ring and its shared lifetime callbacks stay in Buffer's module. `Producer`, `Consumer`, `Pipe`, the buffered IO bases and the returned telemetry sample are explicitly `MaybeSafe`, not `IsSafe`, because safe transfer depends on their borrowed lifetimes and provider modules remaining valid.
 - **Breaking:** `Sink<T>::Keys()` returns an independent, ascending `StormByte::Safe::Vector<int>` snapshot instead of `std::vector<int>`. Sink and Hopper coordinators use `Safe::Unique`, and wired hoppers use `Safe::Shared`. Private Sink maps, writer sets and order/snapshot vectors, plus normally aligned Hopper queue storage, use Base's heap allocator so storage is released on the allocating heap without restricting existing movable item types. Over-aligned items retain their standard allocator because Base's heap API does not support extended alignment; they still require a shared allocation runtime. This does not certify arbitrary payloads or incompatible STL/compiler ABIs for cross-DLL use; snapshot creator modules must remain loaded until release.
 - **Breaking:** `StormByte::Buffer::Data` is gone. Octet payloads are `StormByte::BinaryData` from Base. `data.hxx` / `data.cxx` and `DataTests` are removed.
 - **Breaking:** byte counts are `StormByte::ByteSize` (`FIFO`, `Ring`, `SharedFIFO`, `Producer` / `Consumer`, `Bridge`, `Pipeline`, `IO`). `Hopper<T>` and `Sink<T>` count items with `StormByte::Size` (`Capacity`, `Size`, `Buckets`, `Select`).
@@ -70,6 +71,9 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+- Buffer operation telemetry no longer builds clock names from owner addresses, thread IDs or nesting depth. Each operation uses Base's independently timed `Clock::Sample`, allowing nested and concurrent measurements without name collisions.
+- Exceptions from `Pipe::Run` and `Sink::Select` no longer escape `noexcept` execution paths: pipeline outputs enter error state, while a failed selector returns default `T` without removing queued items.
+- Exceptions from IO origin hooks are converted to `Status::Error`; `Open` reports setup failures as `false`, and `Device()` translates foreign exceptions to `StormByte::Buffer::Exception`. Reader and writer close results now include failures from their origin close hooks.
 - Writer drain vs `Grow`: `FrontSpan` no longer aliases `m_storage` while the producer reallocates (Mac `patev-ring-only` corruption).
 - Writer `Flush` returning before `m_origin_pos` was stored, which let the next `EnsureOrigin` land a patch on the wrong offset.
 - Concurrent `FILE*` / `ofstream` use from the writer thread and the drain worker.
@@ -91,6 +95,8 @@ If you landed here from a release link and have not read the tree:
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.
 - Reader sequential regressions: many contiguous blocks merge into one replayable span (bytes and telemetry), capped sliding window, islands bridged by an overlapping sequential pass, and a 64 MiB sequential benchmark with cache / read-ahead off, cache only, windowed and full.
 - Sink key snapshots: negative/zero/positive ordering, independence from later wiring, deep-copy and move behaviour, and use after Sink destruction. Shared hoppers retain queued items and EoF after producer destruction; over-aligned payloads preserve queue and move alignment.
+- Independent and nested telemetry samples, including moving a sample to another thread. Producer/Consumer `MaybeSafe` ABI assertions. Throwing Sink selectors preserve queued values; throwing pipeline stages set error in Sync, Async, Parallel and Async|Parallel modes.
+- Throwing IO `OriginOpen`, `OriginPull` and `OriginDevice` hooks become IO result failures or Buffer-domain exceptions rather than leaking foreign exceptions.
 
 [2.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/1.4.0...2.0.0
 
@@ -187,7 +193,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Deprecated
 
-- `Sink::Bind` (both overloads). See Unreleased TODO.
+- `Sink::Bind` (both overloads). Removed in 2.0.0.
 
 ### Fixed
 

@@ -82,6 +82,7 @@ namespace StormByte::Buffer {
 			 * @brief Index chooser for Pop selection across multiple buckets.
 			 *
 			 * Given the count of active buckets, returns an index in range [0, count).
+			 * A Select is borrowed for the synchronous Pop call and is not retained.
 			 */
 			using Select = std::function<StormByte::Size(StormByte::Size)>;
 
@@ -351,6 +352,7 @@ namespace StormByte::Buffer {
 			 * @return Next item, or default T if empty/closed.
 			 *
 			 * Blocks while zero buckets exist and Sink is not closed.
+			 * A throwing selector returns default T and leaves queued items untouched.
 			 */
 			T Pop(const Select& select) noexcept;
 

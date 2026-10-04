@@ -46,6 +46,7 @@
 #include <StormByte/safe/clonable.hxx>
 #include <StormByte/logger/log.hxx>
 #include <StormByte/safe/pointers.hxx>
+#include <StormByte/type_traits.hxx>
 
 /**
  * @namespace StormByte
@@ -64,6 +65,9 @@ namespace StormByte {
 		 * A leaf implements @ref Run, @ref Clone and @ref Move.
 		 * @ref Pipeline stores the @c Unique that @ref Clone /
 		 * @ref Move return. Allocation is on Base's heap.
+		 * The provider module implementing a leaf must remain loaded while
+		 * any cloned or moved pipe exists. @ref Run receives borrowed endpoints;
+		 * a leaf must not retain either reference after the call returns.
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Pipe: public StormByte::Safe::Clonable<Pipe, StormByte::Safe::Unique<Pipe>> {
 			public:
@@ -128,3 +132,8 @@ namespace StormByte {
 		};
 	}
 }
+
+/**
+ * @brief Pipe destruction and virtual calls require the leaf provider module to remain loaded.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Pipe);

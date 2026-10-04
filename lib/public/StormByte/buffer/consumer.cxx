@@ -41,91 +41,119 @@
 
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/buffer/ring_owner.hxx>
 
 using namespace StormByte::Buffer;
 
 Consumer::~Consumer() noexcept = default;
 
-Producer Consumer::Producer() const noexcept {
-	return StormByte::Buffer::Producer{m_buffer};
+Consumer::Consumer():
+	m_buffer{Backend::MakeRingOwner()} {}
+
+Consumer::Consumer(const Consumer& other):
+	m_buffer{other.m_buffer} {}
+
+Consumer::Consumer(Consumer&& other) noexcept = default;
+
+Consumer::Consumer(StormByte::Safe::Owner buffer) noexcept:
+	m_buffer{std::move(buffer)} {}
+
+Consumer& Consumer::operator=(const Consumer& other) {
+	if (this != &other)
+		m_buffer = other.m_buffer;
+	return *this;
+}
+
+Consumer& Consumer::operator=(Consumer&& other) noexcept = default;
+
+Ring& Consumer::Storage() const noexcept {
+	return *Backend::GetRing(m_buffer);
+}
+
+bool Consumer::operator==(const Consumer& other) const noexcept {
+	return Backend::GetRing(m_buffer) == Backend::GetRing(other.m_buffer);
+}
+
+Producer Consumer::Producer() const {
+	return StormByte::Buffer::Producer{*this};
 }
 
 StormByte::ByteSize Consumer::Available() const noexcept {
-	return m_buffer->Available();
+	return Storage().Available();
 }
 
 const StormByte::BinaryData& Consumer::Data() const noexcept {
-	return m_buffer->Data();
+	return Storage().Data();
 }
 
 bool Consumer::Empty() const noexcept {
-	return m_buffer->Empty();
+	return Storage().Empty();
 }
 
 bool Consumer::EoF() const noexcept {
-	return m_buffer->EoF();
+	return Storage().EoF();
 }
 
 bool Consumer::IsReadable() const noexcept {
-	return m_buffer->IsReadable();
+	return Storage().IsReadable();
 }
 
 StormByte::ByteSize Consumer::Size() const noexcept {
-	return m_buffer->Size();
+	return Storage().Size();
 }
 
 void Consumer::Clean() noexcept {
-	m_buffer->Clean();
+	Storage().Clean();
 }
 
 void Consumer::Clear() noexcept {
-	m_buffer->Clear();
+	Storage().Clear();
 }
 
 bool Consumer::Drop(const StormByte::ByteSize& count) noexcept {
-	return m_buffer->Drop(count);
+	return Storage().Drop(count);
 }
 
 void Consumer::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
-	m_buffer->Seek(offset, mode);
+	Storage().Seek(offset, mode);
 }
 
 bool Consumer::Extract(const StormByte::ByteSize& count, StormByte::BinaryData& out) noexcept {
-	return m_buffer->Extract(count, out);
+	return Storage().Extract(count, out);
 }
 
 bool Consumer::Extract(const StormByte::ByteSize& count, WriteOnly& out) noexcept {
-	return m_buffer->Extract(count, out);
+	return Storage().Extract(count, out);
 }
 
 void Consumer::ExtractUntilEoF(StormByte::BinaryData& out) noexcept {
-	m_buffer->ExtractUntilEoF(out);
+	Storage().ExtractUntilEoF(out);
 }
 
 void Consumer::ExtractUntilEoF(WriteOnly& out) noexcept {
-	m_buffer->ExtractUntilEoF(out);
+	Storage().ExtractUntilEoF(out);
 }
 
 bool Consumer::Read(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
-	return m_buffer->Read(count, out);
+	return Storage().Read(count, out);
 }
 
 bool Consumer::Read(const StormByte::ByteSize& count, WriteOnly& out) const noexcept {
-	return m_buffer->Read(count, out);
+	return Storage().Read(count, out);
 }
 
 void Consumer::ReadUntilEoF(StormByte::BinaryData& out) const noexcept {
-	m_buffer->ReadUntilEoF(out);
+	Storage().ReadUntilEoF(out);
 }
 
 void Consumer::ReadUntilEoF(WriteOnly& out) const noexcept {
-	m_buffer->ReadUntilEoF(out);
+	Storage().ReadUntilEoF(out);
 }
 
 bool Consumer::Peek(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
-	return m_buffer->Peek(count, out);
+	return Storage().Peek(count, out);
 }
 
 bool Consumer::Peek(const StormByte::ByteSize& count, WriteOnly& out) const noexcept {
-	return m_buffer->Peek(count, out);
+	return Storage().Peek(count, out);
 }

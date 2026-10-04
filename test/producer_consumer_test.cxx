@@ -58,6 +58,11 @@ using StormByte::BinaryData;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
 
+static_assert(StormByte::Type::MaybeSafe<Consumer>);
+static_assert(StormByte::Type::MaybeSafe<Producer>);
+static_assert(!StormByte::Type::IsSafe<Consumer>::value);
+static_assert(!StormByte::Type::IsSafe<Producer>::value);
+
 namespace {
 	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
@@ -84,6 +89,20 @@ int test_consumer_producer_shares_ring() {
 	tip.Close();
 	ASSERT_FALSE(fn, origin.IsWritable());
 	ASSERT_TRUE(fn, consumer.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_consumer_retains_ring_after_producer_destruction() {
+	const std::string fn = "test_consumer_retains_ring_after_producer_destruction";
+	Consumer consumer;
+	{
+		Producer producer;
+		ASSERT_TRUE(fn, producer.Write("kept"));
+		consumer = producer.Consumer();
+	}
+	BinaryData data;
+	ASSERT_TRUE(fn, consumer.Extract(0, data));
+	ASSERT_EQUAL(fn, std::string("kept"), BytesToText(data));
 	RETURN_TEST(fn, 0);
 }
 
@@ -1046,6 +1065,7 @@ int main() {
 	// Basic
 	// -------------------
 	result += test_consumer_producer_shares_ring();
+	result += test_consumer_retains_ring_after_producer_destruction();
 	result += test_producer_consumer_basic_write_read();
 	result += test_producer_consumer_byte_vector_write();
 	result += test_producer_consumer_clear_operation();

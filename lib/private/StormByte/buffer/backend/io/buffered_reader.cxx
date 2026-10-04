@@ -54,6 +54,16 @@ using Position = StormByte::Buffer::Position;
 namespace {
 	constexpr StormByte::ByteSize PullBatch{4096};
 
+	template<typename Call>
+	Result InvokeOrigin(Call&& call) noexcept {
+		try {
+			return call();
+		}
+		catch (...) {
+			return { Status::Error, 0 };
+		}
+	}
+
 	StormByte::ByteSize SpanEnd(const StormByte::ByteSize start, const StormByte::Buffer::FIFO& fifo) noexcept {
 		return start + fifo.Available();
 	}
@@ -172,7 +182,7 @@ bool BufferedReader::Open() {
 		already = m_open;
 	}
 
-	const Result opened = m_owner->OriginOpen();
+	const Result opened = InvokeOrigin([this] { return m_owner->OriginOpen(); });
 
 	std::lock_guard lock(m_mutex);
 	if (already)
@@ -206,8 +216,9 @@ Result BufferedReader::Close() {
 		CloseSeekEpoch();
 	}
 
+	Result closed{ Status::Ok, 0 };
 	if (was_open && m_owner)
-		static_cast<void>(m_owner->OriginClose());
+		closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
 
 	std::lock_guard lock(m_mutex);
 	m_open = false;
@@ -217,7 +228,7 @@ Result BufferedReader::Close() {
 	m_hold_prefetch = false;
 	m_state = StormByte::Buffer::IO::State::Unavailable;
 	DropCache();
-	return { Status::Ok, 0 };
+	return { closed.status, 0 };
 }
 
 void BufferedReader::Shutdown() {
@@ -769,7 +780,9 @@ Result BufferedReader::EnsureOrigin(const StormByte::ByteSize pos) const {
 	if (!OffsetFits(pos))
 		return { Status::Failed, 0 };
 
-	const Result seeked = m_owner->OriginSeek(static_cast<std::ptrdiff_t>(pos), Position::Absolute);
+	const Result seeked = InvokeOrigin([this, pos] {
+		return m_owner->OriginSeek(static_cast<std::ptrdiff_t>(pos), Position::Absolute);
+	});
 	if (seeked.status != Status::Ok)
 		return { Status::Failed, 0 };
 
@@ -797,7 +810,7 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 		return aligned;
 
 	FIFO chunk;
-	const Result pulled = m_owner->OriginPull(n, chunk);
+	const Result pulled = InvokeOrigin([this, n, &chunk] { return m_owner->OriginPull(n, chunk); });
 	if (pulled.status == Status::Failed || pulled.status == Status::Error)
 		return { pulled.status, 0 };
 

@@ -379,10 +379,17 @@ namespace StormByte::Buffer {
 
 				const std::size_t count = hoppers.size();
 				std::size_t start = 0;
-				if (select)
-					start = static_cast<std::size_t>(select(StormByte::Size{count})) % count;
-				else
+				if (select) {
+					try {
+						start = static_cast<std::size_t>(select(StormByte::Size{count})) % count;
+					}
+					catch (...) {
+						return T{};
+					}
+				}
+				else {
 					start = m_rr.fetch_add(1, std::memory_order_relaxed) % count;
+				}
 
 				for (std::size_t offset = 0; offset < count; ++offset) {
 					const auto& hopper = hoppers[(start + offset) % count];

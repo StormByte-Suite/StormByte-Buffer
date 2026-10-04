@@ -173,6 +173,8 @@ namespace StormByte {
 				 * @param log Optional. Pipes receive a scoped shared handle.
 				 * @param mode @ref ExecutionMode flags.
 				 * @return Consumer of the last pipe.
+				 * @note Exceptions from a pipe or pipeline setup mark outputs errored;
+				 *       none escape this noexcept boundary.
 				 */
 				Consumer Process(Consumer buffer,
 					const StormByte::Safe::Shared<StormByte::Logger::Log>& log,

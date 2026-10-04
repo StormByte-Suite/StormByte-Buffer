@@ -42,8 +42,8 @@
 #pragma once
 
 #include <StormByte/buffer/ring.hxx>
-
-#include <memory>
+#include <StormByte/safe/owner.hxx>
+#include <StormByte/type_traits.hxx>
 
 /**
  * @namespace StormByte
@@ -69,6 +69,8 @@ namespace StormByte {
 		 * from @ref Producer::Consumer().
 		 *
 		 * All operations are thread-safe and delegate to the shared Ring.
+				 * Ring ownership is held by @ref StormByte::Safe::Owner; the Ring
+				 * and its lifetime callbacks remain inside the Buffer module.
 		 * Blocking semantics match @ref Ring. Read / Extract / Peek block until
 		 * data is available or the buffer is closed / in error.
 		 *
@@ -95,20 +97,22 @@ namespace StormByte {
 				 *
 				 * @ref Producer() returns a writer on that Ring. Use this when
 				 * the owner only reads and still needs a write tip for a @ref Bridge.
+				 * @throws StormByte::AllocationError If Ring ownership cannot be allocated.
 				 */
-				inline Consumer() noexcept : m_buffer(std::make_shared<Ring>()) {}
+				Consumer();
 
 				/**
 				 * @brief Copy constructor.
 				 * @param other Source Consumer; both share the same Ring.
+				 * @throws StormByte::Exception If the shared owner cannot be retained.
 				 */
-				inline Consumer(const Consumer& other) noexcept : m_buffer(other.m_buffer) {}
+				Consumer(const Consumer& other);
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Source Consumer (left in a valid but unspecified state).
 				 */
-				inline Consumer(Consumer&& other) noexcept : m_buffer(std::move(other.m_buffer)) {}
+				Consumer(Consumer&& other) noexcept;
 
 				/**
 				 * @brief Destructor.
@@ -119,23 +123,16 @@ namespace StormByte {
 				 * @brief Copy assignment.
 				 * @param other Source Consumer; both share the same Ring afterwards.
 				 * @return Reference to this Consumer.
+				 * @throws StormByte::Exception If the shared owner cannot be retained.
 				 */
-				inline Consumer& operator=(const Consumer& other) noexcept {
-					if (this != &other)
-						m_buffer = other.m_buffer;
-					return *this;
-				}
+				Consumer& operator=(const Consumer& other);
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Source Consumer.
 				 * @return Reference to this Consumer.
 				 */
-				inline Consumer& operator=(Consumer&& other) noexcept {
-					if (this != &other)
-						m_buffer = std::move(other.m_buffer);
-					return *this;
-				}
+				Consumer& operator=(Consumer&& other) noexcept;
 
 				/** @} */
 
@@ -149,9 +146,7 @@ namespace StormByte {
 				 * @param other Other Consumer.
 				 * @return @c true if both refer to the same underlying Ring instance.
 				 */
-				inline bool operator==(const Consumer& other) const noexcept {
-					return m_buffer.get() == other.m_buffer.get();
-				}
+				bool operator==(const Consumer& other) const noexcept;
 
 				/**
 				 * @brief Inequality comparison.
@@ -209,7 +204,7 @@ namespace StormByte {
 				 *          (e.g. wait until a pipeline stage calls Close()).
 				 */
 				inline bool IsWritable() const noexcept {
-					return m_buffer->IsWritable();
+					return Storage().IsWritable();
 				}
 
 				/**
@@ -217,7 +212,7 @@ namespace StormByte {
 				 * @return @c true after @ref Producer::SetError on any handle to the same Ring.
 				 */
 				inline bool HasError() const noexcept {
-					return m_buffer->HasError();
+					return Storage().HasError();
 				}
 
 				/**
@@ -233,7 +228,7 @@ namespace StormByte {
 				 * Inverse of @ref Producer::Consumer. The Ring already exists
 				 * (`Consumer()` or a Producer-born Consumer).
 				 */
-				class Producer Producer() const noexcept;
+				class Producer Producer() const;
 
 				/** @} */
 
@@ -259,7 +254,7 @@ namespace StormByte {
 				 *          Readers may still drain remaining data until EoF.
 				 */
 				inline void Close() noexcept {
-					m_buffer->Close();
+					Storage().Close();
 				}
 
 				/**
@@ -372,7 +367,13 @@ namespace StormByte {
 				/** @} */
 
 			private:
-				std::shared_ptr<Ring> m_buffer;	///< Shared ring storage
+				StormByte::Safe::Owner m_buffer;	///< Opaque shared Ring ownership; callbacks stay in Buffer.
+
+				/**
+				 * @brief Borrow the Ring held by this handle.
+				 * @return Ring reference valid for this Consumer's lifetime.
+				 */
+				Ring& Storage() const noexcept;
 
 				/**
 				 * @brief Construct over an existing Ring.
@@ -380,8 +381,12 @@ namespace StormByte {
 				 *
 				 * Used by @ref Producer::Consumer.
 				 */
-				inline explicit Consumer(std::shared_ptr<Ring> buffer) noexcept
-					: m_buffer(std::move(buffer)) {}
+				explicit Consumer(StormByte::Safe::Owner buffer) noexcept;
 		};
 	}
 }
+
+/**
+ * @brief Consumer ownership relies on Buffer's module-local Ring callbacks.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Consumer);

@@ -62,7 +62,21 @@ using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::MaxMemory;
 using StormByte::Buffer::IO::ReadAhead;
 
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::Telemetry::OperationSample>);
+static_assert(!StormByte::Type::IsSafe<StormByte::Buffer::Telemetry::OperationSample>::value);
+
 namespace {
+	class SampleTelemetry final: public StormByte::Telemetry {
+		public:
+			operator StormByte::Safe::String() const override {
+				return StormByte::Safe::String(std::string_view{});
+			}
+
+			std::uint64_t OperationCount() const {
+				return Clock("Buffer.Operation").Count();
+			}
+	};
+
 	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS
 		return StormByte::Safe::String(StormByte::Safe::WString(std::wstring_view(path.wstring())));
@@ -269,6 +283,25 @@ int test_telemetry_uses_base_clock() {
 	RETURN_TEST(fn, result);
 }
 
+int test_telemetry_records_independent_samples() {
+	constexpr auto fn = "test_telemetry_records_independent_samples";
+	int result = 0;
+	SampleTelemetry telemetry;
+	{
+		auto outer = telemetry.MeasureOperation();
+		auto nested = telemetry.MeasureOperation();
+		nested.Commit(ByteSize{2});
+		outer.Commit(ByteSize{1});
+	}
+	auto transferred = telemetry.MeasureOperation();
+	std::thread worker([sample = std::move(transferred)]() mutable {
+		sample.Commit(ByteSize{3});
+	});
+	worker.join();
+	ASSERT_EQUAL(fn, std::uint64_t{3}, telemetry.OperationCount());
+	RETURN_TEST(fn, result);
+}
+
 int main() {
 	int result = 0;
 
@@ -304,6 +337,7 @@ int main() {
 	// -------------------
 	result += test_telemetry_tracks_delivered_and_accepted();
 	result += test_telemetry_uses_base_clock();
+	result += test_telemetry_records_independent_samples();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

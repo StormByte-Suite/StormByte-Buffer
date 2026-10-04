@@ -40,7 +40,9 @@
  */
 
 #include <StormByte/buffer/backend/io/buffered_location_reader.hxx>
+#include <StormByte/buffer/exception.hxx>
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
+#include <StormByte/exception.hxx>
 
 #include <utility>
 
@@ -67,7 +69,15 @@ BufferedLocationReader& BufferedLocationReader::operator=(BufferedLocationReader
 }
 
 StormByte::Safe::Shared<StormByte::System::Device> BufferedLocationReader::Device() const {
-	return OriginDevice();
+	try {
+		return OriginDevice();
+	}
+	catch (const StormByte::Exception&) {
+		throw;
+	}
+	catch (...) {
+		throw StormByte::Buffer::Exception("Device provider failed for buffered reader");
+	}
 }
 
 bool BufferedLocationReader::OriginDeviceUsable(const StormByte::Safe::Shared<StormByte::System::Device>& device) const noexcept {
