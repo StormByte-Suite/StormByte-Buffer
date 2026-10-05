@@ -190,6 +190,8 @@ Capacity `0` is unbounded. `Push` blocks when a bounded hopper is full. `Eof()` 
 
 `Notify(cv)` borrows the condition variable. Replacing or unregistering an observer synchronizes with in-flight notifications; `Unnotify()` must return before that CV dies. This does not make concurrent destruction of the Hopper safe: stop and join its users first.
 
+The legacy `Notify(cv)` does not store events: the caller must coordinate predicate checks, waits and producer operations through the consumer's wait mutex. For consumers with an independent mutex, use `Notify(cv, generation)`, where `generation` is a borrowed `std::atomic<std::size_t>`. Push and EOF increment it with release ordering and call `notify_all()` after publishing queue state. Load the counter with acquire ordering **before** checking readiness; if false, call `generation.wait(captured, std::memory_order_acquire)` and repeat. Both the CV and counter must remain alive until `Unnotify()` returns. Explicit stop/failure events must publish their state and increment/notify this same counter; do not reset it while consumers can wait on it.
+
 ```cpp
 #include <StormByte/buffer/hopper.hxx>
 #include <StormByte/safe/pointers.hxx>
@@ -229,6 +231,27 @@ int main() {
 `Select` is `StormByte::Safe::Function<StormByte::Size(StormByte::Size)>`. `Pop(const Select&)` borrows it synchronously and never retains it. The provider callback has the form `Safe::Status(void* context, Size* output, Size count)`: write the index through `output` and report `Success`. `Missing`, `Failure` or an exception returns default `T` without consuming queued items. The callback provider owns and releases its context and must remain loaded through callback destruction. The caller-side callable overload borrows the original callable, including mutable or move-only captures, only for that `Pop` call.
 
 Conditions passed to `Notify` are borrowed. `Unnotify` unregisters this Sink's matching hopper registrations and waits for in-flight notifications before returning; finish it before destroying the condition variable. Stop and join all queue users before destroying the Sink.
+
+`Sink::Notify(cv, generation)` uses the same stored-event protocol as Hopper on current and future buckets, including keyed wiring, all-bucket wiring and fan-in. Wiring publishes an event after updating the consumer, so already queued data or EOF also wakes it. Sink closure publishes an event even with no buckets. Shared hoppers have one observer: the latest registration replaces its CV, counter and owner identity. An older Sink's `Unnotify()` cannot remove that newer registration.
+
+```cpp
+std::condition_variable wake;
+std::atomic<std::size_t> generation{0};
+consumer_sink.Notify(wake, generation);
+for (;;) {
+	const auto captured = generation.load(std::memory_order_acquire);
+	if (!consumer_sink.Ready()) {
+		generation.wait(captured, std::memory_order_acquire);
+		continue;
+	}
+	if (consumer_sink.EoF())
+		break;
+	(void)consumer_sink.Pop();
+}
+consumer_sink.Unnotify();
+```
+
+Stored notifications change the private Hopper/Sink template implementation layouts in 2.0.0. Rebuild all providers and consumers that instantiate them before replacing the library; do not mix older and newer instantiations across DLLs. Borrowed atomics/CVs require a compatible C++/STL ABI, and their providers must remain loaded until notification removal completes. The counters add no ownership callbacks or changes to queue limits, blocking or element release.
 
 ```cpp
 #include <StormByte/buffer/sink.hxx>

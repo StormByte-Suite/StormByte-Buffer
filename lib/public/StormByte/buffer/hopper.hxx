@@ -46,6 +46,7 @@
 #include <StormByte/safe/owner.hxx>
 #include <StormByte/type_traits.hxx>
 
+#include <atomic>
 #include <concepts>
 #include <condition_variable>
 #include <cstddef>
@@ -312,13 +313,24 @@ namespace StormByte {
 				void Notify(std::condition_variable& wake) noexcept;
 
 				/**
-				 * @brief Drops the pointer set by @ref Notify.
+				 * @brief Registers stored Push and Eof notifications alongside the legacy CV.
+				 * @param wake Borrowed consumer condition variable.
+				 * @param generation Borrowed event counter, incremented with release ordering.
+				 * @note Load generation with acquire ordering before checking readiness, then
+				 * wait on that captured value if not ready and repeat. Control events must
+				 * increment and notify the same counter. Both referents must remain alive
+				 * until Unnotify returns; replacement synchronizes with active notifications.
+				 */
+				void Notify(std::condition_variable& wake, std::atomic<std::size_t>& generation) noexcept;
+
+				/**
+				 * @brief Drops both borrowed pointers set by @ref Notify.
 				 *
 				 * Safe to call more than once or when nothing was registered.
 				 * After this, Push and Eof do not signal a consumer CV; producers
 				 * blocked on a full bucket still wake on @c m_space.
 				 * Waits for in-flight notifications. Do not concurrently register the
-				 * condition variable again while destroying it.
+				 * condition variable or counter again while destroying either referent.
 				 */
 				void Unnotify() noexcept;
 
@@ -371,8 +383,9 @@ namespace StormByte {
 				 * @brief Registers a borrowed observer for a distinct Sink owner.
 				 * @param wake Borrowed condition variable.
 				 * @param owner Registration owner identity; never dereferenced.
+				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& wake, const void* owner) noexcept;
+				void Notify(std::condition_variable& wake, const void* owner, std::atomic<std::size_t>* generation) noexcept;
 
 				/**
 				 * @brief Removes an observer only if its Sink owner still matches.

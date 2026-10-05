@@ -95,7 +95,7 @@ namespace StormByte {
 				 * @brief Constructs the Sink Implementation instance.
 				 */
 				STORMBYTE_FORCE_INLINE Implementation() noexcept
-				: m_rr(0), m_consumer(nullptr), m_closed(false), m_drain(false) {}
+				: m_rr(0), m_consumer(nullptr), m_generation(nullptr), m_closed(false), m_drain(false) {}
 
 				/**
 				 * @brief Removes borrowed observers, marks closed and wakes wiring waiters.
@@ -147,8 +147,7 @@ namespace StormByte {
 							writers.push_back(hopper);
 						m_writers.clear();
 						m_wired.notify_all();
-						if (m_consumer)
-							m_consumer->notify_all();
+						SignalConsumer();
 					}
 					return writers;
 				}
@@ -169,13 +168,14 @@ namespace StormByte {
 						if (closed)
 							hopper->Eof();
 						if (cv != nullptr)
-							hopper->Notify(*cv, &consumer);
+							hopper->Notify(*cv, &consumer, consumer.m_generation);
 						consumer.m_buckets[key] = hopper;
 					}
 					if (closed)
 						consumer.m_closed.store(true, std::memory_order_release);
 					consumer.RebuildOrder();
 					consumer.m_wired.notify_all();
+					consumer.SignalConsumer();
 					m_wired.notify_all();
 				}
 
@@ -203,12 +203,13 @@ namespace StormByte {
 					if (closed)
 						hopper->Eof();
 					if (cv != nullptr)
-						hopper->Notify(*cv, &consumer);
+						hopper->Notify(*cv, &consumer, consumer.m_generation);
 					consumer.m_buckets[key] = hopper;
 					if (closed)
 						consumer.m_closed.store(true, std::memory_order_release);
 					consumer.RebuildOrder();
 					consumer.m_wired.notify_all();
+					consumer.SignalConsumer();
 					m_wired.notify_all();
 				}
 
@@ -234,12 +235,14 @@ namespace StormByte {
 				/**
 				 * @brief Registers condition variable for consumer notifications.
 				 * @param consumer Condition variable reference.
+				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& consumer) noexcept {
+				void Notify(std::condition_variable& consumer, std::atomic<std::size_t>* generation = nullptr) noexcept {
 					std::lock_guard<std::mutex> lock(m_mutex);
 					m_consumer = &consumer;
+					m_generation = generation;
 					for (const auto& hopper : m_order)
-						hopper->Notify(consumer, this);
+						hopper->Notify(consumer, this, generation);
 				}
 
 				/**
@@ -248,6 +251,7 @@ namespace StormByte {
 				void Unnotify() noexcept {
 					std::lock_guard<std::mutex> lock(m_mutex);
 					m_consumer = nullptr;
+					m_generation = nullptr;
 					for (const auto& hopper : m_order) {
 						if (hopper)
 							hopper->Unnotify(this);
@@ -502,6 +506,18 @@ namespace StormByte {
 
 			private:
 				/**
+				 * @brief Publishes a consumer event after state changes. Caller holds m_mutex.
+				 */
+				void SignalConsumer() noexcept {
+					if (m_generation) {
+						m_generation->fetch_add(1, std::memory_order_release);
+						m_generation->notify_all();
+					}
+					if (m_consumer)
+						m_consumer->notify_all();
+				}
+
+				/**
 				 * @brief Removes this registration from a replaced hopper. Caller holds m_mutex.
 				 * @param key Bucket being rebound.
 				 * @param replacement New hopper whose observer must not be removed.
@@ -529,7 +545,7 @@ namespace StormByte {
 					auto hopper = StormByte::Safe::Shared<Hopper<T>>::template MakePointer<Hopper<T>>();
 					std::condition_variable* cv = m_consumer;
 					if (cv != nullptr)
-						hopper->Notify(*cv, this);
+						hopper->Notify(*cv, this, m_generation);
 					m_buckets.emplace(key, hopper);
 					m_writers.insert(hopper);
 					RebuildOrder();
@@ -596,6 +612,10 @@ namespace StormByte {
 				 * @brief Borrowed consumer condition variable guarded by m_mutex.
 				 */
 				std::condition_variable* m_consumer;
+				/**
+				 * @brief Borrowed event counter guarded by m_mutex.
+				 */
+				std::atomic<std::size_t>* m_generation;
 				/**
 				 * @brief Closed flag.
 				 */
@@ -680,6 +700,11 @@ namespace StormByte {
 		template<Detail::HopperValue T>
 		void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
 			m_io->Notify(consumer);
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Notify(std::condition_variable& consumer, std::atomic<std::size_t>& generation) noexcept {
+			m_io->Notify(consumer, &generation);
 		}
 
 		template<Detail::HopperValue T>

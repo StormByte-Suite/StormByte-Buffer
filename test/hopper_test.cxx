@@ -522,6 +522,66 @@ int test_hopper_concurrent_unnotify() {
 	RETURN_TEST(name, 0);
 }
 
+/**
+ * @brief Push and EOF events remain stored across replacement and observer removal.
+ * @return Zero on success.
+ */
+int test_hopper_stored_notifications() {
+	constexpr auto name = "test_hopper_stored_notifications";
+	Hopper<int> hopper;
+	std::condition_variable wake;
+	std::atomic<std::size_t> first{0};
+	std::atomic<std::size_t> second{0};
+	hopper.Notify(wake, first);
+	const auto before = first.load(std::memory_order_acquire);
+	ASSERT_FALSE(name, hopper.Ready());
+	hopper.Push(42);
+	ASSERT_EQUAL(name, before + 1, first.load());
+	first.wait(before, std::memory_order_acquire);
+	ASSERT_EQUAL(name, 42, hopper.Pop());
+	hopper.Notify(wake, second);
+	hopper.Push(43);
+	hopper.Eof();
+	ASSERT_EQUAL(name, before + 1, first.load());
+	ASSERT_EQUAL(name, std::size_t{2}, second.load());
+	ASSERT_EQUAL(name, 43, hopper.Pop());
+	hopper.Notify(wake);
+	hopper.Eof();
+	ASSERT_EQUAL(name, std::size_t{2}, second.load());
+	hopper.Unnotify();
+	hopper.Unnotify();
+	hopper.Eof();
+	ASSERT_EQUAL(name, std::size_t{2}, second.load());
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Borrowed CV and counter can die after removal while Push and EOF continue.
+ * @return Zero on success.
+ */
+int test_hopper_stored_concurrent_unnotify() {
+	constexpr auto name = "test_hopper_stored_concurrent_unnotify";
+	for (int iteration = 0; iteration < 50; ++iteration) {
+		Hopper<int> hopper;
+		std::thread producer;
+		{
+			std::condition_variable wake;
+			std::atomic<std::size_t> generation{0};
+			hopper.Notify(wake, generation);
+			producer = std::thread([&] {
+				for (int item = 1; item <= 100; ++item)
+					hopper.Push(item);
+				hopper.Eof();
+			});
+			hopper.Unnotify();
+		}
+		producer.join();
+		ASSERT_EQUAL(name, StormByte::Size{100}, hopper.Size());
+		ASSERT_TRUE(name, hopper.EoF());
+	}
+	RETURN_TEST(name, 0);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Push / Pop / Eof                                                           */
 /* -------------------------------------------------------------------------- */
@@ -742,6 +802,8 @@ int main() {
 	failed += test_hopper_notify_condition_variable();
 	failed += test_hopper_unnotify_before_cv_dies();
 	failed += test_hopper_concurrent_unnotify();
+	failed += test_hopper_stored_concurrent_unnotify();
+	failed += test_hopper_stored_notifications();
 
 	// Push / Pop / Eof
 	failed += test_hopper_eof_behavior();

@@ -48,6 +48,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -913,6 +914,210 @@ int test_sink_observer_concurrent_unnotify() {
 	RETURN_TEST(name, 0);
 }
 
+/**
+ * @brief Forces data, EOF, empty closure, wiring and control events before atomic wait.
+ * @return Zero on success.
+ */
+int test_sink_stored_handoff() {
+	constexpr auto name = "test_sink_stored_handoff";
+	for (int event = 0; event < 7; ++event) {
+		Sink<int> producer;
+		Sink<int> consumer;
+		Sink<int> staging;
+		std::condition_variable wake;
+		std::atomic<std::size_t> generation{0};
+		std::atomic<bool> stopped{false};
+		consumer.Notify(wake, generation);
+		if (event < 2)
+			producer.To(0) >> consumer;
+		if (event >= 4) {
+			producer.To(0) >> staging;
+			if (event == 4)
+				producer.Push(0, 42);
+			else
+				producer.Eof();
+		}
+		std::promise<void> checked;
+		std::promise<void> published;
+		auto after_check = checked.get_future();
+		auto after_publish = published.get_future();
+		auto waiter = std::async(std::launch::async, [&] {
+			bool first = true;
+			for (;;) {
+				const auto before = generation.load(std::memory_order_acquire);
+				const bool ready = consumer.Ready() || stopped.load(std::memory_order_acquire);
+				if (first) {
+					first = false;
+					checked.set_value();
+					after_publish.wait();
+				}
+				if (ready)
+					break;
+				generation.wait(before, std::memory_order_acquire);
+			}
+		});
+		after_check.wait();
+		if (event == 0)
+			producer.Push(0, 42);
+		else if (event == 1)
+			producer.Eof();
+		else if (event == 2)
+			consumer.Eof();
+		else if (event == 3) {
+			stopped.store(true, std::memory_order_release);
+			generation.fetch_add(1, std::memory_order_release);
+			generation.notify_all();
+		}
+		else if (event == 6)
+			producer.To(0) >> consumer;
+		else
+			producer >> consumer;
+		published.set_value();
+		const bool woke = waiter.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+		if (!woke) {
+			stopped.store(true, std::memory_order_release);
+			generation.fetch_add(1, std::memory_order_release);
+			generation.notify_all();
+		}
+		waiter.get();
+		consumer.Unnotify();
+		ASSERT_TRUE(name, woke);
+		if (event == 0 || event == 4)
+			ASSERT_EQUAL(name, 42, consumer.Pop(0));
+		else if (event != 3)
+			ASSERT_TRUE(name, consumer.EoF());
+	}
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Stored registrations follow Ensure, keyed/all wiring, fan-in and final-writer EOF.
+ * @return Zero on success.
+ */
+int test_sink_stored_wiring() {
+	constexpr auto name = "test_sink_stored_wiring";
+	Sink<int> first;
+	Sink<int> second;
+	Sink<int> consumer;
+	Sink<int> downstream;
+	std::condition_variable wake;
+	std::atomic<std::size_t> generation{0};
+	first.Notify(wake, generation);
+	first.To(0) >> consumer;
+	const auto ensured = generation.load();
+	first.Push(0, 11);
+	ASSERT_EQUAL(name, ensured + 1, generation.load());
+	ASSERT_EQUAL(name, 11, consumer.Pop(0));
+	consumer.Notify(wake, generation);
+	first.To(1) >> consumer;
+	consumer.Capacity(1, 512);
+	const auto created = generation.load();
+	first.Push(1, 22);
+	ASSERT_EQUAL(name, created + 1, generation.load());
+	ASSERT_EQUAL(name, 22, consumer.Pop(1));
+	downstream.Notify(wake, generation);
+	first >> downstream;
+	const auto bound = generation.load();
+	first.Push(0, 33);
+	ASSERT_EQUAL(name, bound + 1, generation.load());
+	ASSERT_EQUAL(name, 33, downstream.Pop(0));
+	first.To(0) >> second;
+	second >> downstream;
+	const auto shared = generation.load();
+	second.Push(0, 44);
+	ASSERT_EQUAL(name, shared + 1, generation.load());
+	ASSERT_EQUAL(name, 44, downstream.Pop(0));
+	first.Eof();
+	ASSERT_FALSE(name, downstream.EoF(0));
+	const auto before_final = generation.load();
+	second.Eof();
+	ASSERT_TRUE(name, generation.load() > before_final);
+	ASSERT_TRUE(name, downstream.EoF());
+	ASSERT_EQUAL(name, StormByte::Size{512}, downstream.Capacity(1));
+	first.Unnotify();
+	consumer.Unnotify();
+	downstream.Unnotify();
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Counter replacement, stale removal, rewiring and legacy replacement preserve ownership.
+ * @return Zero on success.
+ */
+int test_sink_stored_observer_identity() {
+	constexpr auto name = "test_sink_stored_observer_identity";
+	Sink<int> first;
+	Sink<int> second;
+	Sink<int> consumer;
+	std::condition_variable wake;
+	std::atomic<std::size_t> generation{0};
+	first.To(0) >> consumer;
+	{
+		Sink<int> older;
+		std::condition_variable old_wake;
+		std::atomic<std::size_t> old_generation{0};
+		first >> older;
+		older.Notify(old_wake, old_generation);
+		consumer.Notify(wake, generation);
+		older.Unnotify();
+		older.Unnotify();
+		const auto before = generation.load();
+		first.Push(0, 11);
+		ASSERT_EQUAL(name, before + 1, generation.load());
+		ASSERT_EQUAL(name, std::size_t{0}, old_generation.load());
+		ASSERT_EQUAL(name, 11, consumer.Pop(0));
+	}
+	second.To(0) >> consumer;
+	const auto rebound = generation.load();
+	first.Push(0, 22);
+	ASSERT_EQUAL(name, rebound, generation.load());
+	second.Push(0, 33);
+	ASSERT_EQUAL(name, rebound + 1, generation.load());
+	ASSERT_EQUAL(name, 33, consumer.Pop(0));
+	consumer.Notify(wake);
+	const auto legacy = generation.load();
+	second.Push(0, 44);
+	second.Eof();
+	ASSERT_EQUAL(name, legacy, generation.load());
+	consumer.Unnotify();
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Push, EOF and wiring cannot access borrowed counters after concurrent removal returns.
+ * @return Zero on success.
+ */
+int test_sink_stored_concurrent_unnotify() {
+	constexpr auto name = "test_sink_stored_concurrent_unnotify";
+	for (int iteration = 0; iteration < 50; ++iteration) {
+		Sink<int> producer;
+		Sink<int> consumer;
+		producer.To(0) >> consumer;
+		std::thread publishing;
+		std::thread wiring;
+		{
+			std::condition_variable wake;
+			std::atomic<std::size_t> generation{0};
+			consumer.Notify(wake, generation);
+			publishing = std::thread([&] {
+				for (int item = 1; item <= 100; ++item)
+					producer.Push(0, item);
+				producer.Eof();
+			});
+			wiring = std::thread([&] {
+				for (int key = 1; key <= 10; ++key)
+					producer.To(key) >> consumer;
+			});
+			consumer.Unnotify();
+		}
+		publishing.join();
+		wiring.join();
+		ASSERT_TRUE(name, consumer.EoF(0));
+		ASSERT_EQUAL(name, StormByte::Size{100}, consumer.Size(0));
+	}
+	RETURN_TEST(name, 0);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Query / keyed Pop                                                          */
 /* -------------------------------------------------------------------------- */
@@ -1299,6 +1504,10 @@ int main() {
 	failed += test_sink_closed_binding_writer_release();
 	failed += test_sink_closed_cowriter_push();
 	failed += test_sink_observer_concurrent_unnotify();
+	failed += test_sink_stored_concurrent_unnotify();
+	failed += test_sink_stored_handoff();
+	failed += test_sink_stored_observer_identity();
+	failed += test_sink_stored_wiring();
 
 	// Query / keyed Pop
 	failed += test_sink_pop_key();

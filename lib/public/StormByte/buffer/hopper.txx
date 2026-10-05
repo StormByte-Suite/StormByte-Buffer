@@ -83,14 +83,14 @@ namespace StormByte {
 				 * @brief Constructs an unbounded Implementation instance.
 				 */
 				STORMBYTE_FORCE_INLINE Implementation() noexcept
-					: m_eof(false), m_wake(nullptr), m_observer(nullptr), m_cap(0), m_writers(1) {}
+					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(0), m_writers(1) {}
 
 				/**
 				 * @brief Constructs a bounded Implementation instance.
 				 * @param capacity Maximum items allowed.
 				 */
 				STORMBYTE_FORCE_INLINE explicit Implementation(StormByte::Size capacity) noexcept
-					: m_eof(false), m_wake(nullptr), m_observer(nullptr), m_cap(static_cast<std::size_t>(capacity)), m_writers(1) {}
+					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(static_cast<std::size_t>(capacity)), m_writers(1) {}
 
 				/**
 				 * @brief Destructor. Marks EoF and wakes waiting producers.
@@ -263,10 +263,12 @@ namespace StormByte {
 				 * @brief Replaces the borrowed observer after any active notification finishes.
 				 * @param wake Condition variable that remains alive until removal.
 				 * @param owner Sink registration identity, or null for direct registration.
+				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& wake, const void* owner = nullptr) noexcept {
+				void Notify(std::condition_variable& wake, const void* owner = nullptr, std::atomic<std::size_t>* generation = nullptr) noexcept {
 					std::lock_guard<std::mutex> lock(m_observer_mutex);
 					m_wake = &wake;
+					m_generation = generation;
 					m_observer = owner;
 				}
 
@@ -276,6 +278,7 @@ namespace StormByte {
 				void Unnotify() noexcept {
 					std::lock_guard<std::mutex> lock(m_observer_mutex);
 					m_wake = nullptr;
+					m_generation = nullptr;
 					m_observer = nullptr;
 				}
 
@@ -287,6 +290,7 @@ namespace StormByte {
 					std::lock_guard<std::mutex> lock(m_observer_mutex);
 					if (m_observer == owner) {
 						m_wake = nullptr;
+						m_generation = nullptr;
 						m_observer = nullptr;
 					}
 				}
@@ -297,6 +301,10 @@ namespace StormByte {
 				 */
 				void SignalConsumer() noexcept {
 					std::lock_guard<std::mutex> lock(m_observer_mutex);
+					if (m_generation) {
+						m_generation->fetch_add(1, std::memory_order_release);
+						m_generation->notify_all();
+					}
 					if (m_wake)
 						m_wake->notify_one();
 				}
@@ -330,6 +338,11 @@ namespace StormByte {
 				 * @brief Borrowed consumer condition variable, guarded by m_observer_mutex.
 				 */
 				std::condition_variable* m_wake;
+
+				/**
+				 * @brief Borrowed event counter guarded by m_observer_mutex.
+				 */
+				std::atomic<std::size_t>* m_generation;
 
 				/**
 				 * @brief Sink registration identity guarded by m_observer_mutex; never dereferenced.
@@ -452,13 +465,18 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
+		void Hopper<T>::Notify(std::condition_variable& wake, std::atomic<std::size_t>& generation) noexcept {
+			m_io->Notify(wake, nullptr, &generation);
+		}
+
+		template<Detail::HopperValue T>
 		void Hopper<T>::Unnotify() noexcept {
 			m_io->Unnotify();
 		}
 
 		template<Detail::HopperValue T>
-		void Hopper<T>::Notify(std::condition_variable& wake, const void* owner) noexcept {
-			m_io->Notify(wake, owner);
+		void Hopper<T>::Notify(std::condition_variable& wake, const void* owner, std::atomic<std::size_t>* generation) noexcept {
+			m_io->Notify(wake, owner, generation);
 		}
 
 		template<Detail::HopperValue T>

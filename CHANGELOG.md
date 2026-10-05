@@ -30,7 +30,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
 
-## [2.0.0] - 2026-10-05
+## [2.0.0] - 2026-10-06
 
 ### Added
 
@@ -80,6 +80,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+- Add opt-in stored notifications through `Hopper<T>::Notify(cv, std::atomic<std::size_t>&)` and `Sink<T>::Notify(cv, std::atomic<std::size_t>&)` for consumers whose wait mutex is independent of the queue mutex. Push, EOF, Sink closure (including an empty Sink) and wiring publish generation changes after state updates, preventing a notification between a false predicate check and atomic wait from being lost. Existing CV-only registrations still require external wait-mutex coordination. Registration propagates through current/new buckets, keyed/all wiring and fan-in; replacement and matching-owner removal synchronize both borrowed referents with in-flight notifications. Queue limits, blocking, writer accounting and Safe-owned element lifetimes are unchanged. All template providers and consumers must be rebuilt together because private Hopper/Sink implementation layouts changed; do not mix pre-fix and post-fix instantiations across DLLs.
 - Export `Telemetry::OperationSample` from the Buffer DLL so consumers can use its out-of-line move, destruction and commit operations on Windows.
 - Buffer operation telemetry no longer builds clock names from owner addresses, thread IDs or nesting depth. Each operation uses Base's independently timed `Clock::Sample`, allowing nested and concurrent measurements without name collisions.
 - Exceptions from `Pipe::Run` and `Sink::Select` no longer escape `noexcept` execution paths: pipeline callback `Failure`, moved-from `Missing` and exceptions mark every output errored and wake waiters, while a failed selector returns default `T` without removing queued items. Pipeline copy assignment preserves the destination if callback cloning fails.
@@ -102,6 +103,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
+- Stored-notification regressions force Push, final-writer EOF, empty Sink closure, explicit control wake and queued/closed wiring between a false readiness check and atomic wait. Additional Hopper/Sink tests cover registration before/after wiring, new buckets, all-bucket binding, fan-in, capacity preservation, counter replacement, legacy replacement, stale owner removal, rewiring and concurrent Push/EOF/wiring versus observer removal and borrowed-object destruction.
 - `BufferedFileReaderTests` / `BufferedFileWriterTests` / `BridgeTests` construct IO with `Parameters` / knobs (`ReadAhead`, `MaxMemory`, `WriteChunk`, `BackPressure`). Path-only still probes.
 - Predictable hex fixture, integrity of every `Read` after logical and cold seeks, `Tell` during a logical seek, telemetry prints via `*Telemetry()`.
 - Writer close/flush integrity on hex files, holes, far islands, eviction + patch, ring-only / pages / direct knobs.

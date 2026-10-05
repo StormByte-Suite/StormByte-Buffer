@@ -48,6 +48,7 @@
 #include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -272,12 +273,24 @@ namespace StormByte {
 				void Notify(std::condition_variable& consumer) noexcept;
 
 				/**
+				 * @brief Registers stored notifications on current and future hoppers and Sink closure.
+				 * @param consumer Borrowed consumer condition variable.
+				 * @param generation Borrowed event counter, incremented with release ordering.
+				 * @note Load generation with acquire ordering before checking Ready or EoF,
+				 * then wait on the captured value if false and repeat. Explicit stop/failure
+				 * events must increment and notify the same counter. Both referents must
+				 * remain alive until Unnotify returns. Shared hoppers retain one observer;
+				 * the latest registration wins, including its counter and owner identity.
+				 */
+				void Notify(std::condition_variable& consumer, std::atomic<std::size_t>& generation) noexcept;
+
+				/**
 				 * @brief Removes only this Sink's matching borrowed registrations.
 				 *
 				 * Call after Eof when the consumer condition variable is about
 				 * to die. Waits for active notifications and wiring; a newer registration
 				 * made by another Sink is preserved. Destruction also removes this registration.
-				 * Registration must not race destruction of either borrowed condition variable.
+				 * Registration must not race destruction of any borrowed CV or event counter.
 				 */
 				void Unnotify() noexcept;
 
