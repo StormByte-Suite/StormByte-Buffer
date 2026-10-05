@@ -208,7 +208,8 @@ namespace StormByte {
 				 *       release use matching creator callbacks and Base's heap.
 				 */
 				template<typename Callable>
-				requires Type::CopyConstructible<std::remove_cvref_t<Callable>> &&
+				requires (!Type::SameAs<std::remove_cvref_t<Callable>, Pipe>) &&
+					Type::CopyConstructible<std::remove_cvref_t<Callable>> &&
 					requires(std::remove_cvref_t<Callable>& callable, const PipeInput& input,
 						const PipeOutput& output, const StormByte::Safe::Shared<StormByte::Logger::Log>& log) {
 						{ callable(input, output, log) } -> Type::SameAs<void>;

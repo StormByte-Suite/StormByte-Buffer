@@ -83,6 +83,8 @@ namespace {
 	static_assert(FunctionAdmits<void(const PipeInput&, const PipeOutput&)>);
 	static_assert(!FunctionAdmits<void(PipeInput&, const PipeOutput&)>);
 	static_assert(!FunctionAdmits<void(const PipeInput&, PipeOutput&)>);
+	static_assert(StormByte::Type::CopyConstructible<Pipe>);
+	static_assert(StormByte::Type::MoveConstructible<Pipe>);
 
 	bool WaitUntil(const auto& predicate) {
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
