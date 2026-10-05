@@ -44,11 +44,11 @@
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/safe/optional.hxx>
 #include <StormByte/safe/pointers.hxx>
 
 #include <condition_variable>
 #include <mutex>
-#include <optional>
 #include <thread>
 
 /**
@@ -96,7 +96,7 @@ namespace StormByte {
 					 * @param high_water Empty = default from the input kind.
 					 */
 					Pumper(StormByte::Buffer::Bridge&& bridge, StormByte::ByteSize chunk,
-						std::optional<StormByte::ByteSize> high_water);
+						StormByte::Safe::Optional<StormByte::ByteSize> high_water);
 
 					Pumper(const Pumper&) = delete;
 					Pumper(Pumper&&) = delete;

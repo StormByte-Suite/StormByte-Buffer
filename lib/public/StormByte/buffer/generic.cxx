@@ -43,13 +43,82 @@
 
 using namespace StormByte::Buffer;
 
+Generic::Generic() noexcept = default;
+Generic::Generic(const Generic& other) noexcept = default;
+Generic::Generic(Generic&& other) noexcept = default;
 Generic::~Generic() noexcept = default;
+Generic& Generic::operator=(const Generic& other) noexcept = default;
+Generic& Generic::operator=(Generic&& other) noexcept = default;
 
+ReadOnly::ReadOnly() noexcept = default;
+ReadOnly::ReadOnly(const ReadOnly& other) noexcept = default;
+ReadOnly::ReadOnly(ReadOnly&& other) noexcept = default;
 ReadOnly::~ReadOnly() noexcept = default;
+ReadOnly& ReadOnly::operator=(const ReadOnly& other) noexcept = default;
+ReadOnly& ReadOnly::operator=(ReadOnly&& other) noexcept {
+	Generic::operator=(std::move(other));
+	return *this;
+}
 
+WriteOnly::WriteOnly() noexcept = default;
+WriteOnly::WriteOnly(const WriteOnly& other) noexcept = default;
+WriteOnly::WriteOnly(WriteOnly&& other) noexcept = default;
 WriteOnly::~WriteOnly() noexcept = default;
+WriteOnly& WriteOnly::operator=(const WriteOnly& other) noexcept = default;
+WriteOnly& WriteOnly::operator=(WriteOnly&& other) noexcept {
+	Generic::operator=(std::move(other));
+	return *this;
+}
 
+ReadWrite::ReadWrite() noexcept = default;
+ReadWrite::ReadWrite(const ReadWrite& other) noexcept = default;
+ReadWrite::ReadWrite(ReadWrite&& other) noexcept = default;
 ReadWrite::~ReadWrite() noexcept = default;
+ReadWrite& ReadWrite::operator=(const ReadWrite& other) noexcept = default;
+ReadWrite& ReadWrite::operator=(ReadWrite&& other) noexcept {
+	Generic::operator=(std::move(other));
+	return *this;
+}
+
+StormByte::BinaryData Generic::DataConvert(const std::string_view sv) noexcept {
+	StormByte::BinaryData out;
+	if (!sv.empty())
+		out.reserve(StormByte::ByteSize{sv.size()});
+	std::transform(sv.begin(), sv.end(), std::back_inserter(out),
+		[](char character) noexcept { return static_cast<std::byte>(character); });
+	return out;
+}
+
+StormByte::BinaryData Generic::DataConvert(const char* source) noexcept {
+	if (!source)
+		return StormByte::BinaryData{};
+	return DataConvert(std::string_view(source));
+}
+
+bool WriteOnly::Write(const std::string_view source) noexcept {
+	StormByte::BinaryData converted = DataConvert(source);
+	return Write(converted.size(), std::move(converted));
+}
+
+bool WriteOnly::Write(const char* source) noexcept {
+	if (!source)
+		return Write(StormByte::BinaryData{});
+	return Write(std::string_view(source));
+}
+
+bool WriteOnly::Write(const StormByte::ByteSize& count, const std::string_view source) noexcept {
+	const StormByte::ByteSize to_write = (count == StormByte::ByteSize{0})
+		? StormByte::ByteSize{source.size()}
+		: std::min(count, StormByte::ByteSize{source.size()});
+	StormByte::BinaryData converted = DataConvert(source.substr(0, static_cast<std::size_t>(to_write)));
+	return Write(to_write, std::move(converted));
+}
+
+bool WriteOnly::Write(const StormByte::ByteSize& count, const char* source) noexcept {
+	if (!source)
+		return Write(count, StormByte::BinaryData{});
+	return Write(count, std::string_view(source));
+}
 
 namespace StormByte::Buffer {
 	template BinaryData STORMBYTE_BUFFER_INSTANTIATE Generic::DataConvert<BinaryData>(const BinaryData&) noexcept;

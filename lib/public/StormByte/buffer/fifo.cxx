@@ -205,14 +205,14 @@ StormByte::Safe::String FIFO::HexDump(const StormByte::ByteSize& columns, const 
 	const StormByte::ByteSize end = (byte_limit > StormByte::ByteSize{0})
 		? std::min(stored, m_position_offset + byte_limit)
 		: stored;
-	std::ostringstream oss = HexDumpHeader();
-	oss << '\n';
+	std::ostringstream oss;
+	oss << std::string_view(HexDumpHeader()) << '\n';
 	if (end > m_position_offset) {
 		const std::size_t off = static_cast<std::size_t>(m_position_offset);
 		const std::size_t len = static_cast<std::size_t>(end - m_position_offset);
 		std::span<const std::byte> view(m_buffer.data() + off, len);
 		const StormByte::Safe::String lines = FormatHexLines(view, m_position_offset, cols);
-		oss << lines.data();
+		oss << std::string_view(lines);
 	}
 
 	return StormByte::Safe::String{std::string_view(oss.str())};
@@ -259,13 +259,13 @@ StormByte::Safe::String FIFO::FormatHexLines(std::span<const std::byte>& data, S
 	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
-std::ostringstream FIFO::HexDumpHeader() const noexcept {
+StormByte::Safe::String FIFO::HexDumpHeader() const noexcept {
 	std::ostringstream oss;
 	oss << "Size: " << static_cast<std::size_t>(m_buffer.size()) << " bytes\n";
 	oss << "Read Position: " << static_cast<std::size_t>(m_position_offset) << '\n';
 	oss << "Status: " << (m_closed ? "closed" : "open")
 		<< " / " << (m_error ? "error" : "ok");
-	return oss;
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
 StormByte::ByteSize FIFO::AvailableInternal() const noexcept {

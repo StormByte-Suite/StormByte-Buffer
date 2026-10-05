@@ -122,10 +122,47 @@ namespace StormByte {
 					/**
 					 * @class Parameters
 					 * @brief Location-reader knobs. Same fields as @ref BufferedReader::Parameters.
+					 * @note Construction and copying may allocate and throw.
 					 */
 					class Parameters: public BufferedReader::Parameters {
 						public:
-							using BufferedReader::Parameters::Parameters;
+							/**
+							 * @brief Construct an empty Safe-owned parameter bag.
+							 */
+							Parameters() = default;
+							/**
+							 * @brief Store reader knobs in Safe-owned optional values.
+							 * @tparam Knobs Supported reader knobs.
+							 * @param knobs Values to store.
+							 */
+							template<typename... Knobs>
+							Parameters(Knobs... knobs): BufferedReader::Parameters(std::move(knobs)...) {}
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 */
+							Parameters(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 */
+							Parameters(Parameters&& other) noexcept = default;
+							/**
+							 * @brief Release knobs through provider callbacks.
+							 */
+							~Parameters() noexcept = default;
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(Parameters&& other) noexcept = default;
 					};
 
 					/**
@@ -179,7 +216,7 @@ namespace StormByte {
 						BufferedLocationReader(std::move(path), location,
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
 							!parameters.ReadAhead().has_value()) {}
 
 					/**
@@ -241,8 +278,13 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
-					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedLocationReader> m_io;	///< Location string and probe flag.
+					/**
+					 * @brief Provider-owned location state and probe flag.
+					 */
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedLocationReader> m_io;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BufferedLocationReader);

@@ -42,6 +42,7 @@
 #include <StormByte/buffer/backend/io/buffered_reader.hxx>
 
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -344,7 +345,7 @@ bool BufferedReader::IsSized() const noexcept {
 	return m_owner && m_owner->OriginHasSize();
 }
 
-std::optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
+StormByte::Safe::Optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
 	if (!m_owner)
 		return std::nullopt;
 	return m_owner->OriginSize();

@@ -65,6 +65,12 @@ using StormByte::Buffer::IO::ReadAhead;
 
 static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::Telemetry::OperationSample>);
 static_assert(!StormByte::Type::IsSafe<StormByte::Buffer::Telemetry::OperationSample>::value);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::Telemetry>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::ReadTelemetry>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::WriteTelemetry>);
+static_assert(!StormByte::Type::SafeValue<StormByte::Buffer::Telemetry::OperationSample>);
+static_assert(StormByte::Type::SafeValue<StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry>>);
+static_assert(StormByte::Type::SafeValue<StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry>>);
 
 namespace {
 	class SampleTelemetry final: public StormByte::Buffer::Telemetry {
@@ -77,6 +83,7 @@ namespace {
 				return Clock("Buffer.Operation").Count();
 			}
 	};
+	static_assert(!StormByte::Type::MaybeSafe<SampleTelemetry>);
 
 	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS

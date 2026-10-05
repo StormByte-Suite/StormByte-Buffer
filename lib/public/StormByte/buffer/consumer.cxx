@@ -51,6 +51,8 @@ Consumer::Consumer():
 	m_buffer{Backend::MakeRingOwner()} {}
 
 Consumer::Consumer(const Consumer& other):
+	Generic(other),
+	ReadOnly(other),
 	m_buffer{other.m_buffer} {}
 
 Consumer::Consumer(Consumer&& other) noexcept = default;

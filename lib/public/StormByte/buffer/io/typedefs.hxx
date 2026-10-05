@@ -43,6 +43,8 @@
 
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/byte_size.hxx>
+#include <StormByte/platform.h>
+#include <StormByte/type_traits.hxx>
 
 #include <string_view>
 
@@ -70,11 +72,26 @@ namespace StormByte {
 			 * @see Result, State
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Status {
-				Ok,			///< The call completed as requested (see @ref Result::count).
-				End,		///< Origin exhausted; @ref Result::count may be short.
-				Error,		///< Origin failed during the call; buffers untouched.
-				Failed,		///< Illegal call or dead session; buffers untouched.
-				TryAgain	///< Not accepted; buffers untouched. State stays Idle.
+				/**
+				 * @brief The call completed as requested (see @ref Result::count).
+				 */
+				Ok,
+				/**
+				 * @brief Origin exhausted; @ref Result::count may be short.
+				 */
+				End,
+				/**
+				 * @brief Origin failed during the call; buffers untouched.
+				 */
+				Error,
+				/**
+				 * @brief Illegal call or dead session; buffers untouched.
+				 */
+				Failed,
+				/**
+				 * @brief Not accepted; buffers untouched. State stays Idle.
+				 */
+				TryAgain
 			};
 
 			/**
@@ -84,13 +101,34 @@ namespace StormByte {
 			 * Distinct from @ref Status, which is per-call.
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC State {
-				Idle,			///< Armed.
-				Missing,		///< Last Open: path or parent does not exist.
-				Directory,		///< Last Open: path is a directory.
-				Permission,		///< Last Open: exists; read open denied.
-				NotWritable,	///< Last Open or mid-write: cannot write.
-				Fault,			///< Origin I/O error mid-transfer.
-				Unavailable		///< Ctor, after Close, or origin gone.
+				/**
+				 * @brief Armed.
+				 */
+				Idle,
+				/**
+				 * @brief Last Open: path or parent does not exist.
+				 */
+				Missing,
+				/**
+				 * @brief Last Open: path is a directory.
+				 */
+				Directory,
+				/**
+				 * @brief Last Open: exists; read open denied.
+				 */
+				Permission,
+				/**
+				 * @brief Last Open or mid-write: cannot write.
+				 */
+				NotWritable,
+				/**
+				 * @brief Origin I/O error mid-transfer.
+				 */
+				Fault,
+				/**
+				 * @brief Construction, after Close, or origin gone.
+				 */
+				Unavailable
 			};
 
 			/**
@@ -98,7 +136,7 @@ namespace StormByte {
 			 * @param status Per-call status.
 			 * @return Stable name, or empty if unknown.
 			 */
-			[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
+			[[nodiscard]] STORMBYTE_FORCE_INLINE constexpr std::string_view ToString(Status status) noexcept {
 				switch (status) {
 					case Status::Ok:		return "Ok";
 					case Status::End:		return "End";
@@ -114,7 +152,7 @@ namespace StormByte {
 			 * @param state Session state.
 			 * @return Stable name, or empty if unknown.
 			 */
-			[[nodiscard]] constexpr std::string_view ToString(State state) noexcept {
+			[[nodiscard]] STORMBYTE_FORCE_INLINE constexpr std::string_view ToString(State state) noexcept {
 				switch (state) {
 					case State::Idle:			return "Idle";
 					case State::Missing:		return "Missing";
@@ -131,15 +169,21 @@ namespace StormByte {
 			 * @enum Location
 			 * @brief Where the bytes of a file-like source or sink live.
 			 *
-				 * @c Path is the locator text. This says what that text means.
+			 * @c Path is the locator text. This says what that text means.
 			 * @c Local is a filesystem path. @c Remote is anything else
 			 * (a socket URL, an HTTP URL, a custom scheme).
 			 *
 			 * @see BufferedLocationReader, BufferedLocationWriter
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Location {
-				Local,	///< @c Path is a filesystem path on this machine.
-				Remote	///< @c Path names a non-local target.
+				/**
+				 * @brief @c Path is a filesystem path on this machine.
+				 */
+				Local,
+				/**
+				 * @brief @c Path names a non-local target.
+				 */
+				Remote
 			};
 
 			/**
@@ -147,7 +191,7 @@ namespace StormByte {
 			 * @param location Where the bytes live.
 			 * @return Stable name, or empty if unknown.
 			 */
-			[[nodiscard]] constexpr std::string_view ToString(Location location) noexcept {
+			[[nodiscard]] STORMBYTE_FORCE_INLINE constexpr std::string_view ToString(Location location) noexcept {
 				switch (location) {
 					case Location::Local:	return "Local";
 					case Location::Remote:	return "Remote";
@@ -166,13 +210,19 @@ namespace StormByte {
 			 * @see Status
 			 */
 			struct STORMBYTE_BUFFER_PUBLIC Result {
-				Status status;					///< Outcome of the call.
-				StormByte::ByteSize count;			///< Bytes transferred this call.
+				/**
+				 * @brief Outcome of the call.
+				 */
+				Status status;
+				/**
+				 * @brief Bytes transferred this call.
+				 */
+				StormByte::ByteSize count;
 			};
 
 			/**
 			 * @namespace StormByte::Buffer::IO::Drainer
-				 * @brief Status and operations of a Bridge pump thread.
+			 * @brief Status and operations of a Bridge pump thread.
 			 */
 			namespace Drainer {
 				/**
@@ -183,9 +233,18 @@ namespace StormByte {
 				 * that stops a live Bridge; the destructor joins the thread.
 				 */
 				enum class STORMBYTE_BUFFER_PUBLIC Status {
-					Started,	///< Worker may pull when there is room.
-					Paused,		///< Worker does not pull. Ctor if high_water is 0.
-					Stopped		///< No backend.
+					/**
+					 * @brief Worker may pull when there is room.
+					 */
+					Started,
+					/**
+					 * @brief Worker does not pull. Construction if high_water is 0.
+					 */
+					Paused,
+					/**
+					 * @brief No backend.
+					 */
+					Stopped
 				};
 
 				/**
@@ -193,8 +252,14 @@ namespace StormByte {
 				 * @brief Verbs for @c Bridge::Drainer.
 				 */
 				enum class STORMBYTE_BUFFER_PUBLIC Operation {
-					Toggle,		///< Started ↔ Paused.
-					Flush		///< Push what is already held. No destination flush.
+					/**
+					 * @brief Switch between Started and Paused.
+					 */
+					Toggle,
+					/**
+					 * @brief Push what is already held. No destination flush.
+					 */
+					Flush
 				};
 
 				/**
@@ -202,7 +267,7 @@ namespace StormByte {
 				 * @param status Drainer status.
 				 * @return Stable name, or empty if unknown.
 				 */
-				[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
+				[[nodiscard]] STORMBYTE_FORCE_INLINE constexpr std::string_view ToString(Status status) noexcept {
 					switch (status) {
 						case Status::Started:	return "Started";
 						case Status::Paused:	return "Paused";
@@ -216,7 +281,7 @@ namespace StormByte {
 				 * @param operation Drainer operation.
 				 * @return Stable name, or empty if unknown.
 				 */
-				[[nodiscard]] constexpr std::string_view ToString(Operation operation) noexcept {
+				[[nodiscard]] STORMBYTE_FORCE_INLINE constexpr std::string_view ToString(Operation operation) noexcept {
 					switch (operation) {
 						case Operation::Toggle:	return "Toggle";
 						case Operation::Flush:	return "Flush";
@@ -227,3 +292,5 @@ namespace StormByte {
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::Result);

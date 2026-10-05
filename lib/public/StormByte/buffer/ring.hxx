@@ -49,7 +49,6 @@
 #include <deque>
 #include <shared_mutex>
 #include <span>
-#include <sstream>
 #include <utility>
 
 /**
@@ -88,57 +87,46 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Default construct an empty Ring.
+			 * @brief Construct an empty Ring and its synchronization state in the provider module.
 			 */
-			Ring() noexcept = default;
+			Ring() noexcept;
 
 			/**
-			 * @brief Construct with initial data (copy).
+			 * @brief Copy initial data into deque storage constructed in the provider module.
 			 * @param data Source bytes.
 			 */
-			inline explicit Ring(const StormByte::BinaryData& data) noexcept
-				: m_buffer(data.begin(), data.end()) {}
+			explicit Ring(const StormByte::BinaryData& data) noexcept;
 
 			/**
-			 * @brief Construct with initial data (move elements from @ref StormByte::BinaryData).
+			 * @brief Move initial data elements into deque storage constructed in the provider module.
 			 * @param data Source bytes (moved element-wise into the deque).
 			 */
-			inline explicit Ring(StormByte::BinaryData&& data) noexcept
-				: m_buffer(std::make_move_iterator(data.begin()),
-						std::make_move_iterator(data.end())) {}
+			explicit Ring(StormByte::BinaryData&& data) noexcept;
 
 			/**
-			 * @brief Construct from an input range (copy / convert).
+			 * @brief Convert an input range and delegate storage and synchronization construction to the provider.
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
 			 * @param r Source range (disabled when already @ref StormByte::BinaryData).
 			 */
 			template<Type::ByteInputRange R>
 			requires (!Type::SameAs<R, StormByte::BinaryData>)
-			inline explicit Ring(const R& r) noexcept {
-				auto converted = DataConvert(r);
-				m_buffer.assign(converted.begin(), converted.end());
-			}
+			inline explicit Ring(const R& r) noexcept
+				: Ring(DataConvert(r)) {}
 
 			/**
-			 * @brief Construct from an rvalue range.
+			 * @brief Convert an rvalue range and delegate storage and synchronization construction to the provider.
 			 * @tparam Rr Range type.
 			 * @param r Source range.
 			 */
 			template<Type::ByteInputRange Rr>
-			inline explicit Ring(Rr&& r) noexcept {
-				auto converted = DataConvert(std::forward<Rr>(r));
-				m_buffer.assign(std::make_move_iterator(converted.begin()),
-								std::make_move_iterator(converted.end()));
-			}
+			inline explicit Ring(Rr&& r) noexcept
+				: Ring(DataConvert(std::forward<Rr>(r))) {}
 
 			/**
-			 * @brief Construct from a string view (no trailing NUL).
+			 * @brief Construct from a string view in the provider module (no trailing NUL).
 			 * @param sv Source characters.
 			 */
-			inline explicit Ring(std::string_view sv) noexcept {
-				auto converted = DataConvert(sv);
-				m_buffer.assign(converted.begin(), converted.end());
-			}
+			explicit Ring(std::string_view sv) noexcept;
 
 			/**
 			 * @brief Construct from a null-terminated C string.
@@ -474,9 +462,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Build the hexdump header (size / position / status).
-			 * @return Stream containing the header lines.
+			 * @return DLL-safe owned header text; any formatting stream stays in the implementing module.
 			 */
-			virtual std::ostringstream HexDumpHeader() const noexcept;
+			virtual StormByte::Safe::String HexDumpHeader() const noexcept;
 
 			/**
 			 * @name Internal helpers

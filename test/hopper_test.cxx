@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/hopper.hxx>
+#include <StormByte/safe/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <atomic>
@@ -54,26 +55,167 @@
 
 using StormByte::Buffer::Hopper;
 
+/**
+ * @brief Exact provider-declared pointer facade storing only an integer, with no external ownership.
+ * @note Its provider remains loaded and all participants use a compatible ABI.
+ */
 class NonNullableSmartPointer {
 	public:
+		/**
+		 * @brief Constructs a zero-valued facade.
+		 */
 		NonNullableSmartPointer() noexcept = default;
+		/**
+		 * @brief Constructs a facade with an embedded value.
+		 * @param value Initial embedded value.
+		 */
 		explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
+		/**
+		 * @brief Copies the embedded integer.
+		 */
 		NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
+		/**
+		 * @brief Moves the embedded integer.
+		 */
 		NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
+		/**
+		 * @brief Destroys the facade without releasing external resources.
+		 */
 		~NonNullableSmartPointer() noexcept = default;
+		/**
+		 * @brief Copies the embedded integer.
+		 * @return This facade.
+		 */
 		NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
+		/**
+		 * @brief Moves the embedded integer.
+		 * @return This facade.
+		 */
 		NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
 
+		/**
+		 * @brief Gets mutable embedded storage.
+		 * @return Address of the embedded integer.
+		 */
 		int* get() noexcept { return &m_value; }
+		/**
+		 * @brief Gets constant embedded storage.
+		 * @return Address of the embedded integer.
+		 */
 		const int* get() const noexcept { return &m_value; }
+		/**
+		 * @brief Dereferences mutable embedded storage.
+		 * @return Embedded integer.
+		 */
 		int& operator*() noexcept { return m_value; }
+		/**
+		 * @brief Dereferences constant embedded storage.
+		 * @return Embedded integer.
+		 */
 		const int& operator*() const noexcept { return m_value; }
+		/**
+		 * @brief Gets mutable arrow access.
+		 * @return Address of the embedded integer.
+		 */
 		int* operator->() noexcept { return &m_value; }
+		/**
+		 * @brief Gets constant arrow access.
+		 * @return Address of the embedded integer.
+		 */
 		const int* operator->() const noexcept { return &m_value; }
 
 	private:
+		/**
+		 * @brief Integer owned directly by the facade.
+		 */
 		int m_value = 0;
 };
+
+STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
+
+/**
+ * @brief Provider-declared value whose alignment exceeds Base's heap contract.
+ */
+struct alignas(alignof(std::max_align_t) * 2) OveralignedValue {
+	/**
+	 * @brief Embedded integer with no allocator or external lifetime.
+	 */
+	int value = 0;
+};
+STORMBYTE_DECLARE_MAYBE_SAFE(OveralignedValue);
+
+/**
+ * @brief Provider-declared value with throwing move assignment.
+ */
+struct ThrowingMoveValue {
+	/**
+	 * @brief Constructs an empty value.
+	 */
+	ThrowingMoveValue() noexcept = default;
+	/**
+	 * @brief Copies an empty value.
+	 */
+	ThrowingMoveValue(const ThrowingMoveValue&) noexcept = default;
+	/**
+	 * @brief Moves an empty value.
+	 */
+	ThrowingMoveValue(ThrowingMoveValue&&) noexcept = default;
+	/**
+	 * @brief Copies an empty value.
+	 * @return This value.
+	 */
+	ThrowingMoveValue& operator=(const ThrowingMoveValue&) noexcept = default;
+	/**
+	 * @brief Provides a potentially throwing move signature for admission testing.
+	 * @return This value.
+	 */
+	ThrowingMoveValue& operator=(ThrowingMoveValue&&) noexcept(false) { return *this; }
+};
+STORMBYTE_DECLARE_MAYBE_SAFE(ThrowingMoveValue);
+
+/**
+ * @brief Tests whether Hopper admits an element type without instantiating its storage.
+ * @tparam Value Candidate queue element.
+ */
+template<typename Value>
+concept HopperAdmits = requires { typename Hopper<Value>; };
+
+/**
+ * @brief Undeclared movable payloads do not acquire a SafeValue contract automatically.
+ */
+struct UndeclaredValue {
+	/**
+	 * @brief Embedded integer.
+	 */
+	int value = 0;
+};
+
+/**
+ * @brief A derived queue does not inherit an exact-type MaybeSafe declaration.
+ */
+struct DerivedHopper: Hopper<int> {};
+
+static_assert(StormByte::Type::Movable<UndeclaredValue>);
+static_assert(!StormByte::Type::SafeValue<UndeclaredValue>);
+static_assert(!HopperAdmits<UndeclaredValue>);
+static_assert(StormByte::Type::MaybeSafe<Hopper<int>>);
+static_assert(!StormByte::Type::MaybeSafe<DerivedHopper>);
+static_assert(HopperAdmits<int>);
+static_assert(HopperAdmits<StormByte::Safe::String>);
+static_assert(HopperAdmits<StormByte::Safe::Shared<int>>);
+static_assert(HopperAdmits<NonNullableSmartPointer>);
+static_assert(StormByte::Type::SafeValue<OveralignedValue>);
+static_assert(!HopperAdmits<OveralignedValue>);
+static_assert(StormByte::Type::SafeValue<ThrowingMoveValue>);
+static_assert(!HopperAdmits<ThrowingMoveValue>);
+static_assert(!HopperAdmits<const int>);
+static_assert(!HopperAdmits<volatile int>);
+static_assert(!HopperAdmits<int&>);
+static_assert(!HopperAdmits<int*>);
+static_assert(!HopperAdmits<std::string>);
+static_assert(!HopperAdmits<std::shared_ptr<int>>);
+static_assert(!HopperAdmits<std::unique_ptr<int>>);
+static_assert(!HopperAdmits<StormByte::Safe::Unique<int>>);
 
 static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
 static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
@@ -153,11 +295,11 @@ int test_hopper_stream_item_into() {
 	ASSERT_EQUAL("test_hopper_stream_item_into pop 1", 11, hopper.Pop());
 	ASSERT_EQUAL("test_hopper_stream_item_into pop 2", 12, hopper.Pop());
 
-	Hopper<std::unique_ptr<int>> ptrs;
-	std::unique_ptr<int> empty;
+	Hopper<StormByte::Safe::Shared<int>> ptrs;
+	StormByte::Safe::Shared<int> empty;
 	empty >> ptrs;
 	ASSERT_TRUE("test_hopper_stream_item_into null discarded", ptrs.Empty());
-	std::make_unique<int>(9) >> ptrs;
+	StormByte::Safe::Heap::MakeShared<int>(9) >> ptrs;
 	auto got = ptrs.Pop();
 	ASSERT_TRUE("test_hopper_stream_item_into ptr valid", static_cast<bool>(got));
 	ASSERT_EQUAL("test_hopper_stream_item_into ptr value", 9, *got);
@@ -215,46 +357,46 @@ int test_hopper_non_nullable_smart_pointer() {
  * @return 0 on success.
  */
 int test_hopper_smart_pointer_discard() {
-	Hopper<std::unique_ptr<int>> unique_hopper;
-	std::unique_ptr<int> null_unique;
+	Hopper<StormByte::Safe::Shared<int>> unique_hopper;
+	StormByte::Safe::Shared<int> null_unique;
 	unique_hopper.Push(std::move(null_unique));
 	ASSERT_TRUE("test_hopper_smart_pointer_discard unique empty", unique_hopper.Empty());
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size", StormByte::Size{0}, unique_hopper.Size());
 
-	unique_hopper.Push(std::make_unique<int>(123));
+	unique_hopper.Push(StormByte::Safe::Heap::MakeShared<int>(123));
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard unique size 1", StormByte::Size{1}, unique_hopper.Size());
 	auto popped_unique = unique_hopper.Pop();
 	ASSERT_TRUE("test_hopper_smart_pointer_discard popped valid", static_cast<bool>(popped_unique));
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard popped value", 123, *popped_unique);
 
-	Hopper<std::shared_ptr<std::string>> shared_hopper;
-	std::shared_ptr<std::string> null_shared;
+	Hopper<StormByte::Safe::Shared<StormByte::Safe::String>> shared_hopper;
+	StormByte::Safe::Shared<StormByte::Safe::String> null_shared;
 	shared_hopper.Push(null_shared);
 	ASSERT_TRUE("test_hopper_smart_pointer_discard shared empty", shared_hopper.Empty());
 
-	shared_hopper.Push(std::make_shared<std::string>("StormByte"));
+	shared_hopper.Push(StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("StormByte"));
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared size 1", StormByte::Size{1}, shared_hopper.Size());
 	auto popped_shared = shared_hopper.Pop();
-	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared value", std::string("StormByte"), *popped_shared);
+	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared value", StormByte::Safe::String("StormByte"), *popped_shared);
 
 	RETURN_TEST("test_hopper_smart_pointer_discard", 0);
 }
 
 /**
- * @brief Tests non-smart-pointer types (int, std::string) are always enqueued.
+ * @brief Tests Base-owned text values are enqueued in order.
  * @return 0 on success.
  */
 int test_hopper_value_types() {
-	Hopper<std::string> hopper;
-	hopper.Push("Alpha");
-	hopper.Push("Beta");
-	hopper.Push("Gamma");
+	Hopper<StormByte::Safe::String> hopper;
+	hopper.Push(StormByte::Safe::String("Alpha"));
+	hopper.Push(StormByte::Safe::String("Beta"));
+	hopper.Push(StormByte::Safe::String("Gamma"));
 
 	ASSERT_EQUAL("test_hopper_value_types size", StormByte::Size{3}, hopper.Size());
 
-	ASSERT_EQUAL("test_hopper_value_types pop 1", std::string("Alpha"), hopper.Pop());
-	ASSERT_EQUAL("test_hopper_value_types pop 2", std::string("Beta"), hopper.Pop());
-	ASSERT_EQUAL("test_hopper_value_types pop 3", std::string("Gamma"), hopper.Pop());
+	ASSERT_EQUAL("test_hopper_value_types pop 1", StormByte::Safe::String("Alpha"), hopper.Pop());
+	ASSERT_EQUAL("test_hopper_value_types pop 2", StormByte::Safe::String("Beta"), hopper.Pop());
+	ASSERT_EQUAL("test_hopper_value_types pop 3", StormByte::Safe::String("Gamma"), hopper.Pop());
 	ASSERT_TRUE("test_hopper_value_types empty", hopper.Empty());
 
 	RETURN_TEST("test_hopper_value_types", 0);
@@ -281,12 +423,15 @@ int test_hopper_notify_after_unnotify() {
 	std::atomic<int> received{-1};
 	std::thread consumer([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
-		received.store(hopper.Pop(), std::memory_order_release);
+		if (cv.wait_for(lock, std::chrono::seconds(1), [&]() { return hopper.Ready(); }))
+			received.store(hopper.Pop(), std::memory_order_release);
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	hopper.Push(7);
+	{
+		std::lock_guard<std::mutex> lock(m);
+		hopper.Push(7);
+	}
 	consumer.join();
 
 	ASSERT_EQUAL("test_hopper_notify_after_unnotify received", 7,
@@ -309,12 +454,15 @@ int test_hopper_notify_condition_variable() {
 	std::atomic<int> received_val{-1};
 	std::thread consumer([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
-		received_val.store(hopper.Pop(), std::memory_order_release);
+		if (cv.wait_for(lock, std::chrono::seconds(1), [&]() { return hopper.Ready(); }))
+			received_val.store(hopper.Pop(), std::memory_order_release);
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	hopper.Push(999);
+	{
+		std::lock_guard<std::mutex> lock(m);
+		hopper.Push(999);
+	}
 	consumer.join();
 
 	ASSERT_EQUAL("test_hopper_notify_condition_variable received item", 999, received_val.load(std::memory_order_acquire));
@@ -348,6 +496,30 @@ int test_hopper_unnotify_before_cv_dies() {
 	ASSERT_TRUE("test_hopper_unnotify_before_cv_dies empty", hopper.Empty());
 
 	RETURN_TEST("test_hopper_unnotify_before_cv_dies", 0);
+}
+
+/**
+ * @brief Removal completes before a borrowed CV dies while producer notifications continue.
+ * @return Zero on success.
+ */
+int test_hopper_concurrent_unnotify() {
+	constexpr auto name = "test_hopper_concurrent_unnotify";
+	Hopper<int> hopper;
+	std::thread producer;
+	{
+		std::condition_variable wake;
+		hopper.Notify(wake);
+		producer = std::thread([&] {
+			for (int item = 1; item <= 1000; ++item)
+				hopper.Push(item);
+			hopper.Eof();
+		});
+		hopper.Unnotify();
+	}
+	producer.join();
+	ASSERT_EQUAL(name, StormByte::Size{1000}, hopper.Size());
+	ASSERT_TRUE(name, hopper.EoF());
+	RETURN_TEST(name, 0);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -439,13 +611,13 @@ int test_hopper_front_peek() {
 	ASSERT_EQUAL("test_hopper_front_peek second", 20, hopper.Front());
 	ASSERT_EQUAL("test_hopper_front_peek size after pop", StormByte::Size{1}, hopper.Size());
 
-	Hopper<std::shared_ptr<std::string>> shared;
-	shared.Push(std::make_shared<std::string>("peek"));
+	Hopper<StormByte::Safe::Shared<StormByte::Safe::String>> shared;
+	shared.Push(StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("peek"));
 	auto a = shared.Front();
 	auto b = shared.Front();
 	ASSERT_TRUE("test_hopper_front_peek shared a", static_cast<bool>(a));
 	ASSERT_TRUE("test_hopper_front_peek shared b", static_cast<bool>(b));
-	ASSERT_EQUAL("test_hopper_front_peek shared value", std::string("peek"), *a);
+	ASSERT_EQUAL("test_hopper_front_peek shared value", StormByte::Safe::String("peek"), *a);
 	ASSERT_EQUAL("test_hopper_front_peek shared same ptr", a.get(), b.get());
 	ASSERT_EQUAL("test_hopper_front_peek shared size", StormByte::Size{1}, shared.Size());
 
@@ -492,9 +664,20 @@ int test_hopper_spsc_stress() {
 	hopper.Notify(cv);
 
 	std::thread producer([&]() {
-		for (int i = 0; i < item_count; ++i)
-			hopper << i;
+		for (int item = 0; item < item_count; ++item) {
+			std::unique_lock<std::mutex> lock(m);
+			if (!cv.wait_for(lock, std::chrono::seconds(2), [&]() { return !hopper.Full() || hopper.EoF(); })) {
+				hopper.Eof();
+				cv.notify_all();
+				return;
+			}
+			if (hopper.EoF())
+				return;
+			hopper << item;
+		}
+		std::lock_guard<std::mutex> lock(m);
 		hopper.Eof();
+		cv.notify_all();
 	});
 
 	std::vector<int> received;
@@ -502,9 +685,11 @@ int test_hopper_spsc_stress() {
 
 	std::thread consumer([&]() {
 		while (true) {
-			{
-				std::unique_lock<std::mutex> lock(m);
-				cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
+			std::unique_lock<std::mutex> lock(m);
+			if (!cv.wait_for(lock, std::chrono::seconds(2), [&]() { return hopper.Ready(); })) {
+				hopper.Eof();
+				cv.notify_all();
+				break;
 			}
 
 			while (!hopper.Empty()) {
@@ -512,6 +697,7 @@ int test_hopper_spsc_stress() {
 				hopper >> item;
 				received.push_back(item);
 			}
+			cv.notify_all();
 
 			if (hopper.EoF() && hopper.Empty())
 				break;
@@ -555,6 +741,7 @@ int main() {
 	failed += test_hopper_notify_after_unnotify();
 	failed += test_hopper_notify_condition_variable();
 	failed += test_hopper_unnotify_before_cv_dies();
+	failed += test_hopper_concurrent_unnotify();
 
 	// Push / Pop / Eof
 	failed += test_hopper_eof_behavior();

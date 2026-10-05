@@ -490,9 +490,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Build the hexdump header (size / position / status).
-			 * @return Stream containing the header lines.
+			 * @return DLL-safe owned header text; any formatting stream stays in the implementing module.
 			 */
-			virtual std::ostringstream HexDumpHeader() const noexcept;
+			virtual StormByte::Safe::String HexDumpHeader() const noexcept;
 
 			/**
 			 * @name Internal read / write helpers

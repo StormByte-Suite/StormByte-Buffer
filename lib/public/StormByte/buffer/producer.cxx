@@ -51,6 +51,8 @@ Producer::Producer(const StormByte::Buffer::Consumer& consumer):
 	m_buffer{consumer.m_buffer} {}
 
 Producer::Producer(const Producer& other):
+	Generic(other),
+	WriteOnly(other),
 	m_buffer{other.m_buffer} {}
 
 Producer::Producer(Producer&& other) noexcept = default;

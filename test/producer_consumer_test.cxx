@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/safe/vector.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
@@ -62,8 +63,22 @@ static_assert(StormByte::Type::MaybeSafe<Consumer>);
 static_assert(StormByte::Type::MaybeSafe<Producer>);
 static_assert(!StormByte::Type::IsSafe<Consumer>::value);
 static_assert(!StormByte::Type::IsSafe<Producer>::value);
+static_assert(StormByte::Type::SafeValue<Consumer>);
+static_assert(StormByte::Type::SafeValue<Producer>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::Generic>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::ReadOnly>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::WriteOnly>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::ReadWrite>);
 
 namespace {
+	class ForeignReadOnly: public StormByte::Buffer::ReadOnly {};
+	class ForeignWriteOnly: public StormByte::Buffer::WriteOnly {};
+	class ForeignReadWrite: public StormByte::Buffer::ReadWrite {};
+
+	static_assert(!StormByte::Type::MaybeSafe<ForeignReadOnly>);
+	static_assert(!StormByte::Type::MaybeSafe<ForeignWriteOnly>);
+	static_assert(!StormByte::Type::MaybeSafe<ForeignReadWrite>);
+
 	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};
@@ -103,6 +118,30 @@ int test_consumer_retains_ring_after_producer_destruction() {
 	BinaryData data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
 	ASSERT_EQUAL(fn, std::string("kept"), BytesToText(data));
+	RETURN_TEST(fn, 0);
+}
+
+int test_producer_consumer_safe_collection_lifecycle() {
+	const std::string fn = "test_producer_consumer_safe_collection_lifecycle";
+	StormByte::Safe::Vector<Producer> producers;
+	StormByte::Safe::Vector<Consumer> consumers;
+	{
+		Producer origin;
+		producers.push_back(origin);
+		consumers.push_back(origin.Consumer());
+	}
+	const auto producer_copies = producers;
+	const auto consumer_copies = consumers;
+	producers.clear();
+	consumers.clear();
+	auto producer = producer_copies[0];
+	auto consumer = consumer_copies[0];
+	ASSERT_TRUE(fn, producer.Write("retained"));
+	producer.Close();
+	BinaryData data;
+	ASSERT_TRUE(fn, consumer.Extract(0, data));
+	ASSERT_EQUAL(fn, std::string("retained"), BytesToText(data));
+	ASSERT_TRUE(fn, consumer.EoF());
 	RETURN_TEST(fn, 0);
 }
 
@@ -1066,6 +1105,7 @@ int main() {
 	// -------------------
 	result += test_consumer_producer_shares_ring();
 	result += test_consumer_retains_ring_after_producer_destruction();
+	result += test_producer_consumer_safe_collection_lifecycle();
 	result += test_producer_consumer_basic_write_read();
 	result += test_producer_consumer_byte_vector_write();
 	result += test_producer_consumer_clear_operation();

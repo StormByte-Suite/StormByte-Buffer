@@ -72,7 +72,33 @@ using StormByte::Buffer::IO::MaxMemory;
 using StormByte::Buffer::IO::ReadAhead;
 using StormByte::Buffer::IO::WriteChunk;
 
+static_assert(StormByte::Type::MaybeSafe<Bridge>);
+static_assert(!StormByte::Type::SafeValue<Bridge>);
+static_assert(StormByte::Type::SafeComponent<Bridge::Operation>);
+static_assert(StormByte::Type::SafeComponent<enum Bridge::State>);
+
 namespace {
+	template<typename In, typename Out>
+	concept BridgeConstructible = requires(In&& in, Out&& out) {
+		Bridge(std::forward<In>(in), std::forward<Out>(out));
+	};
+
+	class ForeignBridge: public Bridge {
+		using Bridge::Bridge;
+	};
+
+	static_assert(!StormByte::Type::MaybeSafe<ForeignBridge>);
+	static_assert(BridgeConstructible<BufferedFileReader, BufferedFileWriter>);
+	static_assert(BridgeConstructible<FIFO&, BufferedFileWriter>);
+	static_assert(BridgeConstructible<BufferedFileReader, FIFO&>);
+	static_assert(!BridgeConstructible<BufferedFileReader&, BufferedFileWriter>);
+	static_assert(!BridgeConstructible<BufferedFileReader, BufferedFileWriter&>);
+	static_assert(!BridgeConstructible<const BufferedFileReader, BufferedFileWriter>);
+	static_assert(!BridgeConstructible<BufferedFileReader, const BufferedFileWriter>);
+	static_assert(!BridgeConstructible<FIFO&, BufferedFileWriter&>);
+	static_assert(!BridgeConstructible<BufferedFileReader&, FIFO&>);
+	static_assert(!noexcept(Bridge(std::declval<FIFO&>(), std::declval<FIFO&>())));
+
 	std::string BytesToText(const BinaryData& data) {
 		if (data.empty())
 			return {};

@@ -63,6 +63,9 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
+		/**
+		 * @brief Forward declaration of the session owning basic counters.
+		 */
 		class Bridge;
 
 		/**
@@ -130,10 +133,22 @@ namespace StormByte {
 						 */
 						explicit OperationSample(Telemetry& owner) noexcept;
 
-						Telemetry& m_owner; ///< Telemetry receiving the sample.
-						StormByte::Clock::Sample m_sample; ///< Independent Base interval; owner remains borrowed.
-						StormByte::ByteSize m_bytes {0}; ///< Committed operation bytes.
-						bool m_committed {false}; ///< Whether to include the sample.
+						/**
+						 * @brief Borrowed telemetry receiving the sample.
+						 */
+						Telemetry& m_owner;
+						/**
+						 * @brief Independent Base interval whose telemetry owner remains borrowed.
+						 */
+						StormByte::Clock::Sample m_sample;
+						/**
+						 * @brief Committed operation bytes.
+						 */
+						StormByte::ByteSize m_bytes {0};
+						/**
+						 * @brief Whether to include the sample in the rate calculation.
+						 */
+						bool m_committed {false};
 				};
 
 				/**
@@ -175,9 +190,21 @@ namespace StormByte {
 				 */
 				Telemetry() noexcept;
 
+				/**
+				 * @brief Copy construction is disabled to preserve clock ownership.
+				 */
 				Telemetry(const Telemetry&) = delete;
+				/**
+				 * @brief Move construction is disabled while samples may borrow this object.
+				 */
 				Telemetry(Telemetry&&) = delete;
+				/**
+				 * @brief Copy assignment is disabled to preserve clock ownership.
+				 */
 				Telemetry& operator=(const Telemetry&) = delete;
+				/**
+				 * @brief Move assignment is disabled while samples may borrow this object.
+				 */
 				Telemetry& operator=(Telemetry&&) = delete;
 
 				/**
@@ -190,9 +217,18 @@ namespace StormByte {
 			private:
 				friend class Bridge;
 
-				std::atomic<std::uint64_t> m_rate_bytes;	///< Octets counted toward MeanRate.
-				std::atomic<std::uint64_t> m_op_us;		///< Sum of operation durations (us).
-				std::atomic<std::uint64_t> m_mean_rate;	///< Cached octets/s.
+				/**
+				 * @brief Octets counted toward MeanRate.
+				 */
+				std::atomic<std::uint64_t> m_rate_bytes;
+				/**
+				 * @brief Sum of operation durations in microseconds.
+				 */
+				std::atomic<std::uint64_t> m_op_us;
+				/**
+				 * @brief Cached octets per second.
+				 */
+				std::atomic<std::uint64_t> m_mean_rate;
 		};
 
 		/**
@@ -206,7 +242,13 @@ namespace StormByte {
 				 */
 				ReadTelemetry() noexcept;
 
+				/**
+				 * @brief Copy construction is disabled to preserve clock ownership.
+				 */
 				ReadTelemetry(const ReadTelemetry&) = delete;
+				/**
+				 * @brief Move construction is disabled while samples may borrow this object.
+				 */
 				ReadTelemetry(ReadTelemetry&&) = delete;
 
 				/**
@@ -214,7 +256,13 @@ namespace StormByte {
 				 */
 				virtual ~ReadTelemetry() noexcept override;
 
+				/**
+				 * @brief Copy assignment is disabled to preserve clock ownership.
+				 */
 				ReadTelemetry& operator=(const ReadTelemetry&) = delete;
+				/**
+				 * @brief Move assignment is disabled while samples may borrow this object.
+				 */
 				ReadTelemetry& operator=(ReadTelemetry&&) = delete;
 
 				/**
@@ -232,7 +280,10 @@ namespace StormByte {
 			protected:
 				friend class Bridge;
 
-				StormByte::ByteSize m_delivered;	///< Octets delivered.
+				/**
+				 * @brief Octets delivered.
+				 */
+				StormByte::ByteSize m_delivered;
 		};
 
 		/**
@@ -246,7 +297,13 @@ namespace StormByte {
 				 */
 				WriteTelemetry() noexcept;
 
+				/**
+				 * @brief Copy construction is disabled to preserve clock ownership.
+				 */
 				WriteTelemetry(const WriteTelemetry&) = delete;
+				/**
+				 * @brief Move construction is disabled while samples may borrow this object.
+				 */
 				WriteTelemetry(WriteTelemetry&&) = delete;
 
 				/**
@@ -254,7 +311,13 @@ namespace StormByte {
 				 */
 				virtual ~WriteTelemetry() noexcept override;
 
+				/**
+				 * @brief Copy assignment is disabled to preserve clock ownership.
+				 */
 				WriteTelemetry& operator=(const WriteTelemetry&) = delete;
+				/**
+				 * @brief Move assignment is disabled while samples may borrow this object.
+				 */
 				WriteTelemetry& operator=(WriteTelemetry&&) = delete;
 
 				/**
@@ -272,10 +335,20 @@ namespace StormByte {
 			protected:
 				friend class Bridge;
 
-				StormByte::ByteSize m_accepted;	///< Octets accepted.
+				/**
+				 * @brief Octets accepted.
+				 */
+				StormByte::ByteSize m_accepted;
 		};
 	}
 }
+
+/**
+ * @brief Abstract telemetry has Base-owned clock storage and Buffer-defined virtual destruction.
+ * @note Buffer, Base and each concrete telemetry provider must remain loaded with a compatible ABI.
+ *       Derived telemetry types and their extra state require independent lifecycle verification.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Telemetry);
 
 /**
  * @brief Shared telemetry handles require the Buffer and Base providers to remain loaded.

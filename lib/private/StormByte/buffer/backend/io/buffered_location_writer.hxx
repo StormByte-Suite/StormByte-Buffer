@@ -109,7 +109,10 @@ namespace StormByte {
 						bool Probe() const noexcept;
 
 					private:
-						bool m_probe;	///< True when Setup reads the device window.
+						/**
+						 * @brief True when Setup reads the device window.
+						 */
+						bool m_probe;
 				};
 			}
 		}

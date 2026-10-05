@@ -793,6 +793,9 @@ int test_sequential_large_benchmark() {
 int test_empty_file() {
 	const std::string fn = "test_empty_file";
 	BufferedFileReader in(Loc(File("empty.bin")));
+	static_assert(StormByte::Type::SameAs<decltype(in.Size()),
+		StormByte::Safe::Optional<StormByte::ByteSize>>);
+	ASSERT_FALSE(fn, in.Size().has_value());
 	ASSERT_TRUE(fn, in.Open());
 	const auto size = in.Size();
 	ASSERT_TRUE(fn, size.has_value());
@@ -806,6 +809,10 @@ int test_empty_file() {
 	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, in.Tell());
 	ASSERT_TRUE(fn, in.EoF());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
+	ASSERT_EQUAL(fn, Status::Ok, in.Close().status);
+	ASSERT_FALSE(fn, in.Size().has_value());
+	ASSERT_TRUE(fn, size.has_value());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, *size);
 	RETURN_TEST(fn, 0);
 }
 

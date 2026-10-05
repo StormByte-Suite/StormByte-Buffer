@@ -57,20 +57,22 @@ namespace {
 	}
 }
 
-Bridge::Bridge(ReadOnly& in, WriteOnly& out) noexcept:
+Bridge::Bridge() noexcept = default;
+
+Bridge::Bridge(ReadOnly& in, WriteOnly& out):
 	m_owned_read(MakeReadTelemetry()),
 	m_owned_write(MakeWriteTelemetry()) {
 	AttachNonIoIn(in);
 	AttachNonIoOut(out);
 }
 
-void Bridge::AttachNonIoIn(ReadOnly& in) noexcept {
+void Bridge::AttachNonIoIn(ReadOnly& in) {
 	m_ext_in = &in;
 	if (!m_owned_read)
 		m_owned_read = MakeReadTelemetry();
 }
 
-void Bridge::AttachNonIoOut(WriteOnly& out) noexcept {
+void Bridge::AttachNonIoOut(WriteOnly& out) {
 	m_ext_out = &out;
 	if (!m_owned_write)
 		m_owned_write = MakeWriteTelemetry();

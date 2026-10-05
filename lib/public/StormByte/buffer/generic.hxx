@@ -85,19 +85,19 @@ namespace StormByte {
 				/**
 				 * @brief Default constructor.
 				 */
-				Generic() noexcept = default;
+				Generic() noexcept;
 
 				/**
 				 * @brief Copy constructor.
 				 * @param other Instance to copy.
 				 */
-				Generic(const Generic& other) noexcept = default;
+				Generic(const Generic& other) noexcept;
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Instance to take from.
 				 */
-				Generic(Generic&& other) noexcept = default;
+				Generic(Generic&& other) noexcept;
 
 				/**
 				 * @brief Pure virtual destructor. Keeps the class abstract.
@@ -109,14 +109,14 @@ namespace StormByte {
 				 * @param other Instance to copy.
 				 * @return *this.
 				 */
-				Generic& operator=(const Generic& other) = default;
+				Generic& operator=(const Generic& other) noexcept;
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
-				Generic& operator=(Generic&& other) noexcept = default;
+				Generic& operator=(Generic&& other) noexcept;
 
 				/**
 				 * @}
@@ -150,7 +150,7 @@ namespace StormByte {
 				 * @return Converted @ref StormByte::BinaryData.
 				 */
 				template<Type::ByteInputRange Src>
-				static BinaryData DataConvert(const Src& src) noexcept {
+				static STORMBYTE_FORCE_INLINE BinaryData DataConvert(const Src& src) noexcept {
 					BinaryData out;
 					if constexpr (requires { std::ranges::size(src); }) {
 						auto s = std::ranges::size(src);
@@ -169,7 +169,7 @@ namespace StormByte {
 				 * @return Converted or moved @ref StormByte::BinaryData.
 				 */
 				template<Type::ByteInputRange Src>
-				static BinaryData DataConvert(Src&& src) noexcept {
+				static STORMBYTE_FORCE_INLINE BinaryData DataConvert(Src&& src) noexcept {
 					if constexpr (Type::SameAs<Src, BinaryData>) {
 						return std::move(src);
 					} else {
@@ -190,25 +190,14 @@ namespace StormByte {
 				 * @param sv Source characters.
 				 * @return @ref StormByte::BinaryData.
 				 */
-				static BinaryData DataConvert(std::string_view sv) noexcept {
-					BinaryData out;
-					if (!sv.empty())
-						out.reserve(StormByte::ByteSize{sv.size()});
-					std::transform(sv.begin(), sv.end(), std::back_inserter(out),
-						[](char c) noexcept { return static_cast<std::byte>(c); });
-					return out;
-				}
+				static BinaryData DataConvert(std::string_view sv) noexcept;
 
 				/**
 				 * @brief Convert a C string to @ref StormByte::BinaryData.
 				 * @param s Source. Null yields an empty @ref StormByte::BinaryData.
 				 * @return @ref StormByte::BinaryData.
 				 */
-				static BinaryData DataConvert(const char* s) noexcept {
-					if (!s)
-						return BinaryData{};
-					return DataConvert(std::string_view(s));
-				}
+				static BinaryData DataConvert(const char* s) noexcept;
 
 				/**
 				 * @}
@@ -235,19 +224,19 @@ namespace StormByte {
 				/**
 				 * @brief Default constructor.
 				 */
-				inline ReadOnly() noexcept: Generic() {}
+				ReadOnly() noexcept;
 
 				/**
 				 * @brief Copy constructor.
 				 * @param other Instance to copy.
 				 */
-				ReadOnly(const ReadOnly& other) noexcept = default;
+				ReadOnly(const ReadOnly& other) noexcept;
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Instance to take from.
 				 */
-				ReadOnly(ReadOnly&& other) noexcept = default;
+				ReadOnly(ReadOnly&& other) noexcept;
 
 				/**
 				 * @brief Destructor.
@@ -259,14 +248,14 @@ namespace StormByte {
 				 * @param other Instance to copy.
 				 * @return *this.
 				 */
-				ReadOnly& operator=(const ReadOnly& other) = default;
+				ReadOnly& operator=(const ReadOnly& other) noexcept;
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
-				ReadOnly& operator=(ReadOnly&& other) noexcept = default;
+				ReadOnly& operator=(ReadOnly&& other) noexcept;
 
 				/**
 				 * @}
@@ -512,19 +501,19 @@ namespace StormByte {
 				/**
 				 * @brief Default constructor.
 				 */
-				inline WriteOnly() noexcept: Generic() {}
+				WriteOnly() noexcept;
 
 				/**
 				 * @brief Copy constructor.
 				 * @param other Instance to copy.
 				 */
-				WriteOnly(const WriteOnly& other) = default;
+				WriteOnly(const WriteOnly& other) noexcept;
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Instance to take from.
 				 */
-				WriteOnly(WriteOnly&& other) noexcept = default;
+				WriteOnly(WriteOnly&& other) noexcept;
 
 				/**
 				 * @brief Destructor.
@@ -536,14 +525,14 @@ namespace StormByte {
 				 * @param other Instance to copy.
 				 * @return *this.
 				 */
-				WriteOnly& operator=(const WriteOnly& other) = default;
+				WriteOnly& operator=(const WriteOnly& other) noexcept;
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
-				WriteOnly& operator=(WriteOnly&& other) noexcept = default;
+				WriteOnly& operator=(WriteOnly&& other) noexcept;
 
 				/**
 				 * @}
@@ -656,25 +645,14 @@ namespace StormByte {
 				 * @param sv Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(std::string_view sv) noexcept {
-					BinaryData tmp;
-					if (!sv.empty())
-						tmp.reserve(StormByte::ByteSize{sv.size()});
-					std::transform(sv.begin(), sv.end(), std::back_inserter(tmp),
-						[](char e) noexcept { return static_cast<std::byte>(e); });
-					return Write(tmp.size(), std::move(tmp));
-				}
+				bool Write(std::string_view sv) noexcept;
 
 				/**
 				 * @brief Write a C string.
 				 * @param s Source. Null is an empty write.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const char* s) noexcept {
-					if (!s)
-						return Write(BinaryData{});
-					return Write(std::string_view(s));
-				}
+				bool Write(const char* s) noexcept;
 
 				/**
 				 * @brief Write up to @p count characters of a string view.
@@ -682,18 +660,7 @@ namespace StormByte {
 				 * @param sv Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::ByteSize& count, std::string_view sv) noexcept {
-					const StormByte::ByteSize to_write = (count == StormByte::ByteSize{0})
-						? StormByte::ByteSize{sv.size()}
-						: std::min(count, StormByte::ByteSize{sv.size()});
-					BinaryData tmp;
-					if (to_write > StormByte::ByteSize{0})
-						tmp.reserve(to_write);
-					std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(to_write)),
-						std::back_inserter(tmp),
-						[](char e) noexcept { return static_cast<std::byte>(e); });
-					return Write(to_write, std::move(tmp));
-				}
+				bool Write(const StormByte::ByteSize& count, std::string_view sv) noexcept;
 
 				/**
 				 * @brief Write up to @p count characters of a C string.
@@ -701,11 +668,7 @@ namespace StormByte {
 				 * @param s Source. May be null.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::ByteSize& count, const char* s) noexcept {
-					if (!s)
-						return Write(count, BinaryData{});
-					return Write(count, std::string_view(s));
-				}
+				bool Write(const StormByte::ByteSize& count, const char* s) noexcept;
 
 				/**
 				 * @brief Write a string literal without the trailing NUL.
@@ -736,7 +699,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				template<Type::ByteInputRange R>
-				bool Write(const R& r) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(const R& r) noexcept {
 					BinaryData tmp;
 					if constexpr (requires { std::ranges::size(r); }) {
 						auto dist = std::ranges::size(r);
@@ -756,7 +719,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				template<Type::ByteInputRange Rw>
-				bool Write(const StormByte::ByteSize& count, const Rw& r) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(const StormByte::ByteSize& count, const Rw& r) noexcept {
 					if (count == StormByte::ByteSize{0})
 						return Write(r);
 					BinaryData tmp;
@@ -777,7 +740,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				template<Type::ByteInputRange Rrw>
-				bool Write(const StormByte::ByteSize& count, Rrw&& r) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(const StormByte::ByteSize& count, Rrw&& r) noexcept {
 					if (count == StormByte::ByteSize{0})
 						return Write(std::forward<Rrw>(r));
 					if constexpr (Type::SameAs<Rrw, BinaryData>) {
@@ -804,7 +767,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				template<Type::ByteInputRange Rr>
-				bool Write(Rr&& r) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(Rr&& r) noexcept {
 					if constexpr (Type::SameAs<Rr, BinaryData>) {
 						return Write(r.size(), std::move(r));
 					} else {
@@ -830,7 +793,7 @@ namespace StormByte {
 				 */
 				template<Type::ByteInputIterator I, typename S>
 					requires Type::SentinelFor<S, I>
-				bool Write(I first, S last) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(I first, S last) noexcept {
 					BinaryData tmp;
 					std::transform(first, last, std::back_inserter(tmp),
 						[](auto&& e) noexcept { return static_cast<std::byte>(e); });
@@ -848,7 +811,7 @@ namespace StormByte {
 				 */
 				template<Type::ByteInputIterator I2, typename S2>
 					requires Type::SentinelFor<S2, I2>
-				bool Write(const StormByte::ByteSize& count, I2 first, S2 last) noexcept {
+				STORMBYTE_FORCE_INLINE bool Write(const StormByte::ByteSize& count, I2 first, S2 last) noexcept {
 					if (count == StormByte::ByteSize{0})
 						return Write(first, last);
 					BinaryData tmp;
@@ -879,19 +842,19 @@ namespace StormByte {
 				/**
 				 * @brief Default constructor.
 				 */
-				inline ReadWrite() noexcept: Generic() {}
+				ReadWrite() noexcept;
 
 				/**
 				 * @brief Copy constructor.
 				 * @param other Instance to copy.
 				 */
-				ReadWrite(const ReadWrite& other) noexcept = default;
+				ReadWrite(const ReadWrite& other) noexcept;
 
 				/**
 				 * @brief Move constructor.
 				 * @param other Instance to take from.
 				 */
-				ReadWrite(ReadWrite&& other) noexcept = default;
+				ReadWrite(ReadWrite&& other) noexcept;
 
 				/**
 				 * @brief Destructor.
@@ -903,14 +866,14 @@ namespace StormByte {
 				 * @param other Instance to copy.
 				 * @return *this.
 				 */
-				ReadWrite& operator=(const ReadWrite& other) = default;
+				ReadWrite& operator=(const ReadWrite& other) noexcept;
 
 				/**
 				 * @brief Move assignment.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
-				ReadWrite& operator=(ReadWrite&& other) noexcept = default;
+				ReadWrite& operator=(ReadWrite&& other) noexcept;
 
 				/**
 				 * @}
@@ -939,3 +902,31 @@ namespace StormByte {
 		/// @endcond
 	}
 }
+
+/**
+ * @brief Stateless interface whose virtual destructor is defined in Buffer.
+ * @note Buffer and each concrete provider must remain loaded with a compatible ABI.
+ *       This declaration does not classify derived types or their owned state.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Generic);
+
+/**
+ * @brief Stateless read interface with provider-defined virtual destruction.
+ * @note Concrete providers must remain loaded and independently satisfy the lifecycle contract.
+ *       Borrowed data and output references must remain valid throughout each call.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::ReadOnly);
+
+/**
+ * @brief Stateless write interface whose conversion helpers use Base-owned binary storage.
+ * @note Buffer, Base and concrete providers must remain loaded with a compatible ABI.
+ *       Derived types require their own lifecycle audit and classification.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::WriteOnly);
+
+/**
+ * @brief Stateless combined interface preserving the shared virtual Generic base.
+ * @note Buffer and concrete providers must remain loaded with a compatible ABI.
+ *       This declaration does not certify storage owned by derived types.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::ReadWrite);

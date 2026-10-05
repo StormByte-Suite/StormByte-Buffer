@@ -47,7 +47,6 @@
 #include <chrono>
 #include <fstream>
 #include <mutex>
-#include <optional>
 #include <utility>
 
 /**
@@ -85,9 +84,8 @@ namespace StormByte {
 			 * stores those values and does not probe. @c ReadAhead 0 disables
 			 * prefetch. @c MaxMemory 0 stores no cache.
 			 *
-			 * @c Parameters is resolved in the caller
-			 * (@c STORMBYTE_FORCE_INLINE). The DLL sees only numbers
-			 * and the probe flag.
+			 * The constructor resolves Safe-owned @c Parameters into byte counts,
+			 * a millisecond duration and the probe flag.
 			 *
 			 * This leaf only opens, reads, seeks and reports the file length.
 			 * @ref OriginDevice builds a @ref StormByte::System::Device from
@@ -100,10 +98,47 @@ namespace StormByte {
 					/**
 					 * @class Parameters
 					 * @brief File-reader knobs. Same fields as @ref BufferedLocationReader::Parameters.
+					 * @note Construction and copying may allocate and throw.
 					 */
 					class Parameters: public BufferedLocationReader::Parameters {
 						public:
-							using BufferedLocationReader::Parameters::Parameters;
+							/**
+							 * @brief Construct an empty Safe-owned parameter bag.
+							 */
+							Parameters() = default;
+							/**
+							 * @brief Store reader knobs in Safe-owned optional values.
+							 * @tparam Knobs Supported reader knobs.
+							 * @param knobs Values to store.
+							 */
+							template<typename... Knobs>
+							Parameters(Knobs... knobs): BufferedLocationReader::Parameters(std::move(knobs)...) {}
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 */
+							Parameters(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 */
+							Parameters(Parameters&& other) noexcept = default;
+							/**
+							 * @brief Release knobs through provider callbacks.
+							 */
+							~Parameters() noexcept = default;
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(Parameters&& other) noexcept = default;
 					};
 
 					/**
@@ -122,10 +157,10 @@ namespace StormByte {
 					 */
 					STORMBYTE_FORCE_INLINE explicit BufferedFileReader(StormByte::Safe::String path,
 							Parameters parameters = {}):
-						BufferedLocationReader(std::move(path), Location::Local,
+						BufferedFileReader(std::move(path),
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
 							parameters.MaxMemory().value_or(StormByte::ByteSize{1024ull * 1024ull}),
-							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
 							!parameters.ReadAhead().has_value()) {}
 
 					/**
@@ -202,13 +237,35 @@ namespace StormByte {
 					 * @brief Cached file size.
 					 * @return Size in bytes, or empty if not open.
 					 */
-					std::optional<StormByte::ByteSize> OriginSize() const noexcept override;
+					StormByte::Safe::Optional<StormByte::ByteSize> OriginSize() const noexcept override;
 
 				private:
-					std::ifstream m_file;						///< Binary input stream.
-					std::optional<StormByte::ByteSize> m_size;	///< Size after OriginOpen.
-					mutable std::mutex m_file_mutex;			///< Serialises ifstream access.
+					/**
+					 * @brief Construct stream and synchronization state in the provider module.
+					 * @param path Local filesystem path.
+					 * @param read_ahead Resolved prefetch length.
+					 * @param max_memory Resolved cache budget.
+					 * @param max_wait Resolved wait cap.
+					 * @param probe Whether to probe the device read window.
+					 */
+					BufferedFileReader(StormByte::Safe::String path, StormByte::ByteSize read_ahead,
+						StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait, bool probe);
+
+					/**
+					 * @brief Binary input stream owned by the provider module.
+					 */
+					std::ifstream m_file;
+					/**
+					 * @brief Known size after OriginOpen, including an empty file's explicit zero.
+					 */
+					StormByte::Safe::Optional<StormByte::ByteSize> m_size;
+					/**
+					 * @brief Serialises input stream access.
+					 */
+					mutable std::mutex m_file_mutex;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BufferedFileReader);

@@ -48,629 +48,736 @@
 #include <cstddef>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <utility>
 #include <vector>
 
-namespace StormByte::Buffer {
+/**
+ * @namespace StormByte
+ * @brief Root namespace of the StormByte C++ suite.
+ */
+namespace StormByte {
 	/**
-	 * @class Sink<T>::Implementation
-	 * @brief Internal implementation class for Sink.
-	 *
-	 * Manages the map of key-to-Hopper buckets, thread synchronization,
-	 * wiring condition variables, and pop selection algorithms.
+	 * @namespace StormByte::Buffer
+	 * @brief Buffer module of the StormByte suite.
 	 */
-	template<Type::MoveConstructible T>
-	class Sink<T>::Implementation {
-		using HopperOwner = StormByte::Safe::Shared<Hopper<T>>;	///< Base-owned shared hopper.
-		using HopperOwners = std::vector<HopperOwner, StormByte::Safe::Heap::Allocator<HopperOwner>>;	///< Hopper snapshots allocated on Base's heap.
-		using HopperBuckets = std::map<int, HopperOwner, std::less<int>, StormByte::Safe::Heap::Allocator<std::pair<const int, HopperOwner>>>;	///< Keyed hopper nodes allocated on Base's heap.
-		using HopperWriters = std::set<HopperOwner, std::less<HopperOwner>, StormByte::Safe::Heap::Allocator<HopperOwner>>;	///< Writer ownership nodes allocated on Base's heap.
-
-		public:
+	namespace Buffer {
+		/**
+		 * @class Sink<T>::Implementation
+		 * @brief Internal implementation class for Sink.
+		 *
+		 * Manages the map of key-to-Hopper buckets, thread synchronization,
+		 * wiring condition variables, and pop selection algorithms.
+		 */
+		template<Detail::HopperValue T>
+		class Sink<T>::Implementation {
 			/**
-			 * @brief Constructs the Sink Implementation instance.
+			 * @brief Base-owned shared hopper.
 			 */
-			Implementation() noexcept
-			: m_rr(0), m_consumer(nullptr), m_closed(false), m_drain(false) {}
-
+			using HopperOwner = StormByte::Safe::Shared<Hopper<T>>;
 			/**
-			 * @brief Destructor. Marks Sink closed and wakes any waiting threads on m_wired.
+			 * @brief Hopper snapshots allocated on Base's heap.
 			 */
-			~Implementation() noexcept {
-				m_closed.store(true, std::memory_order_release);
-				m_wired.notify_all();
-			}
-
+			using HopperOwners = std::vector<HopperOwner, StormByte::Safe::Heap::Allocator<HopperOwner>>;
 			/**
-			 * @brief Enqueues an item into the hopper for key.
-			 * @param key Bucket key identifier.
-			 * @param item Item to push.
+			 * @brief Keyed hopper nodes allocated on Base's heap.
 			 */
-			void Push(int key, T item) noexcept {
-				if constexpr (Type::NullablePointer<T>) {
-					if (!item)
-						return;
-				}
-				StormByte::Safe::Shared<Hopper<T>> hopper;
-				{
-					std::unique_lock<std::mutex> lock(m_mutex);
-					m_wired.wait(lock, [this, key] {
-						return m_closed.load(std::memory_order_acquire)
-							|| m_drain.load(std::memory_order_acquire)
-							|| m_buckets.find(key) != m_buckets.end();
-					});
-					if (m_buckets.find(key) == m_buckets.end())
-						return;
-					hopper = m_buckets[key];
-				}
-				if (!hopper)
-					return;
-				hopper->Push(std::move(item));
-			}
-
+			using HopperBuckets = std::map<int, HopperOwner, std::less<int>, StormByte::Safe::Heap::Allocator<std::pair<const int, HopperOwner>>>;
 			/**
-			 * @brief Closes this Sink and returns hoppers it writes, for last-writer Eof.
-			 * @param cv Set to the consumer condition variable, if any.
-			 * @return Writer hoppers to CloseWriter (empty if already closed).
+			 * @brief Writer ownership nodes allocated on Base's heap.
 			 */
-			HopperOwners Close(std::condition_variable*& cv) noexcept {
-				HopperOwners writers;
-				{
-					std::lock_guard<std::mutex> lock(m_mutex);
-					const bool already = m_closed.exchange(true, std::memory_order_acq_rel);
-					if (!already) {
-						for (const auto& hopper : m_order) {
-							if (m_writers.contains(hopper))
-								writers.push_back(hopper);
-						}
-					}
+			using HopperWriters = std::set<HopperOwner, std::less<HopperOwner>, StormByte::Safe::Heap::Allocator<HopperOwner>>;
+
+			public:
+				/**
+				 * @brief Constructs the Sink Implementation instance.
+				 */
+				STORMBYTE_FORCE_INLINE Implementation() noexcept
+				: m_rr(0), m_consumer(nullptr), m_closed(false), m_drain(false) {}
+
+				/**
+				 * @brief Removes borrowed observers, marks closed and wakes wiring waiters.
+				 */
+				STORMBYTE_FORCE_INLINE ~Implementation() noexcept {
+					Unnotify();
+					m_closed.store(true, std::memory_order_release);
 					m_wired.notify_all();
-					cv = m_consumer.load(std::memory_order_acquire);
 				}
-				return writers;
-			}
 
-			/**
-			 * @brief Shares all existing hoppers with consumer.
-			 * @param consumer Consumer Sink implementation reference.
-			 */
-			void Bind(Implementation& consumer) {
-				std::scoped_lock lock(m_mutex, consumer.m_mutex);
-				const bool closed = m_closed.load(std::memory_order_acquire)
-					|| consumer.m_closed.load(std::memory_order_acquire);
-				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
-				for (const auto& [key, hopper] : m_buckets) {
+				/**
+				 * @brief Enqueues an item into the hopper for key.
+				 * @param key Bucket key identifier.
+				 * @param item Item to push.
+				 */
+				void Push(int key, T item) noexcept {
+					if constexpr (Type::NullablePointer<T>) {
+						if (!item)
+							return;
+					}
+					StormByte::Safe::Shared<Hopper<T>> hopper;
+					{
+						std::unique_lock<std::mutex> lock(m_mutex);
+						m_wired.wait(lock, [this, key] {
+							return m_closed.load(std::memory_order_acquire)
+								|| m_drain.load(std::memory_order_acquire)
+								|| m_buckets.find(key) != m_buckets.end();
+						});
+						if (m_closed.load(std::memory_order_acquire) || m_buckets.find(key) == m_buckets.end())
+							return;
+						hopper = m_buckets[key];
+					}
+					if (!hopper)
+						return;
+					hopper->Push(std::move(item));
+				}
+
+				/**
+				 * @brief Closes this Sink and returns hoppers it writes, for last-writer Eof.
+				 * @note Notifies the borrowed consumer while holding its registration lock.
+				 * @return Writer hoppers to CloseWriter, each returned exactly once even after closed wiring.
+				 */
+				HopperOwners Close() noexcept {
+					HopperOwners writers;
+					{
+						std::lock_guard<std::mutex> lock(m_mutex);
+						m_closed.store(true, std::memory_order_release);
+						for (const auto& hopper : m_writers)
+							writers.push_back(hopper);
+						m_writers.clear();
+						m_wired.notify_all();
+						if (m_consumer)
+							m_consumer->notify_all();
+					}
+					return writers;
+				}
+
+				/**
+				 * @brief Shares all existing hoppers with consumer.
+				 * @param consumer Consumer Sink implementation reference.
+				 */
+				void Bind(Implementation& consumer) {
+					if (this == &consumer)
+						return;
+					std::scoped_lock lock(m_mutex, consumer.m_mutex);
+					const bool closed = m_closed.load(std::memory_order_acquire)
+						|| consumer.m_closed.load(std::memory_order_acquire);
+					std::condition_variable* cv = consumer.m_consumer;
+					for (const auto& [key, hopper] : m_buckets) {
+						consumer.RemoveObserver(key, hopper);
+						if (closed)
+							hopper->Eof();
+						if (cv != nullptr)
+							hopper->Notify(*cv, &consumer);
+						consumer.m_buckets[key] = hopper;
+					}
+					if (closed)
+						consumer.m_closed.store(true, std::memory_order_release);
+					consumer.RebuildOrder();
+					consumer.m_wired.notify_all();
+					m_wired.notify_all();
+				}
+
+				/**
+				 * @brief Creates or shares the hopper for key with consumer.
+				 * @param key Bucket key.
+				 * @param consumer Consumer Sink implementation reference.
+				 * @note Adds any extra writer while both Sink registration locks are held.
+				 */
+				void Bind(int key, Implementation& consumer) {
+					if (this == &consumer)
+						return;
+					std::scoped_lock lock(m_mutex, consumer.m_mutex);
+					const bool closed = m_closed.load(std::memory_order_acquire)
+						|| consumer.m_closed.load(std::memory_order_acquire);
+					std::condition_variable* cv = consumer.m_consumer;
+					const bool existed = m_buckets.contains(key);
+					auto hopper = Ensure(key);
+					const bool already_writer = existed && consumer.m_writers.contains(hopper);
+					if (existed && !already_writer && !closed) {
+						consumer.m_writers.insert(hopper);
+						hopper->AddWriter();
+					}
+					consumer.RemoveObserver(key, hopper);
 					if (closed)
 						hopper->Eof();
 					if (cv != nullptr)
-						hopper->Notify(*cv);
+						hopper->Notify(*cv, &consumer);
 					consumer.m_buckets[key] = hopper;
+					if (closed)
+						consumer.m_closed.store(true, std::memory_order_release);
+					consumer.RebuildOrder();
+					consumer.m_wired.notify_all();
+					m_wired.notify_all();
 				}
-				if (closed)
-					consumer.m_closed.store(true, std::memory_order_release);
-				consumer.RebuildOrder();
-				consumer.m_wired.notify_all();
-				m_wired.notify_all();
-			}
 
-			/**
-			 * @brief Creates or shares the hopper for key with consumer.
-			 * @param key Bucket key.
-			 * @param consumer Consumer Sink implementation reference.
-			 * @return Hopper when this Sink already held it (extra writer); empty otherwise.
-			 */
-			StormByte::Safe::Shared<Hopper<T>> Bind(int key, Implementation& consumer) {
-				std::scoped_lock lock(m_mutex, consumer.m_mutex);
-				const bool closed = m_closed.load(std::memory_order_acquire)
-					|| consumer.m_closed.load(std::memory_order_acquire);
-				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
-				const bool existed = m_buckets.contains(key);
-				auto hopper = Ensure(key);
-				const bool already_writer = existed && consumer.m_writers.contains(hopper);
-				if (existed)
-					consumer.m_writers.insert(hopper);
-				if (closed)
-					hopper->Eof();
-				if (cv != nullptr)
-					hopper->Notify(*cv);
-				consumer.m_buckets[key] = hopper;
-				if (closed)
-					consumer.m_closed.store(true, std::memory_order_release);
-				consumer.RebuildOrder();
-				consumer.m_wired.notify_all();
-				m_wired.notify_all();
-				return (existed && !already_writer) ? hopper : nullptr;
-			}
-
-			/**
-			 * @brief Sets Drain mode.
-			 */
-			void Drain() noexcept {
-				m_drain.store(true, std::memory_order_release);
-				m_wired.notify_all();
-			}
-
-			/**
-			 * @brief Checks if Drain was set.
-			 * @return true if draining.
-			 */
-			bool Draining() const noexcept {
-				return m_drain.load(std::memory_order_acquire);
-			}
-
-			/**
-			 * @brief Registers condition variable for consumer notifications.
-			 * @param consumer Condition variable reference.
-			 */
-			void Notify(std::condition_variable& consumer) noexcept {
-				m_consumer.store(&consumer, std::memory_order_release);
-				const auto hoppers = Order();
-				for (auto& hopper : hoppers)
-					hopper->Notify(consumer);
-			}
-
-			/**
-			 * @brief Drops the consumer condition variable on this Sink and its hoppers.
-			 */
-			void Unnotify() noexcept {
-				m_consumer.store(nullptr, std::memory_order_release);
-				const auto hoppers = Order();
-				for (auto& hopper : hoppers) {
-					if (hopper)
-						hopper->Unnotify();
-				}
-			}
-
-			/**
-			 * @brief Snapshot of wired keys in map order.
-			 * @return Keys, empty if none.
-			 */
-			StormByte::Safe::Vector<int> Keys() const noexcept {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				StormByte::Safe::Vector<int> keys;
-				keys.reserve(m_buckets.size());
-				for (const auto& [key, hopper] : m_buckets)
-					keys.push_back(key);
-				return keys;
-			}
-
-			/**
-			 * @brief Number of wired hoppers.
-			 * @return Bucket count.
-			 */
-			StormByte::Size Buckets() const noexcept {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				return StormByte::Size{m_buckets.size()};
-			}
-
-			/**
-			 * @brief Whether key is wired.
-			 * @param key Bucket key.
-			 * @return true if present.
-			 */
-			bool Contains(int key) const noexcept {
-				return static_cast<bool>(Bucket(key));
-			}
-
-			/**
-			 * @brief Gets capacity of key hopper.
-			 * @param key Bucket key.
-			 * @return Capacity value.
-			 */
-			StormByte::Size Capacity(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return StormByte::Size{0};
-				return hopper->Capacity();
-			}
-
-			/**
-			 * @brief Sets capacity of key hopper.
-			 * @param key Bucket key.
-			 * @param capacity New capacity.
-			 */
-			void Capacity(int key, StormByte::Size capacity) noexcept {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				auto found = m_buckets.find(key);
-				if (found != m_buckets.end() && found->second)
-					found->second->Capacity(capacity);
-			}
-
-			/**
-			 * @brief Gets pending item count of key hopper.
-			 * @param key Bucket key.
-			 * @return Item count.
-			 */
-			StormByte::Size Size(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return StormByte::Size{0};
-				return hopper->Size();
-			}
-
-			/**
-			 * @brief Checks if key hopper is full.
-			 * @param key Bucket key.
-			 * @return true if full.
-			 */
-			bool Full(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return false;
-				return hopper->Full();
-			}
-
-			/**
-			 * @brief Whether key hopper has no items.
-			 * @param key Bucket key.
-			 * @return true if missing or empty.
-			 */
-			bool Empty(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return true;
-				return hopper->Empty();
-			}
-
-			/**
-			 * @brief Whether producers marked Eof on key hopper.
-			 * @param key Bucket key.
-			 * @return Hopper EoF, or false if missing.
-			 */
-			bool EoF(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return false;
-				return hopper->EoF();
-			}
-
-			/**
-			 * @brief Whether key hopper has an item or is finished.
-			 * @param key Bucket key.
-			 * @return false if missing.
-			 */
-			bool Ready(int key) const noexcept {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return false;
-				return !hopper->Empty() || hopper->EoF();
-			}
-
-			/**
-			 * @brief Copy of front item of key hopper. Does not dequeue.
-			 * @param key Bucket key.
-			 * @return Front or default T.
-			 */
-			T Front(int key) const noexcept requires Type::CopyConstructible<T> {
-				const auto hopper = Bucket(key);
-				if (!hopper)
-					return T{};
-				return hopper->Front();
-			}
-
-			/**
-			 * @brief Pops item using default selection.
-			 * @return Popped item or default T.
-			 */
-			T Pop() noexcept {
-				return Pop(typename Sink<T>::Select{});
-			}
-
-			/**
-			 * @brief Pops item using specified selection function.
-			 * @param select Bucket index chooser.
-			 * @return Popped item or default T.
-			 */
-			T Pop(const typename Sink<T>::Select& select) noexcept {
-				HopperOwners hoppers;
-				{
-					std::unique_lock<std::mutex> lock(m_mutex);
-					m_wired.wait(lock, [this] {
-						return m_closed.load(std::memory_order_acquire) || !m_order.empty();
-					});
-					hoppers = m_order;
-				}
-				if (hoppers.empty())
-					return T{};
-				if (hoppers.size() == 1)
-					return hoppers.front()->Pop();
-
-				const std::size_t count = hoppers.size();
-				std::size_t start = 0;
-				if (select) {
-					try {
-						start = static_cast<std::size_t>(select(StormByte::Size{count})) % count;
+				/**
+				 * @brief Sets Drain mode.
+				 */
+				void Drain() noexcept {
+					{
+						std::lock_guard<std::mutex> lock(m_mutex);
+						m_drain.store(true, std::memory_order_release);
 					}
-					catch (...) {
-						return T{};
+					m_wired.notify_all();
+				}
+
+				/**
+				 * @brief Checks if Drain was set.
+				 * @return true if draining.
+				 */
+				bool Draining() const noexcept {
+					return m_drain.load(std::memory_order_acquire);
+				}
+
+				/**
+				 * @brief Registers condition variable for consumer notifications.
+				 * @param consumer Condition variable reference.
+				 */
+				void Notify(std::condition_variable& consumer) noexcept {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					m_consumer = &consumer;
+					for (const auto& hopper : m_order)
+						hopper->Notify(consumer, this);
+				}
+
+				/**
+				 * @brief Drops the consumer condition variable on this Sink and its hoppers.
+				 */
+				void Unnotify() noexcept {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					m_consumer = nullptr;
+					for (const auto& hopper : m_order) {
+						if (hopper)
+							hopper->Unnotify(this);
 					}
 				}
-				else {
-					start = m_rr.fetch_add(1, std::memory_order_relaxed) % count;
+
+				/**
+				 * @brief Snapshot of wired keys in map order.
+				 * @return Keys, empty if none.
+				 */
+				StormByte::Safe::Vector<int> Keys() const noexcept {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					StormByte::Safe::Vector<int> keys;
+					keys.reserve(m_buckets.size());
+					for (const auto& [key, hopper] : m_buckets)
+						keys.push_back(key);
+					return keys;
 				}
 
-				for (std::size_t offset = 0; offset < count; ++offset) {
-					const auto& hopper = hoppers[(start + offset) % count];
-					if (!hopper->Empty())
-						return hopper->Pop();
+				/**
+				 * @brief Number of wired hoppers.
+				 * @return Bucket count.
+				 */
+				StormByte::Size Buckets() const noexcept {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					return StormByte::Size{m_buckets.size()};
 				}
-				return T{};
-			}
 
-			/**
-			 * @brief Pops from one key only.
-			 * @param key Bucket key.
-			 * @return Item or default T.
-			 */
-			T Pop(int key) noexcept {
-				StormByte::Safe::Shared<Hopper<T>> hopper;
-				{
-					std::unique_lock<std::mutex> lock(m_mutex);
-					m_wired.wait(lock, [this, key] {
-						return m_closed.load(std::memory_order_acquire)
-							|| m_buckets.contains(key);
-					});
+				/**
+				 * @brief Whether key is wired.
+				 * @param key Bucket key.
+				 * @return true if present.
+				 */
+				bool Contains(int key) const noexcept {
+					return static_cast<bool>(Bucket(key));
+				}
+
+				/**
+				 * @brief Gets capacity of key hopper.
+				 * @param key Bucket key.
+				 * @return Capacity value.
+				 */
+				StormByte::Size Capacity(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return StormByte::Size{0};
+					return hopper->Capacity();
+				}
+
+				/**
+				 * @brief Sets capacity of key hopper.
+				 * @param key Bucket key.
+				 * @param capacity New capacity.
+				 */
+				void Capacity(int key, StormByte::Size capacity) noexcept {
+					std::lock_guard<std::mutex> lock(m_mutex);
 					auto found = m_buckets.find(key);
-					if (found == m_buckets.end() || !found->second)
-						return T{};
-					hopper = found->second;
+					if (found != m_buckets.end() && found->second)
+						found->second->Capacity(capacity);
 				}
-				return hopper->Pop();
-			}
 
-			/**
-			 * @brief Checks if Sink is finished.
-			 * @return true if closed and all hoppers drained.
-			 */
-			bool EoF() const noexcept {
-				const auto hoppers = Order();
-				if (hoppers.empty())
-					return m_closed.load(std::memory_order_acquire);
-				for (const auto& hopper : hoppers) {
-					if (!hopper->EoF())
-						return false;
-					if (!hopper->Empty())
-						return false;
+				/**
+				 * @brief Gets pending item count of key hopper.
+				 * @param key Bucket key.
+				 * @return Item count.
+				 */
+				StormByte::Size Size(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return StormByte::Size{0};
+					return hopper->Size();
 				}
-				return true;
-			}
 
-			/**
-			 * @brief Checks if Pop can return immediately.
-			 * @return true if item is ready or EoF reached.
-			 */
-			bool Ready() const noexcept {
-				const auto hoppers = Order();
-				if (hoppers.empty())
-					return m_closed.load(std::memory_order_acquire);
-				bool drained = true;
-				for (const auto& hopper : hoppers) {
-					if (!hopper->Empty())
+				/**
+				 * @brief Checks if key hopper is full.
+				 * @param key Bucket key.
+				 * @return true if full.
+				 */
+				bool Full(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return false;
+					return hopper->Full();
+				}
+
+				/**
+				 * @brief Whether key hopper has no items.
+				 * @param key Bucket key.
+				 * @return true if missing or empty.
+				 */
+				bool Empty(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
 						return true;
-					if (!hopper->EoF())
-						drained = false;
+					return hopper->Empty();
 				}
-				return drained;
-			}
 
-		private:
-			/**
-			 * @brief Ensures hopper for key exists. Caller holds m_mutex.
-			 * @param key Bucket key.
-			 * @return Shared hopper instance.
-			 */
-			StormByte::Safe::Shared<Hopper<T>> Ensure(int key) {
-				auto found = m_buckets.find(key);
-				if (found != m_buckets.end())
+				/**
+				 * @brief Whether producers marked Eof on key hopper.
+				 * @param key Bucket key.
+				 * @return Hopper EoF, or false if missing.
+				 */
+				bool EoF(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return false;
+					return hopper->EoF();
+				}
+
+				/**
+				 * @brief Whether key hopper has an item or is finished.
+				 * @param key Bucket key.
+				 * @return false if missing.
+				 */
+				bool Ready(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return false;
+					return !hopper->Empty() || hopper->EoF();
+				}
+
+				/**
+				 * @brief Copy of front item of key hopper. Does not dequeue.
+				 * @param key Bucket key.
+				 * @return Front or default T.
+				 */
+				T Front(int key) const noexcept requires Type::CopyConstructible<T> && std::is_nothrow_copy_constructible_v<T> {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return T{};
+					return hopper->Front();
+				}
+
+				/**
+				 * @brief Pops item using default selection.
+				 * @return Popped item or default T.
+				 */
+				T Pop() noexcept {
+					return Pop(nullptr);
+				}
+
+				/**
+				 * @brief Pops item using specified selection function.
+				 * @param select Borrowed bucket index chooser, or null for round-robin.
+				 * @return Popped item or default T.
+				 */
+				T Pop(const typename Sink<T>::Select* select) noexcept {
+					return Pop([select](StormByte::Size& output, StormByte::Size count) {
+						return select ? select->Call(output, count) : StormByte::Safe::Status::Success;
+					}, select == nullptr);
+				}
+
+				/**
+				 * @brief Pops using a synchronous chooser without retaining or copying its captures.
+				 * @tparam Selector Callable writing a bucket index and returning a Safe status.
+				 * @param select Borrowed chooser, invoked before any item is removed.
+				 * @param round_robin Whether to use the default order instead of invoking the chooser.
+				 * @return Popped item, or default T on failure, exception or empty buckets.
+				 */
+				template<typename Selector>
+				T Pop(Selector&& select, bool round_robin) noexcept {
+					HopperOwners hoppers;
+					{
+						std::unique_lock<std::mutex> lock(m_mutex);
+						m_wired.wait(lock, [this] {
+							return m_closed.load(std::memory_order_acquire) || !m_order.empty();
+						});
+						hoppers = m_order;
+					}
+					if (hoppers.empty())
+						return T{};
+					const std::size_t count = hoppers.size();
+					std::size_t start = 0;
+					if (!round_robin) {
+						try {
+							StormByte::Size output{0};
+							if (std::invoke(select, output, StormByte::Size{count}) != StormByte::Safe::Status::Success)
+								return T{};
+							start = static_cast<std::size_t>(output) % count;
+						}
+						catch (...) {
+							return T{};
+						}
+					}
+					else {
+						start = m_rr.fetch_add(1, std::memory_order_relaxed) % count;
+					}
+
+					for (std::size_t offset = 0; offset < count; ++offset) {
+						const auto& hopper = hoppers[(start + offset) % count];
+						if (!hopper->Empty())
+							return hopper->Pop();
+					}
+					return T{};
+				}
+
+				/**
+				 * @brief Pops from one key only.
+				 * @param key Bucket key.
+				 * @return Item or default T.
+				 */
+				T Pop(int key) noexcept {
+					StormByte::Safe::Shared<Hopper<T>> hopper;
+					{
+						std::unique_lock<std::mutex> lock(m_mutex);
+						m_wired.wait(lock, [this, key] {
+							return m_closed.load(std::memory_order_acquire)
+								|| m_buckets.contains(key);
+						});
+						auto found = m_buckets.find(key);
+						if (found == m_buckets.end() || !found->second)
+							return T{};
+						hopper = found->second;
+					}
+					return hopper->Pop();
+				}
+
+				/**
+				 * @brief Checks if Sink is finished.
+				 * @return true if closed and all hoppers drained.
+				 */
+				bool EoF() const noexcept {
+					const auto hoppers = Order();
+					if (hoppers.empty())
+						return m_closed.load(std::memory_order_acquire);
+					for (const auto& hopper : hoppers) {
+						if (!hopper->EoF())
+							return false;
+						if (!hopper->Empty())
+							return false;
+					}
+					return true;
+				}
+
+				/**
+				 * @brief Checks if Pop can return immediately.
+				 * @return true if item is ready or EoF reached.
+				 */
+				bool Ready() const noexcept {
+					const auto hoppers = Order();
+					if (hoppers.empty())
+						return m_closed.load(std::memory_order_acquire);
+					bool drained = true;
+					for (const auto& hopper : hoppers) {
+						if (!hopper->Empty())
+							return true;
+						if (!hopper->EoF())
+							drained = false;
+					}
+					return drained;
+				}
+
+			private:
+				/**
+				 * @brief Removes this registration from a replaced hopper. Caller holds m_mutex.
+				 * @param key Bucket being rebound.
+				 * @param replacement New hopper whose observer must not be removed.
+				 */
+				void RemoveObserver(int key, const HopperOwner& replacement) noexcept {
+					const auto found = m_buckets.find(key);
+					if (found == m_buckets.end() || found->second == replacement)
+						return;
+					for (const auto& [other_key, hopper] : m_buckets) {
+						if (other_key != key && hopper == found->second)
+							return;
+					}
+					found->second->Unnotify(this);
+				}
+
+				/**
+				 * @brief Ensures hopper for key exists. Caller holds m_mutex.
+				 * @param key Bucket key.
+				 * @return Shared hopper instance.
+				 */
+				StormByte::Safe::Shared<Hopper<T>> Ensure(int key) {
+					auto found = m_buckets.find(key);
+					if (found != m_buckets.end())
+						return found->second;
+					auto hopper = StormByte::Safe::Shared<Hopper<T>>::template MakePointer<Hopper<T>>();
+					std::condition_variable* cv = m_consumer;
+					if (cv != nullptr)
+						hopper->Notify(*cv, this);
+					m_buckets.emplace(key, hopper);
+					m_writers.insert(hopper);
+					RebuildOrder();
+					return hopper;
+				}
+
+				/**
+				 * @brief Rebuilds order vector from m_buckets. Caller holds m_mutex.
+				 */
+				void RebuildOrder() {
+					m_order.clear();
+					m_order.reserve(m_buckets.size());
+					for (const auto& [key, hopper] : m_buckets)
+						m_order.push_back(hopper);
+				}
+
+				/**
+				 * @brief Returns snapshot of current hoppers in order.
+				 * @return Vector of hoppers.
+				 */
+				HopperOwners Order() const {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					return m_order;
+				}
+
+				/**
+				 * @brief Retrieves hopper for key.
+				 * @param key Bucket key.
+				 * @return Hopper pointer or nullptr.
+				 */
+				StormByte::Safe::Shared<Hopper<T>> Bucket(int key) const {
+					std::lock_guard<std::mutex> lock(m_mutex);
+					auto found = m_buckets.find(key);
+					if (found == m_buckets.end())
+						return nullptr;
 					return found->second;
-				auto hopper = StormByte::Safe::Shared<Hopper<T>>::template MakePointer<Hopper<T>>();
-				std::condition_variable* cv = m_consumer.load(std::memory_order_acquire);
-				if (cv != nullptr)
-					hopper->Notify(*cv);
-				m_buckets.emplace(key, hopper);
-				m_writers.insert(hopper);
-				RebuildOrder();
-				return hopper;
+				}
+
+				/**
+				 * @brief Guards buckets, order, observer registration and direct notification.
+				 */
+				mutable std::mutex m_mutex;
+				/**
+				 * @brief Waits for bucket binding or closure.
+				 */
+				std::condition_variable m_wired;
+				/**
+				 * @brief Base-allocated map of keys to Base-owned hoppers.
+				 */
+				HopperBuckets m_buckets;
+				/**
+				 * @brief Base-allocated set of hoppers this Sink writes.
+				 */
+				HopperWriters m_writers;
+				/**
+				 * @brief Base-allocated hopper order for Pop.
+				 */
+				HopperOwners m_order;
+				/**
+				 * @brief Round-robin counter.
+				 */
+				std::atomic<std::size_t> m_rr;
+				/**
+				 * @brief Borrowed consumer condition variable guarded by m_mutex.
+				 */
+				std::condition_variable* m_consumer;
+				/**
+				 * @brief Closed flag.
+				 */
+				std::atomic<bool> m_closed;
+				/**
+				 * @brief Drain mode flag.
+				 */
+				std::atomic<bool> m_drain;
+		};
+
+		template<Detail::HopperValue T>
+		STORMBYTE_FORCE_INLINE Sink<T>::Sink() noexcept
+		: m_io(::new (StormByte::Safe::Heap::Allocate(sizeof(Implementation))) Implementation()),
+		m_owner(m_io, nullptr, [](void* context) noexcept {
+			static_cast<Implementation*>(context)->~Implementation();
+			StormByte::Safe::Heap::Free(context);
+		}) {
+			static_assert(alignof(Implementation) <= alignof(std::max_align_t));
+		}
+
+		template<Detail::HopperValue T>
+		STORMBYTE_FORCE_INLINE Sink<T>::~Sink() noexcept {
+			Unnotify();
+			Eof();
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Push(int key, T item) noexcept {
+			m_io->Push(key, std::move(item));
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Eof() noexcept {
+			const auto writers = m_io->Close();
+			for (const auto& hopper : writers)
+				hopper->CloseWriter();
+		}
+
+		template<Detail::HopperValue T>
+		Sink<T>::Lane::Lane(Sink& from, int key) noexcept
+		: m_from(&from), m_key(key) {}
+
+		template<Detail::HopperValue T>
+		typename Sink<T>::Lane Sink<T>::To(int key) noexcept {
+			return Lane(*this, key);
+		}
+
+		template<Detail::HopperValue T>
+		Sink<T>& Sink<T>::Lane::operator>>(Sink& dest) noexcept {
+			m_from->m_io->Bind(m_key, *dest.m_io);
+			return dest;
+		}
+
+		template<Detail::HopperValue T>
+		Sink<T>& Sink<T>::operator>>(Sink& dest) noexcept {
+			m_io->Bind(*dest.m_io);
+			return dest;
+		}
+
+		template<Detail::HopperValue T>
+		Sink<T>& Sink<T>::operator<<(Sink& src) noexcept {
+			src >> *this;
+			return *this;
+		}
+
+		template<Detail::HopperValue T>
+		Sink<T>& Sink<T>::operator<<(Lane lane) noexcept {
+			lane >> *this;
+			return *this;
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Drain() noexcept {
+			m_io->Drain();
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::Draining() const noexcept {
+			return m_io->Draining();
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
+			m_io->Notify(consumer);
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Unnotify() noexcept {
+			m_io->Unnotify();
+		}
+
+		template<Detail::HopperValue T>
+		StormByte::Safe::Vector<int> Sink<T>::Keys() const noexcept {
+			return m_io->Keys();
+		}
+
+		template<Detail::HopperValue T>
+		StormByte::Size Sink<T>::Buckets() const noexcept {
+			return m_io->Buckets();
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::Contains(int key) const noexcept {
+			return m_io->Contains(key);
+		}
+
+		template<Detail::HopperValue T>
+		StormByte::Size Sink<T>::Capacity(int key) const noexcept {
+			return m_io->Capacity(key);
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Capacity(int key, StormByte::Size capacity) noexcept {
+			m_io->Capacity(key, capacity);
+		}
+
+		template<Detail::HopperValue T>
+		StormByte::Size Sink<T>::Size(int key) const noexcept {
+			return m_io->Size(key);
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::Full(int key) const noexcept {
+			return m_io->Full(key);
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::Empty(int key) const noexcept {
+			return m_io->Empty(key);
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::EoF(int key) const noexcept {
+			return m_io->EoF(key);
+		}
+
+		template<Detail::HopperValue T>
+		bool Sink<T>::Ready(int key) const noexcept {
+			return m_io->Ready(key);
+		}
+
+		template<Detail::HopperValue T>
+		T Sink<T>::Front(int key) const noexcept requires Type::CopyConstructible<T> && std::is_nothrow_copy_constructible_v<T> {
+			return m_io->Front(key);
+		}
+
+		template<Detail::HopperValue T>
+		T Sink<T>::Pop() noexcept {
+			return m_io->Pop();
+		}
+
+		template<Detail::HopperValue T>
+		T Sink<T>::Pop(const Select& select) noexcept {
+			return m_io->Pop(&select);
+		}
+
+		template<Detail::HopperValue T>
+		template<typename Selector>
+		requires (!Type::SameAs<std::remove_cvref_t<Selector>, typename Sink<T>::Select>) &&
+			requires(Selector& select, StormByte::Size count) {
+				{ std::invoke(select, count) } -> Type::SameAs<StormByte::Size>;
 			}
+		T Sink<T>::Pop(Selector&& select) noexcept {
+			return m_io->Pop([&select](StormByte::Size& output, StormByte::Size count) {
+					output = std::invoke(select, count);
+					return StormByte::Safe::Status::Success;
+				}, false);
+		}
 
-			/**
-			 * @brief Rebuilds order vector from m_buckets. Caller holds m_mutex.
-			 */
-			void RebuildOrder() {
-				m_order.clear();
-				m_order.reserve(m_buckets.size());
-				for (const auto& [key, hopper] : m_buckets)
-					m_order.push_back(hopper);
-			}
+		template<Detail::HopperValue T>
+		T Sink<T>::Pop(int key) noexcept {
+			return m_io->Pop(key);
+		}
 
-			/**
-			 * @brief Returns snapshot of current hoppers in order.
-			 * @return Vector of hoppers.
-			 */
-			HopperOwners Order() const {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				return m_order;
-			}
+		template<Detail::HopperValue T>
+		bool Sink<T>::EoF() const noexcept {
+			return m_io->EoF();
+		}
 
-			/**
-			 * @brief Retrieves hopper for key.
-			 * @param key Bucket key.
-			 * @return Hopper pointer or nullptr.
-			 */
-			StormByte::Safe::Shared<Hopper<T>> Bucket(int key) const {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				auto found = m_buckets.find(key);
-				if (found == m_buckets.end())
-					return nullptr;
-				return found->second;
-			}
-
-			mutable std::mutex m_mutex;							///< Guards bucket map and order vector.
-			std::condition_variable m_wired;					///< Waits for bucket binding or closure.
-			HopperBuckets m_buckets;	///< Base-allocated map of keys to Base-owned hoppers.
-			HopperWriters m_writers;	///< Base-allocated set of hoppers this Sink writes.
-			HopperOwners m_order;	///< Base-allocated hopper order for Pop.
-			std::atomic<std::size_t> m_rr;						///< Round-robin counter.
-			std::atomic<std::condition_variable*> m_consumer;	///< Registered consumer condition variable.
-			std::atomic<bool> m_closed;							///< Closed flag.
-			std::atomic<bool> m_drain;							///< Drain mode flag.
-	};
-
-	template<Type::MoveConstructible T>
-	Sink<T>::Sink() noexcept
-	: m_io(StormByte::Safe::Unique<Implementation>::template MakePointer<Implementation>()) {}
-
-	template<Type::MoveConstructible T>
-	Sink<T>::~Sink() noexcept = default;
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Push(int key, T item) noexcept {
-		m_io->Push(key, std::move(item));
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Eof() noexcept {
-		std::condition_variable* cv = nullptr;
-		const auto writers = m_io->Close(cv);
-		for (const auto& hopper : writers)
-			hopper->CloseWriter();
-		if (cv)
-			cv->notify_all();
-	}
-
-	template<Type::MoveConstructible T>
-	Sink<T>::Lane::Lane(Sink& from, int key) noexcept
-	: m_from(&from), m_key(key) {}
-
-	template<Type::MoveConstructible T>
-	typename Sink<T>::Lane Sink<T>::To(int key) noexcept {
-		return Lane(*this, key);
-	}
-
-	template<Type::MoveConstructible T>
-	Sink<T>& Sink<T>::Lane::operator>>(Sink& dest) noexcept {
-		if (auto extra = m_from->m_io->Bind(m_key, *dest.m_io))
-			extra->AddWriter();
-		return dest;
-	}
-
-	template<Type::MoveConstructible T>
-	Sink<T>& Sink<T>::operator>>(Sink& dest) noexcept {
-		m_io->Bind(*dest.m_io);
-		return dest;
-	}
-
-	template<Type::MoveConstructible T>
-	Sink<T>& Sink<T>::operator<<(Sink& src) noexcept {
-		src >> *this;
-		return *this;
-	}
-
-	template<Type::MoveConstructible T>
-	Sink<T>& Sink<T>::operator<<(Lane lane) noexcept {
-		lane >> *this;
-		return *this;
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Drain() noexcept {
-		m_io->Drain();
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Draining() const noexcept {
-		return m_io->Draining();
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
-		m_io->Notify(consumer);
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Unnotify() noexcept {
-		m_io->Unnotify();
-	}
-
-	template<Type::MoveConstructible T>
-	StormByte::Safe::Vector<int> Sink<T>::Keys() const noexcept {
-		return m_io->Keys();
-	}
-
-	template<Type::MoveConstructible T>
-	StormByte::Size Sink<T>::Buckets() const noexcept {
-		return m_io->Buckets();
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Contains(int key) const noexcept {
-		return m_io->Contains(key);
-	}
-
-	template<Type::MoveConstructible T>
-	StormByte::Size Sink<T>::Capacity(int key) const noexcept {
-		return m_io->Capacity(key);
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Capacity(int key, StormByte::Size capacity) noexcept {
-		m_io->Capacity(key, capacity);
-	}
-
-	template<Type::MoveConstructible T>
-	StormByte::Size Sink<T>::Size(int key) const noexcept {
-		return m_io->Size(key);
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Full(int key) const noexcept {
-		return m_io->Full(key);
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Empty(int key) const noexcept {
-		return m_io->Empty(key);
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::EoF(int key) const noexcept {
-		return m_io->EoF(key);
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Ready(int key) const noexcept {
-		return m_io->Ready(key);
-	}
-
-	template<Type::MoveConstructible T>
-	T Sink<T>::Front(int key) const noexcept requires Type::CopyConstructible<T> {
-		return m_io->Front(key);
-	}
-
-	template<Type::MoveConstructible T>
-	T Sink<T>::Pop() noexcept {
-		return m_io->Pop();
-	}
-
-	template<Type::MoveConstructible T>
-	T Sink<T>::Pop(const Select& select) noexcept {
-		return m_io->Pop(select);
-	}
-
-	template<Type::MoveConstructible T>
-	T Sink<T>::Pop(int key) noexcept {
-		return m_io->Pop(key);
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::EoF() const noexcept {
-		return m_io->EoF();
-	}
-
-	template<Type::MoveConstructible T>
-	bool Sink<T>::Ready() const noexcept {
-		return m_io->Ready();
+		template<Detail::HopperValue T>
+		bool Sink<T>::Ready() const noexcept {
+			return m_io->Ready();
+		}
 	}
 }

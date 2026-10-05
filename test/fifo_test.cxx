@@ -79,6 +79,20 @@ namespace {
 			s.push_back(static_cast<char>('A' + (i % 26)));
 		return s;
 	}
+
+	/**
+	 * @brief Consumer-defined FIFO with a DLL-safe formatting hook.
+	 */
+	class HeaderFIFO final: public FIFO {
+		protected:
+			/**
+			 * @brief Return consumer-owned header text without exporting a stream.
+			 * @return DLL-safe custom header, including an embedded NUL.
+			 */
+			StormByte::Safe::String HexDumpHeader() const noexcept override {
+				return StormByte::Safe::String{std::string_view("fifo\0header", 11)};
+			}
+	};
 }
 
 // -------------------
@@ -288,6 +302,18 @@ int test_fifo_polymorphic_interface_abi() {
 // -------------------
 // HexDump
 // -------------------
+
+int test_fifo_safe_header_hook() {
+	const std::string fn = "test_fifo_safe_header_hook";
+	HeaderFIFO fifo;
+	ASSERT_TRUE(fn, fifo.Write("A"));
+	const FIFO& base = fifo;
+	const auto dump = base.HexDump();
+	ASSERT_TRUE(fn, std::string_view(dump).starts_with(std::string_view("fifo\0header\n", 12)));
+	ASSERT_TRUE(fn, dump.contains("41"));
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{1});
+	RETURN_TEST(fn, 0);
+}
 
 int test_fifo_hexdump() {
 	FIFO fifo;
@@ -947,6 +973,7 @@ int main() {
 	// -------------------
 	// HexDump
 	// -------------------
+	result += test_fifo_safe_header_hook();
 	result += test_fifo_hexdump();
 	result += test_fifo_hexdump_mixed();
 	result += test_fifo_hexdump_offset();

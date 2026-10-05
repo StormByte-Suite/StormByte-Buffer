@@ -45,10 +45,10 @@
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/platform.h>
+#include <StormByte/safe/optional.hxx>
 #include <StormByte/safe/pointers.hxx>
 
 #include <memory>
-#include <optional>
 #include <utility>
 
 /**
@@ -83,19 +83,22 @@ namespace StormByte {
 				 * @brief Store the cycle size.
 				 * @param value Bytes. 0 = automatic.
 				 */
-				STORMBYTE_FORCE_INLINE explicit Chunk(const StormByte::ByteSize value) noexcept:
+				explicit Chunk(const StormByte::ByteSize value) noexcept:
 					m_value(value) {}
 
 				/**
 				 * @brief Cycle size.
 				 * @return Bytes.
 				 */
-				STORMBYTE_FORCE_INLINE StormByte::ByteSize Value() const noexcept {
+				StormByte::ByteSize Value() const noexcept {
 					return m_value;
 				}
 
 			private:
-				StormByte::ByteSize m_value;	///< Cycle size.
+				/**
+				 * @brief Cycle size.
+				 */
+				StormByte::ByteSize m_value;
 		};
 
 		/**
@@ -112,19 +115,22 @@ namespace StormByte {
 				 * @brief Store the input cap.
 				 * @param value Bytes. 0 disables the Pumper cap.
 				 */
-				STORMBYTE_FORCE_INLINE explicit HighWater(const StormByte::ByteSize value) noexcept:
+				explicit HighWater(const StormByte::ByteSize value) noexcept:
 					m_value(value) {}
 
 				/**
 				 * @brief Input cap.
 				 * @return Bytes.
 				 */
-				STORMBYTE_FORCE_INLINE StormByte::ByteSize Value() const noexcept {
+				StormByte::ByteSize Value() const noexcept {
 					return m_value;
 				}
 
 			private:
-				StormByte::ByteSize m_value;	///< Input cap.
+				/**
+				 * @brief Input cap.
+				 */
+				StormByte::ByteSize m_value;
 		};
 
 		/**
@@ -171,16 +177,46 @@ namespace StormByte {
 				 * @class Parameters
 				 * @brief Optional Pumper knobs. A missing field keeps the office default.
 				 *
-				 * Header-only. The variadic list is applied in the caller
-				 * (@c STORMBYTE_FORCE_INLINE). This module never
-				 * instantiates @c Parameters.
+				 * Header-only bag with Safe provider-owned optional values.
+				 * @note Construction, copying and knob assignment may allocate and throw.
 				 */
 				class Parameters {
 					public:
 						/**
 						 * @brief No knobs. Every field is absent.
 						 */
-						STORMBYTE_FORCE_INLINE Parameters() noexcept = default;
+						Parameters() = default;
+
+						/**
+						 * @brief Copy provider-owned knob values; may allocate and throw.
+						 * @param other Source parameters.
+						 */
+						Parameters(const Parameters& other) = default;
+
+						/**
+						 * @brief Transfer provider-owned knob values.
+						 * @param other Source parameters.
+						 */
+						Parameters(Parameters&& other) noexcept = default;
+
+						/**
+						 * @brief Release knobs through their provider callbacks.
+						 */
+						~Parameters() noexcept = default;
+
+						/**
+						 * @brief Copy provider-owned knob values; may allocate and throw.
+						 * @param other Source parameters.
+						 * @return This instance.
+						 */
+						Parameters& operator=(const Parameters& other) = default;
+
+						/**
+						 * @brief Transfer provider-owned knob values.
+						 * @param other Source parameters.
+						 * @return This instance.
+						 */
+						Parameters& operator=(Parameters&& other) noexcept = default;
 
 						/**
 						 * @brief Engage the listed knobs. Unknown types do not compile.
@@ -188,7 +224,7 @@ namespace StormByte {
 						 * @param knobs Values to store.
 						 */
 						template<typename... Knobs>
-						STORMBYTE_FORCE_INLINE Parameters(Knobs... knobs) {
+						Parameters(Knobs... knobs) {
 							(Apply(std::move(knobs)), ...);
 						}
 
@@ -196,7 +232,7 @@ namespace StormByte {
 						 * @brief Cycle size when the caller set it.
 						 * @return Empty when the caller omitted @ref Chunk.
 						 */
-						STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& Chunk() const noexcept {
+						const StormByte::Safe::Optional<StormByte::ByteSize>& Chunk() const noexcept {
 							return m_chunk;
 						}
 
@@ -204,7 +240,7 @@ namespace StormByte {
 						 * @brief Input cap when the caller set it.
 						 * @return Empty when the caller omitted @ref HighWater.
 						 */
-						STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& HighWater() const noexcept {
+						const StormByte::Safe::Optional<StormByte::ByteSize>& HighWater() const noexcept {
 							return m_high_water;
 						}
 
@@ -213,7 +249,7 @@ namespace StormByte {
 						 * @brief Store a @ref Chunk knob.
 						 * @param knob Cycle size.
 						 */
-						STORMBYTE_FORCE_INLINE void Apply(class Chunk knob) noexcept {
+						void Apply(class Chunk knob) {
 							m_chunk = knob.Value();
 						}
 
@@ -221,15 +257,26 @@ namespace StormByte {
 						 * @brief Store a @ref HighWater knob.
 						 * @param knob Input cap.
 						 */
-						STORMBYTE_FORCE_INLINE void Apply(class HighWater knob) noexcept {
+						void Apply(class HighWater knob) {
 							m_high_water = knob.Value();
 						}
 
+						/**
+						 * @brief Reject unsupported knob types.
+						 * @tparam Knob Unsupported type.
+						 * @param knob Unsupported value.
+						 */
 						template<typename Knob>
-						void Apply(Knob&&) = delete;
+						void Apply(Knob&& knob) = delete;
 
-						std::optional<StormByte::ByteSize> m_chunk;			///< Absent = automatic.
-						std::optional<StormByte::ByteSize> m_high_water;	///< Absent = office default.
+						/**
+						 * @brief Absent means automatic chunking.
+						 */
+						StormByte::Safe::Optional<StormByte::ByteSize> m_chunk;
+						/**
+						 * @brief Absent means the office default; an engaged zero disables the cap.
+						 */
+						StormByte::Safe::Optional<StormByte::ByteSize> m_high_water;
 				};
 
 				/**
@@ -242,7 +289,11 @@ namespace StormByte {
 						parameters.Chunk().value_or(StormByte::ByteSize{0}),
 						parameters.HighWater()) {}
 
-				Pumper(const Pumper&) = delete;
+				/**
+				 * @brief Copying a worker is not supported.
+				 * @param other Source worker.
+				 */
+				Pumper(const Pumper& other) = delete;
 
 				/**
 				 * @brief Move constructor. Moved-from is empty and joined.
@@ -255,7 +306,12 @@ namespace StormByte {
 				 */
 				~Pumper() noexcept;
 
-				Pumper& operator=(const Pumper&) = delete;
+				/**
+				 * @brief Copy assignment is not supported.
+				 * @param other Source worker.
+				 * @return This instance.
+				 */
+				Pumper& operator=(const Pumper& other) = delete;
 
 				/**
 				 * @brief Move assignment. Moved-from is empty and joined.
@@ -317,9 +373,17 @@ namespace StormByte {
 				 * @param high_water Empty = default from the input kind.
 				 */
 				Pumper(Bridge&& bridge, StormByte::ByteSize chunk,
-					std::optional<StormByte::ByteSize> high_water);
+					StormByte::Safe::Optional<StormByte::ByteSize> high_water);
 
-				std::unique_ptr<Backend::Pumper> m_backend;	///< Worker.
+				/**
+				 * @brief Module-owned worker, released out of line.
+				 */
+				std::unique_ptr<Backend::Pumper> m_backend;
 		};
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Chunk);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::HighWater);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Pumper::Parameters);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Pumper);

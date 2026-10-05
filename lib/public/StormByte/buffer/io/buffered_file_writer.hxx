@@ -87,9 +87,8 @@ namespace StormByte {
 			 * A zero chunk or backpressure disables the ring.
 			 * A zero @ref MaxMemory stores no pages.
 			 *
-			 * @c Parameters is resolved in the caller
-			 * (@c STORMBYTE_FORCE_INLINE). The DLL sees only numbers
-			 * and the probe flag.
+			 * The constructor resolves Safe-owned @c Parameters into byte counts,
+			 * a chunk count, a millisecond duration and the probe flag.
 			 *
 			 * This leaf only opens, writes, flushes, truncates, seeks and
 			 * reports the file length. @ref OriginDevice builds a
@@ -102,10 +101,47 @@ namespace StormByte {
 					/**
 					 * @class Parameters
 					 * @brief File-writer knobs. Same fields as @ref BufferedLocationWriter::Parameters.
+					 * @note Construction and copying may allocate and throw.
 					 */
 					class Parameters: public BufferedLocationWriter::Parameters {
 						public:
-							using BufferedLocationWriter::Parameters::Parameters;
+							/**
+							 * @brief Construct an empty Safe-owned parameter bag.
+							 */
+							Parameters() = default;
+							/**
+							 * @brief Store writer knobs in Safe-owned optional values.
+							 * @tparam Knobs Supported writer knobs.
+							 * @param knobs Values to store.
+							 */
+							template<typename... Knobs>
+							Parameters(Knobs... knobs): BufferedLocationWriter::Parameters(std::move(knobs)...) {}
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 */
+							Parameters(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 */
+							Parameters(Parameters&& other) noexcept = default;
+							/**
+							 * @brief Release knobs through provider callbacks.
+							 */
+							~Parameters() noexcept = default;
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(Parameters&& other) noexcept = default;
 					};
 
 					/**
@@ -126,10 +162,10 @@ namespace StormByte {
 					 */
 					STORMBYTE_FORCE_INLINE explicit BufferedFileWriter(StormByte::Safe::String path,
 							Parameters parameters = {}):
-						BufferedLocationWriter(std::move(path), Location::Local,
+						BufferedFileWriter(std::move(path),
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
 							parameters.BackPressure().value_or(0),
-							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
 							!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
@@ -232,9 +268,30 @@ namespace StormByte {
 					bool WillWrite(StormByte::ByteSize n) const override;
 
 				private:
-					std::ofstream m_file;					///< Binary output stream.
-					mutable std::mutex m_file_mutex;		///< Serialises ofstream access.
+					/**
+					 * @brief Construct stream and synchronization state in the provider module.
+					 * @param path Local filesystem path.
+					 * @param write_chunk Resolved push unit.
+					 * @param back_pressure Resolved ring cap in chunks.
+					 * @param max_wait Resolved wait cap.
+					 * @param max_memory Resolved dirty-page budget.
+					 * @param probe Whether to probe the device write window.
+					 */
+					BufferedFileWriter(StormByte::Safe::String path, StormByte::ByteSize write_chunk,
+						std::size_t back_pressure, std::chrono::milliseconds max_wait,
+						StormByte::ByteSize max_memory, bool probe);
+
+					/**
+					 * @brief Binary output stream owned by the provider module.
+					 */
+					std::ofstream m_file;
+					/**
+					 * @brief Serialises output stream access.
+					 */
+					mutable std::mutex m_file_mutex;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BufferedFileWriter);

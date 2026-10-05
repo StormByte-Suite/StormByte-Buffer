@@ -150,7 +150,7 @@ namespace StormByte {
 				 * @param in Source. Must outlive *this.
 				 * @param out Sink. Must outlive *this.
 				 */
-				Bridge(ReadOnly& in, WriteOnly& out) noexcept;
+				Bridge(ReadOnly& in, WriteOnly& out);
 
 				/**
 				 * @brief Two IO leaves. Stolen by move.
@@ -160,9 +160,11 @@ namespace StormByte {
 				 * @param out Sink. Moved-from is empty.
 				 */
 				template<typename In, typename Out>
-				STORMBYTE_FORCE_INLINE Bridge(In&& in, Out&& out) noexcept
+				STORMBYTE_FORCE_INLINE Bridge(In&& in, Out&& out)
 					requires (Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader>
-						&& Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter>) {
+						&& Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter>
+						&& !Type::LvalueReference<In> && !Type::Const<std::remove_reference_t<In>>
+						&& !Type::LvalueReference<Out> && !Type::Const<std::remove_reference_t<Out>>): Bridge() {
 					AttachIoIn(std::forward<In>(in));
 					AttachIoOut(std::forward<Out>(out));
 				}
@@ -174,8 +176,9 @@ namespace StormByte {
 				 * @param out Sink. Moved-from is empty.
 				 */
 				template<typename Out>
-				STORMBYTE_FORCE_INLINE Bridge(ReadOnly& in, Out&& out) noexcept
-					requires Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter> {
+				STORMBYTE_FORCE_INLINE Bridge(ReadOnly& in, Out&& out)
+					requires (Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter>
+						&& !Type::LvalueReference<Out> && !Type::Const<std::remove_reference_t<Out>>): Bridge() {
 					AttachIoOut(std::forward<Out>(out));
 					AttachNonIoIn(in);
 				}
@@ -187,12 +190,28 @@ namespace StormByte {
 				 * @param out Sink. Must outlive *this.
 				 */
 				template<typename In>
-				STORMBYTE_FORCE_INLINE Bridge(In&& in, WriteOnly& out) noexcept
-					requires Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader> {
+				STORMBYTE_FORCE_INLINE Bridge(In&& in, WriteOnly& out)
+					requires (Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader>
+						&& !Type::LvalueReference<In> && !Type::Const<std::remove_reference_t<In>>): Bridge() {
 					AttachIoIn(std::forward<In>(in));
 					AttachNonIoOut(out);
 				}
 
+				/**
+				 * @brief Reject borrowed or const IO leaves instead of falling back to borrowed tips.
+				 * @tparam In Source tip type.
+				 * @tparam Out Sink tip type.
+				 */
+				template<typename In, typename Out>
+				Bridge(In&&, Out&&)
+					requires ((Type::DerivedFrom<std::remove_cvref_t<In>, IO::BufferedReader>
+						&& (Type::LvalueReference<In> || Type::Const<std::remove_reference_t<In>>))
+						|| (Type::DerivedFrom<std::remove_cvref_t<Out>, IO::BufferedWriter>
+						&& (Type::LvalueReference<Out> || Type::Const<std::remove_reference_t<Out>>))) = delete;
+
+				/**
+				 * @brief Copy construction is disabled for one-shot sessions.
+				 */
 				Bridge(const Bridge&) = delete;
 
 				/**
@@ -206,6 +225,9 @@ namespace StormByte {
 				 */
 				~Bridge() noexcept;
 
+				/**
+				 * @brief Copy assignment is disabled for one-shot sessions.
+				 */
 				Bridge& operator=(const Bridge&) = delete;
 
 				/**
@@ -283,16 +305,21 @@ namespace StormByte {
 
 			private:
 				/**
+				 * @brief Initialize an unattached session in the Buffer provider.
+				 */
+				Bridge() noexcept;
+
+				/**
 				 * @brief Attach a non-owning non-IO source. Defined in this module.
 				 * @param in Source. Must outlive *this.
 				 */
-				void AttachNonIoIn(ReadOnly& in) noexcept;
+				void AttachNonIoIn(ReadOnly& in);
 
 				/**
 				 * @brief Attach a non-owning non-IO sink. Defined in this module.
 				 * @param out Sink. Must outlive *this.
 				 */
-				void AttachNonIoOut(WriteOnly& out) noexcept;
+				void AttachNonIoOut(WriteOnly& out);
 
 				/**
 				 * @brief Snapshot the stolen IO source telemetry handle.
@@ -343,7 +370,7 @@ namespace StormByte {
 				 * @param in Source. Moved-from is empty.
 				 */
 				template<typename In>
-				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) noexcept {
+				STORMBYTE_FORCE_INLINE void AttachIoIn(In&& in) {
 					m_io_in_blocking = (in.ReadAhead() == StormByte::ByteSize{0});
 					m_io_in = StormByte::Safe::Unique<IO::BufferedReader>::MakePointer<std::remove_cvref_t<In>>(
 						std::forward<In>(in));
@@ -356,27 +383,62 @@ namespace StormByte {
 				 * @param out Sink. Moved-from is empty.
 				 */
 				template<typename Out>
-				STORMBYTE_FORCE_INLINE void AttachIoOut(Out&& out) noexcept {
+				STORMBYTE_FORCE_INLINE void AttachIoOut(Out&& out) {
 					m_io_out = StormByte::Safe::Unique<IO::BufferedWriter>::MakePointer<std::remove_cvref_t<Out>>(
 						std::forward<Out>(out));
 					CacheWriteTelemetry();
 				}
 
-				ReadOnly* m_ext_in {nullptr};											///< Non-IO source. Borrowed.
-				WriteOnly* m_ext_out {nullptr};											///< Non-IO sink. Borrowed.
-				StormByte::Safe::Unique<IO::BufferedReader> m_io_in;							///< Stolen IO source. Base heap.
-				StormByte::Safe::Unique<IO::BufferedWriter> m_io_out;							///< Stolen IO sink. Base heap.
-				StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;		///< Cached read counters.
-				StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;		///< Cached write counters.
-				bool m_io_in_blocking {false};											///< Stolen reader ReadAhead was 0.
+				/**
+				 * @brief Borrowed non-IO source.
+				 */
+				ReadOnly* m_ext_in {nullptr};
+				/**
+				 * @brief Borrowed non-IO sink.
+				 */
+				WriteOnly* m_ext_out {nullptr};
+				/**
+				 * @brief Stolen IO source on Base's heap.
+				 */
+				StormByte::Safe::Unique<IO::BufferedReader> m_io_in;
+				/**
+				 * @brief Stolen IO sink on Base's heap.
+				 */
+				StormByte::Safe::Unique<IO::BufferedWriter> m_io_out;
+				/**
+				 * @brief Cached shared read counters.
+				 */
+				StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_owned_read;
+				/**
+				 * @brief Cached shared write counters.
+				 */
+				StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_owned_write;
+				/**
+				 * @brief Whether the stolen reader had zero ReadAhead at attachment.
+				 */
+				bool m_io_in_blocking {false};
 				/**
 				 * @typedef SessionState
 				 * @brief Unambiguous enum type for the private session state member.
 				 */
 				using SessionState = enum State;
 
-				SessionState m_session_state {SessionState::Open};					///< Session lifetime.
-				mutable std::mutex m_mutex;												///< Session lock.
+				/**
+				 * @brief Session lifetime.
+				 */
+				SessionState m_session_state {SessionState::Open};
+				/**
+				 * @brief Session lock.
+				 */
+				mutable std::mutex m_mutex;
 		};
 	}
 }
+
+/**
+ * @brief Session ownership uses Base heap handles and Buffer-defined release operations.
+ * @note Buffer, Base and all concrete IO providers must remain loaded with a compatible ABI.
+ *       Borrowed tips must outlive the session. Stolen leaves must independently provide
+ *       module-correct construction and virtual destruction; derived Bridge types are not classified.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Bridge);

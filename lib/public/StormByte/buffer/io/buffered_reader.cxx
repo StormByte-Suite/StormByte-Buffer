@@ -218,7 +218,7 @@ bool BufferedReader::IsSized() const noexcept {
 	return m_io && m_io->IsSized();
 }
 
-std::optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
+StormByte::Safe::Optional<StormByte::ByteSize> BufferedReader::Size() const noexcept {
 	if (!m_io)
 		return std::nullopt;
 	return m_io->Size();

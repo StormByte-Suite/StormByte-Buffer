@@ -55,7 +55,6 @@
 #include <condition_variable>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <thread>
 
 /**
@@ -312,7 +311,7 @@ namespace StormByte {
 						 * @brief Origin length when known.
 						 * @return Length, or empty.
 						 */
-						std::optional<StormByte::ByteSize> Size() const noexcept;
+						StormByte::Safe::Optional<StormByte::ByteSize> Size() const noexcept;
 
 						/**
 						 * @}
@@ -518,57 +517,188 @@ namespace StormByte {
 						 */
 						StormByte::Buffer::IO::ReadTelemetry* IoTelemetry() const noexcept;
 
-						StormByte::Buffer::IO::BufferedReader* m_owner;							///< Public leaf (hooks).
-						StormByte::Safe::String m_path;						///< Locator. Not changed.
-						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};			///< Local or remote. Not changed.
+						/**
+						 * @brief Public leaf supplying origin hooks.
+						 */
+						StormByte::Buffer::IO::BufferedReader* m_owner;
+						/**
+						 * @brief Immutable locator.
+						 */
+						StormByte::Safe::String m_path;
+						/**
+						 * @brief Immutable local or remote location kind.
+						 */
+						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};
 
-						mutable std::mutex m_mutex;								///< Session + map.
-						mutable std::condition_variable m_cv;					///< Worker / flush waits.
+						/**
+						 * @brief Protects session state and the cache map.
+						 */
+						mutable std::mutex m_mutex;
+						/**
+						 * @brief Coordinates worker and flush waits.
+						 */
+						mutable std::condition_variable m_cv;
 
-						StormByte::ByteSize m_read_ahead {0};					///< Prefetch target length.
-						StormByte::ByteSize m_max_memory {0};					///< Approximate cache cap.
-						std::chrono::milliseconds m_max_wait {0};				///< Read wait cap. 0 = forever.
+						/**
+						 * @brief Prefetch target length.
+						 */
+						StormByte::ByteSize m_read_ahead {0};
+						/**
+						 * @brief Approximate cache cap.
+						 */
+						StormByte::ByteSize m_max_memory {0};
+						/**
+						 * @brief Read wait cap; zero waits forever.
+						 */
+						std::chrono::milliseconds m_max_wait {0};
 
-						StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };				///< Session state.
-						bool m_open {false};									///< Session armed (Open until Close).
-						mutable bool m_failed {false};							///< Permanent failure.
-						mutable bool m_origin_exhausted {false};				///< Device EOF (not public EoF).
-						mutable StormByte::ByteSize m_tell {0};					///< Logical cursor. AVIO contract.
-						mutable StormByte::ByteSize m_max_tell {0};				///< High-water of consumed Tell.
-						mutable StormByte::ByteSize m_origin_pos {0};			///< Device cursor. Not updated by Seek.
-						mutable bool m_origin_valid {false};					///< Whether @c m_origin_pos is known.
-						mutable bool m_hold_prefetch {false};					///< Fake seek: prefetch off until catch-up or OriginSeek.
+						/**
+						 * @brief Session state.
+						 */
+						StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };
+						/**
+						 * @brief Session armed from Open until Close.
+						 */
+						bool m_open {false};
+						/**
+						 * @brief Permanent failure.
+						 */
+						mutable bool m_failed {false};
+						/**
+						 * @brief Device end of file, distinct from public EoF.
+						 */
+						mutable bool m_origin_exhausted {false};
+						/**
+						 * @brief Logical cursor required by the AVIO contract.
+						 */
+						mutable StormByte::ByteSize m_tell {0};
+						/**
+						 * @brief High-water of consumed Tell.
+						 */
+						mutable StormByte::ByteSize m_max_tell {0};
+						/**
+						 * @brief Device cursor, not updated by Seek.
+						 */
+						mutable StormByte::ByteSize m_origin_pos {0};
+						/**
+						 * @brief Whether @c m_origin_pos is known.
+						 */
+						mutable bool m_origin_valid {false};
+						/**
+						 * @brief Fake seek suspends prefetch until catch-up or OriginSeek.
+						 */
+						mutable bool m_hold_prefetch {false};
 
-						mutable std::map<StormByte::ByteSize, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
+						/**
+						 * @brief Owned byte spans indexed by their origin offset.
+						 */
+						mutable std::map<StormByte::ByteSize, FIFO> m_spans;
+						/**
+						 * @brief Session counters.
+						 */
+						mutable StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;
 
-						mutable StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;	///< Session counters.
+						/**
+						 * @brief Telemetry.Delivered.
+						 */
+						mutable StormByte::ByteSize m_delivered {0};
+						/**
+						 * @brief Telemetry.HitAhead.
+						 */
+						mutable StormByte::ByteSize m_hit_ahead {0};
+						/**
+						 * @brief Telemetry.HitBack.
+						 */
+						mutable StormByte::ByteSize m_hit_back {0};
+						/**
+						 * @brief Telemetry.Miss.
+						 */
+						mutable StormByte::ByteSize m_miss {0};
+						/**
+						 * @brief Telemetry.Origin.
+						 */
+						mutable StormByte::ByteSize m_origin {0};
+						/**
+						 * @brief Telemetry.CachedPeak.
+						 */
+						mutable StormByte::ByteSize m_cached_peak {0};
+						/**
+						 * @brief Telemetry.SeekLogical.
+						 */
+						mutable std::size_t m_seek_logical {0};
+						/**
+						 * @brief Telemetry.SeekOrigin.
+						 */
+						mutable std::size_t m_seek_origin {0};
+						/**
+						 * @brief Telemetry.SeekSavedFull.
+						 */
+						mutable std::size_t m_seek_saved_full {0};
+						/**
+						 * @brief Telemetry.SeekSavedPartial.
+						 */
+						mutable std::size_t m_seek_saved_partial {0};
+						/**
+						 * @brief Epoch open until the next Seek or Close.
+						 */
+						mutable bool m_seek_epoch {false};
+						/**
+						 * @brief CoverageFrom(target) at Seek.
+						 */
+						mutable bool m_seek_had_cache {false};
+						/**
+						 * @brief OriginSeek hook ran in this epoch.
+						 */
+						mutable bool m_seek_did_origin {false};
+						/**
+						 * @brief Telemetry.TryAgain.
+						 */
+						mutable std::size_t m_try_again {0};
+						/**
+						 * @brief Telemetry.Saturated.
+						 */
+						mutable std::size_t m_saturated {0};
+						/**
+						 * @brief Telemetry.Evicted.
+						 */
+						mutable std::size_t m_evicted {0};
+						/**
+						 * @brief Telemetry.WaitMin.
+						 */
+						mutable std::chrono::nanoseconds m_wait_min {0};
+						/**
+						 * @brief Telemetry.WaitMax.
+						 */
+						mutable std::chrono::nanoseconds m_wait_max {0};
+						/**
+						 * @brief Telemetry.WaitTotal.
+						 */
+						mutable std::chrono::nanoseconds m_wait_total {0};
+						/**
+						 * @brief Telemetry.WaitSamples.
+						 */
+						mutable std::size_t m_wait_samples {0};
 
-						mutable StormByte::ByteSize m_delivered {0};			///< Telemetry.Delivered.
-						mutable StormByte::ByteSize m_hit_ahead {0};			///< Telemetry.HitAhead.
-						mutable StormByte::ByteSize m_hit_back {0};				///< Telemetry.HitBack.
-						mutable StormByte::ByteSize m_miss {0};					///< Telemetry.Miss.
-						mutable StormByte::ByteSize m_origin {0};				///< Telemetry.Origin.
-						mutable StormByte::ByteSize m_cached_peak {0};			///< Telemetry.CachedPeak.
-						mutable std::size_t m_seek_logical {0};					///< Telemetry.SeekLogical.
-						mutable std::size_t m_seek_origin {0};					///< Telemetry.SeekOrigin.
-						mutable std::size_t m_seek_saved_full {0};				///< Telemetry.SeekSavedFull.
-						mutable std::size_t m_seek_saved_partial {0};			///< Telemetry.SeekSavedPartial.
-						mutable bool m_seek_epoch {false};						///< Epoch open until next Seek/Close.
-						mutable bool m_seek_had_cache {false};					///< CoverageFrom(target) at Seek.
-						mutable bool m_seek_did_origin {false};					///< OriginSeek hook ran in epoch.
-						mutable std::size_t m_try_again {0};					///< Telemetry.TryAgain.
-						mutable std::size_t m_saturated {0};					///< Telemetry.Saturated.
-						mutable std::size_t m_evicted {0};						///< Telemetry.Evicted.
-						mutable std::chrono::nanoseconds m_wait_min {0};		///< Telemetry.WaitMin.
-						mutable std::chrono::nanoseconds m_wait_max {0};		///< Telemetry.WaitMax.
-						mutable std::chrono::nanoseconds m_wait_total {0};		///< Telemetry.WaitTotal.
-						mutable std::size_t m_wait_samples {0};					///< Telemetry.WaitSamples.
-
-						mutable std::atomic<bool> m_stop {false};				///< Worker teardown.
-						mutable std::atomic<bool> m_cancel_prefetch {false};	///< Flush in-flight pull.
-						mutable bool m_prefetch_run {false};					///< Worker has an active target.
-						mutable StormByte::ByteSize m_prefetch_target {0};		///< Desired coverage from Tell.
-						std::thread m_worker;									///< Prefetch thread.
+						/**
+						 * @brief Worker teardown requested.
+						 */
+						mutable std::atomic<bool> m_stop {false};
+						/**
+						 * @brief Flush the in-flight pull.
+						 */
+						mutable std::atomic<bool> m_cancel_prefetch {false};
+						/**
+						 * @brief Worker has an active target.
+						 */
+						mutable bool m_prefetch_run {false};
+						/**
+						 * @brief Desired coverage from Tell.
+						 */
+						mutable StormByte::ByteSize m_prefetch_target {0};
+						/**
+						 * @brief Prefetch thread.
+						 */
+						std::thread m_worker;
 				};
 			}
 		}

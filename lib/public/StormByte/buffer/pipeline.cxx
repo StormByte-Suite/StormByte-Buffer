@@ -49,10 +49,21 @@
 using namespace StormByte::Buffer;
 
 struct Pipeline::Backend {
-	std::vector<StormByte::Safe::Unique<Pipe>> pipes;
+	std::vector<Pipe> pipes;
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;
 	mutable Producer final_producer;
 	mutable std::vector<std::thread> threads;
+
+	/**
+	 * @brief Mark every output failed without depending on the Pipeline owner's address.
+	 */
+	void SetError() const noexcept {
+		for (auto& buffer : intermediates) {
+			if (buffer)
+				buffer->SetError();
+		}
+		final_producer.SetError();
+	}
 
 	/**
 	 * @brief Join any running background threads and clear the container.
@@ -71,11 +82,8 @@ Pipeline::Pipeline() noexcept:
 
 Pipeline::Pipeline(const Pipeline& other):
 	m_io(std::make_unique<Backend>()) {
-	m_io->pipes.reserve(other.m_io->pipes.size());
-	for (const auto& pipe : other.m_io->pipes) {
-		if (pipe)
-			m_io->pipes.push_back(pipe->Clone());
-	}
+	if (other.m_io)
+		m_io->pipes = other.m_io->pipes;
 }
 
 Pipeline::Pipeline(Pipeline&& other) noexcept:
@@ -88,14 +96,12 @@ Pipeline::~Pipeline() noexcept {
 
 Pipeline& Pipeline::operator=(const Pipeline& other) {
 	if (this != &other) {
+		auto replacement = std::make_unique<Backend>();
+		if (other.m_io)
+			replacement->pipes = other.m_io->pipes;
 		if (m_io)
 			m_io->WaitForCompletion();
-		m_io = std::make_unique<Backend>();
-		m_io->pipes.reserve(other.m_io->pipes.size());
-		for (const auto& pipe : other.m_io->pipes) {
-			if (pipe)
-				m_io->pipes.push_back(pipe->Clone());
-		}
+		m_io = std::move(replacement);
 	}
 	return *this;
 }
@@ -110,19 +116,15 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 }
 
 void Pipeline::Add(const Pipe& pipe) {
-	m_io->pipes.push_back(pipe.Clone());
+	m_io->pipes.push_back(pipe);
 }
 
 void Pipeline::Add(Pipe&& pipe) {
-	m_io->pipes.push_back(pipe.Move());
+	m_io->pipes.push_back(std::move(pipe));
 }
 
 void Pipeline::SetError() const noexcept {
-	for (auto& buf : m_io->intermediates) {
-		if (buf)
-			buf->SetError();
-	}
-	m_io->final_producer.SetError();
+	m_io->SetError();
 }
 
 Consumer Pipeline::Process(Consumer buffer,
@@ -152,19 +154,28 @@ Consumer Pipeline::Process(Consumer buffer,
 		const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
 		const bool async = HasExecutionFlag(mode, ExecutionMode::Async);
 
-		auto run_one = [this, stage_log, num_pipes](const std::size_t i, Consumer& input) {
+		auto run_one = [backend = m_io.get(), stage_log, num_pipes](const std::size_t i, Consumer& input) {
 			ReadOnly& in = (i == 0)
 				? static_cast<ReadOnly&>(input)
-				: static_cast<ReadOnly&>(*m_io->intermediates[i - 1]);
+				: static_cast<ReadOnly&>(*backend->intermediates[i - 1]);
 			WriteOnly& out = (i + 1 == num_pipes)
-				? static_cast<WriteOnly&>(m_io->final_producer)
-				: static_cast<WriteOnly&>(*m_io->intermediates[i]);
+				? static_cast<WriteOnly&>(backend->final_producer)
+				: static_cast<WriteOnly&>(*backend->intermediates[i]);
 			try {
-				m_io->pipes[i]->Run(in, out, stage_log);
-				return true;
+				const PipeInput input_borrow(in);
+				const PipeOutput output_borrow(out);
+				if (backend->pipes[i].Run(input_borrow, output_borrow, stage_log) ==
+						StormByte::Safe::Status::Success)
+					return true;
+				backend->SetError();
+				return false;
+			}
+			catch (const StormByte::Exception&) {
+				backend->SetError();
+				return false;
 			}
 			catch (...) {
-				SetError();
+				backend->SetError();
 				return false;
 			}
 		};

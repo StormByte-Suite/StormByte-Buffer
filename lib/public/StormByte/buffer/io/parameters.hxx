@@ -43,10 +43,11 @@
 
 #include <StormByte/byte_size.hxx>
 #include <StormByte/platform.h>
+#include <StormByte/safe/optional.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <chrono>
 #include <cstddef>
-#include <optional>
 #include <utility>
 
 /**
@@ -63,11 +64,9 @@ namespace StormByte {
 		 * @namespace StormByte::Buffer::IO
 		 * @brief Buffered binary sources and sinks.
 		 *
-		 * Knob types and parameter bags are header-only. Every function is
-		 * @c STORMBYTE_FORCE_INLINE so the compiler cannot emit a call into
-		 * the StormByte-Buffer DLL. @c std::optional and the variadic pack
-		 * stay in the caller. The DLL receives only resolved @c ByteSize,
-		 * @c std::size_t and @c milliseconds.
+		 * Knob types and parameter bags are header-only. Optional values use
+		 * Safe provider callbacks for ownership. IO constructors resolve the
+		 * knobs into byte counts, chunk counts and millisecond durations.
 		 */
 		namespace IO {
 			/**
@@ -80,19 +79,22 @@ namespace StormByte {
 					 * @brief Store the prefetch length.
 					 * @param value Bytes. 0 disables prefetch.
 					 */
-					STORMBYTE_FORCE_INLINE explicit ReadAhead(const StormByte::ByteSize value) noexcept:
+					explicit ReadAhead(const StormByte::ByteSize value) noexcept:
 						m_value(value) {}
 
 					/**
 					 * @brief Prefetch length.
 					 * @return Bytes.
 					 */
-					STORMBYTE_FORCE_INLINE StormByte::ByteSize Value() const noexcept {
+					StormByte::ByteSize Value() const noexcept {
 						return m_value;
 					}
 
 				private:
-					StormByte::ByteSize m_value;	///< Prefetch length.
+					/**
+					 * @brief Prefetch length.
+					 */
+					StormByte::ByteSize m_value;
 			};
 
 			/**
@@ -105,19 +107,22 @@ namespace StormByte {
 					 * @brief Store the memory budget.
 					 * @param value Bytes. 0 stores no pages.
 					 */
-					STORMBYTE_FORCE_INLINE explicit MaxMemory(const StormByte::ByteSize value) noexcept:
+					explicit MaxMemory(const StormByte::ByteSize value) noexcept:
 						m_value(value) {}
 
 					/**
 					 * @brief Memory budget.
 					 * @return Bytes.
 					 */
-					STORMBYTE_FORCE_INLINE StormByte::ByteSize Value() const noexcept {
+					StormByte::ByteSize Value() const noexcept {
 						return m_value;
 					}
 
 				private:
-					StormByte::ByteSize m_value;	///< Memory budget.
+					/**
+					 * @brief Memory budget.
+					 */
+					StormByte::ByteSize m_value;
 			};
 
 			/**
@@ -130,19 +135,22 @@ namespace StormByte {
 					 * @brief Store the wait cap.
 					 * @param value 0ms waits without limit.
 					 */
-					STORMBYTE_FORCE_INLINE explicit MaxWait(const std::chrono::milliseconds value) noexcept:
+					explicit MaxWait(const std::chrono::milliseconds value) noexcept:
 						m_value(value) {}
 
 					/**
 					 * @brief Wait cap.
 					 * @return Duration.
 					 */
-					STORMBYTE_FORCE_INLINE std::chrono::milliseconds Value() const noexcept {
+					std::chrono::milliseconds Value() const noexcept {
 						return m_value;
 					}
 
 				private:
-					std::chrono::milliseconds m_value;	///< Wait cap.
+					/**
+					 * @brief Wait cap.
+					 */
+					std::chrono::milliseconds m_value;
 			};
 
 			/**
@@ -155,19 +163,22 @@ namespace StormByte {
 					 * @brief Store the chunk size.
 					 * @param value Bytes. 0 disables the ring.
 					 */
-					STORMBYTE_FORCE_INLINE explicit WriteChunk(const StormByte::ByteSize value) noexcept:
+					explicit WriteChunk(const StormByte::ByteSize value) noexcept:
 						m_value(value) {}
 
 					/**
 					 * @brief Chunk size.
 					 * @return Bytes.
 					 */
-					STORMBYTE_FORCE_INLINE StormByte::ByteSize Value() const noexcept {
+					StormByte::ByteSize Value() const noexcept {
 						return m_value;
 					}
 
 				private:
-					StormByte::ByteSize m_value;	///< Chunk size.
+					/**
+					 * @brief Chunk size.
+					 */
+					StormByte::ByteSize m_value;
 			};
 
 			/**
@@ -180,19 +191,22 @@ namespace StormByte {
 					 * @brief Store the cap in chunks.
 					 * @param value Chunk count. 0 disables the ring.
 					 */
-					STORMBYTE_FORCE_INLINE explicit BackPressure(const std::size_t value) noexcept:
+					explicit BackPressure(const std::size_t value) noexcept:
 						m_value(value) {}
 
 					/**
 					 * @brief Cap in chunks.
 					 * @return Chunk count.
 					 */
-					STORMBYTE_FORCE_INLINE std::size_t Value() const noexcept {
+					std::size_t Value() const noexcept {
 						return m_value;
 					}
 
 				private:
-					std::size_t m_value;	///< Chunk count.
+					/**
+					 * @brief Chunk count.
+					 */
+					std::size_t m_value;
 			};
 
 			/**
@@ -200,14 +214,46 @@ namespace StormByte {
 			 * @brief Optional reader knobs. A missing field keeps the current default.
 			 *
 			 * Nested @c Parameters on @ref BufferedReader and its children
-			 * inherit this type. Not a DLL type.
+			 * inherit this type. Safe-owned values retain provider-side lifecycle.
+			 * @note Construction, copying and knob assignment may allocate and throw.
 			 */
 			class ReaderParameters {
 				public:
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
-					STORMBYTE_FORCE_INLINE ReaderParameters() noexcept = default;
+					ReaderParameters() = default;
+
+					/**
+					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
+					 * @param other Source knobs.
+					 */
+					ReaderParameters(const ReaderParameters& other) = default;
+
+					/**
+					 * @brief Transfer Safe-owned optional knobs.
+					 * @param other Source knobs.
+					 */
+					ReaderParameters(ReaderParameters&& other) noexcept = default;
+
+					/**
+					 * @brief Release optional knobs through provider callbacks.
+					 */
+					~ReaderParameters() noexcept = default;
+
+					/**
+					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
+					 * @param other Source knobs.
+					 * @return This parameter bag.
+					 */
+					ReaderParameters& operator=(const ReaderParameters& other) = default;
+
+					/**
+					 * @brief Transfer Safe-owned optional knobs.
+					 * @param other Source knobs.
+					 * @return This parameter bag.
+					 */
+					ReaderParameters& operator=(ReaderParameters&& other) noexcept = default;
 
 					/**
 					 * @brief Engage the listed knobs. Unknown types do not compile.
@@ -215,7 +261,7 @@ namespace StormByte {
 					 * @param knobs Values to store.
 					 */
 					template<typename... Knobs>
-					STORMBYTE_FORCE_INLINE ReaderParameters(Knobs... knobs) {
+					ReaderParameters(Knobs... knobs) {
 						(Apply(std::move(knobs)), ...);
 					}
 
@@ -223,7 +269,7 @@ namespace StormByte {
 					 * @brief Prefetch length when the caller set it.
 					 * @return Empty when the caller omitted @ref ReadAhead.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& ReadAhead() const noexcept {
+					const StormByte::Safe::Optional<StormByte::ByteSize>& ReadAhead() const noexcept {
 						return m_read_ahead;
 					}
 
@@ -231,37 +277,62 @@ namespace StormByte {
 					 * @brief Cache cap when the caller set it.
 					 * @return Empty when the caller omitted @ref MaxMemory.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& MaxMemory() const noexcept {
+					const StormByte::Safe::Optional<StormByte::ByteSize>& MaxMemory() const noexcept {
 						return m_max_memory;
 					}
 
 					/**
-					 * @brief Wait cap when the caller set it.
-					 * @return Empty when the caller omitted @ref MaxWait.
+					 * @brief Signed millisecond count when the caller set the wait cap.
+					 * @return Empty when omitted; an engaged zero means unlimited wait.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<std::chrono::milliseconds>& MaxWait() const noexcept {
+					const StormByte::Safe::Optional<std::chrono::milliseconds::rep>& MaxWait() const noexcept {
 						return m_max_wait;
 					}
 
 				private:
-					STORMBYTE_FORCE_INLINE void Apply(class ReadAhead knob) noexcept {
+					/**
+					 * @brief Engage the prefetch length.
+					 * @param knob Caller-provided prefetch knob.
+					 */
+					void Apply(class ReadAhead knob) {
 						m_read_ahead = knob.Value();
 					}
 
-					STORMBYTE_FORCE_INLINE void Apply(class MaxMemory knob) noexcept {
+					/**
+					 * @brief Engage the cache budget.
+					 * @param knob Caller-provided memory knob.
+					 */
+					void Apply(class MaxMemory knob) {
 						m_max_memory = knob.Value();
 					}
 
-					STORMBYTE_FORCE_INLINE void Apply(class MaxWait knob) noexcept {
-						m_max_wait = knob.Value();
+					/**
+					 * @brief Engage the wait cap.
+					 * @param knob Caller-provided wait knob.
+					 */
+					void Apply(class MaxWait knob) {
+						m_max_wait = knob.Value().count();
 					}
 
+					/**
+					 * @brief Reject unsupported reader knobs.
+					 * @tparam Knob Unsupported knob type.
+					 */
 					template<typename Knob>
 					void Apply(Knob&&) = delete;
 
-					std::optional<StormByte::ByteSize> m_read_ahead;				///< Absent = default.
-					std::optional<StormByte::ByteSize> m_max_memory;				///< Absent = default.
-					std::optional<std::chrono::milliseconds> m_max_wait;			///< Absent = default.
+					/**
+					 * @brief Safe-owned prefetch length; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<StormByte::ByteSize> m_read_ahead;
+					/**
+					 * @brief Safe-owned cache budget; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<StormByte::ByteSize> m_max_memory;
+					/**
+					 * @brief Safe-owned signed millisecond count; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<std::chrono::milliseconds::rep> m_max_wait;
 			};
 
 			/**
@@ -269,14 +340,46 @@ namespace StormByte {
 			 * @brief Optional writer knobs. A missing field keeps the current default.
 			 *
 			 * Nested @c Parameters on @ref BufferedWriter and its children
-			 * inherit this type. Not a DLL type.
+			 * inherit this type. Safe-owned values retain provider-side lifecycle.
+			 * @note Construction, copying and knob assignment may allocate and throw.
 			 */
 			class WriterParameters {
 				public:
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
-					STORMBYTE_FORCE_INLINE WriterParameters() noexcept = default;
+					WriterParameters() = default;
+
+					/**
+					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
+					 * @param other Source knobs.
+					 */
+					WriterParameters(const WriterParameters& other) = default;
+
+					/**
+					 * @brief Transfer Safe-owned optional knobs.
+					 * @param other Source knobs.
+					 */
+					WriterParameters(WriterParameters&& other) noexcept = default;
+
+					/**
+					 * @brief Release optional knobs through provider callbacks.
+					 */
+					~WriterParameters() noexcept = default;
+
+					/**
+					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
+					 * @param other Source knobs.
+					 * @return This parameter bag.
+					 */
+					WriterParameters& operator=(const WriterParameters& other) = default;
+
+					/**
+					 * @brief Transfer Safe-owned optional knobs.
+					 * @param other Source knobs.
+					 * @return This parameter bag.
+					 */
+					WriterParameters& operator=(WriterParameters&& other) noexcept = default;
 
 					/**
 					 * @brief Engage the listed knobs. Unknown types do not compile.
@@ -284,7 +387,7 @@ namespace StormByte {
 					 * @param knobs Values to store.
 					 */
 					template<typename... Knobs>
-					STORMBYTE_FORCE_INLINE WriterParameters(Knobs... knobs) {
+					WriterParameters(Knobs... knobs) {
 						(Apply(std::move(knobs)), ...);
 					}
 
@@ -292,7 +395,7 @@ namespace StormByte {
 					 * @brief Chunk size when the caller set it.
 					 * @return Empty when the caller omitted @ref WriteChunk.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& WriteChunk() const noexcept {
+					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteChunk() const noexcept {
 						return m_write_chunk;
 					}
 
@@ -300,7 +403,7 @@ namespace StormByte {
 					 * @brief Backpressure when the caller set it.
 					 * @return Empty when the caller omitted @ref BackPressure.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<std::size_t>& BackPressure() const noexcept {
+					const StormByte::Safe::Optional<std::size_t>& BackPressure() const noexcept {
 						return m_back_pressure;
 					}
 
@@ -308,43 +411,81 @@ namespace StormByte {
 					 * @brief Dirty-page budget when the caller set it.
 					 * @return Empty when the caller omitted @ref MaxMemory.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<StormByte::ByteSize>& MaxMemory() const noexcept {
+					const StormByte::Safe::Optional<StormByte::ByteSize>& MaxMemory() const noexcept {
 						return m_max_memory;
 					}
 
 					/**
-					 * @brief Wait cap when the caller set it.
-					 * @return Empty when the caller omitted @ref MaxWait.
+					 * @brief Signed millisecond count when the caller set the wait cap.
+					 * @return Empty when omitted; an engaged zero means unlimited wait.
 					 */
-					STORMBYTE_FORCE_INLINE const std::optional<std::chrono::milliseconds>& MaxWait() const noexcept {
+					const StormByte::Safe::Optional<std::chrono::milliseconds::rep>& MaxWait() const noexcept {
 						return m_max_wait;
 					}
 
 				private:
-					STORMBYTE_FORCE_INLINE void Apply(class WriteChunk knob) noexcept {
+					/**
+					 * @brief Engage the push unit.
+					 * @param knob Caller-provided chunk knob.
+					 */
+					void Apply(class WriteChunk knob) {
 						m_write_chunk = knob.Value();
 					}
 
-					STORMBYTE_FORCE_INLINE void Apply(class BackPressure knob) noexcept {
+					/**
+					 * @brief Engage the ring cap.
+					 * @param knob Caller-provided backpressure knob.
+					 */
+					void Apply(class BackPressure knob) {
 						m_back_pressure = knob.Value();
 					}
 
-					STORMBYTE_FORCE_INLINE void Apply(class MaxMemory knob) noexcept {
+					/**
+					 * @brief Engage the dirty-page budget.
+					 * @param knob Caller-provided memory knob.
+					 */
+					void Apply(class MaxMemory knob) {
 						m_max_memory = knob.Value();
 					}
 
-					STORMBYTE_FORCE_INLINE void Apply(class MaxWait knob) noexcept {
-						m_max_wait = knob.Value();
+					/**
+					 * @brief Engage the wait cap.
+					 * @param knob Caller-provided wait knob.
+					 */
+					void Apply(class MaxWait knob) {
+						m_max_wait = knob.Value().count();
 					}
 
+					/**
+					 * @brief Reject unsupported writer knobs.
+					 * @tparam Knob Unsupported knob type.
+					 */
 					template<typename Knob>
 					void Apply(Knob&&) = delete;
 
-					std::optional<StormByte::ByteSize> m_write_chunk;				///< Absent = default.
-					std::optional<std::size_t> m_back_pressure;						///< Absent = default.
-					std::optional<StormByte::ByteSize> m_max_memory;				///< Absent = default.
-					std::optional<std::chrono::milliseconds> m_max_wait;			///< Absent = default.
+					/**
+					 * @brief Safe-owned push unit; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<StormByte::ByteSize> m_write_chunk;
+					/**
+					 * @brief Safe-owned ring cap; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<std::size_t> m_back_pressure;
+					/**
+					 * @brief Safe-owned dirty-page budget; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<StormByte::ByteSize> m_max_memory;
+					/**
+					 * @brief Safe-owned signed millisecond count; absent keeps the default.
+					 */
+					StormByte::Safe::Optional<std::chrono::milliseconds::rep> m_max_wait;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReadAhead);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxMemory);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxWait);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteChunk);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BackPressure);

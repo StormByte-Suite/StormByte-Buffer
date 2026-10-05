@@ -251,7 +251,10 @@ namespace StormByte {
 				class Consumer Consumer();
 
 			private:
-				StormByte::Safe::Owner m_buffer;	///< Opaque shared Ring ownership; callbacks stay in Buffer.
+				/**
+				 * @brief Opaque shared Ring ownership with Buffer-local retain and release callbacks.
+				 */
+				StormByte::Safe::Owner m_buffer;
 
 				/**
 				 * @brief Borrow the Ring held by this handle.
@@ -264,5 +267,7 @@ namespace StormByte {
 
 /**
  * @brief Producer ownership relies on Buffer's module-local Ring callbacks.
+ * @note Buffer and Base must remain loaded with a compatible ABI until all handles are released.
+ *       Copies share storage; they do not clone the Ring or transfer its private STL ownership.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Producer);

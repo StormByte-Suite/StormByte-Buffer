@@ -69,8 +69,8 @@ namespace StormByte {
 		 * from @ref Producer::Consumer().
 		 *
 		 * All operations are thread-safe and delegate to the shared Ring.
-				 * Ring ownership is held by @ref StormByte::Safe::Owner; the Ring
-				 * and its lifetime callbacks remain inside the Buffer module.
+			 * Ring ownership is held by @ref StormByte::Safe::Owner; the Ring
+			 * and its lifetime callbacks remain inside the Buffer module.
 		 * Blocking semantics match @ref Ring. Read / Extract / Peek block until
 		 * data is available or the buffer is closed / in error.
 		 *
@@ -367,7 +367,10 @@ namespace StormByte {
 				/** @} */
 
 			private:
-				StormByte::Safe::Owner m_buffer;	///< Opaque shared Ring ownership; callbacks stay in Buffer.
+				/**
+				 * @brief Opaque shared Ring ownership with Buffer-local retain and release callbacks.
+				 */
+				StormByte::Safe::Owner m_buffer;
 
 				/**
 				 * @brief Borrow the Ring held by this handle.
@@ -388,5 +391,7 @@ namespace StormByte {
 
 /**
  * @brief Consumer ownership relies on Buffer's module-local Ring callbacks.
+ * @note Buffer and Base must remain loaded with a compatible ABI until all handles are released.
+ *       Copies share storage; borrowed data references must not outlive the shared Ring.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Consumer);

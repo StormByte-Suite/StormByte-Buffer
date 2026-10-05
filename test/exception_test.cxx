@@ -44,6 +44,8 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
+#include <utility>
 
 using StormByte::Buffer::Error;
 using StormByte::Buffer::Exception;
@@ -87,6 +89,31 @@ int test_buffer_exception_safe_string() {
 	RETURN_TEST(fn, result);
 }
 
+int test_buffer_exception_view_lifetime() {
+	constexpr auto fn = "test_buffer_exception_view_lifetime";
+	std::string source("prefix:message:suffix");
+	const std::string_view message(source.data() + 7, 7);
+	Exception exception(message);
+	Error error(message);
+	ReadError read(message);
+	WriteError write(message);
+	source.assign(source.size(), 'x');
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(error.what()));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: message"), std::string(read.what()));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Write: message"), std::string(write.what()));
+	Exception copied(exception);
+	Exception moved(std::move(copied));
+	exception = moved;
+	Exception assigned(std::string_view("other"));
+	assigned = std::move(moved);
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(assigned.what()));
+	Exception empty(std::string_view{});
+	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: "), std::string(empty.what()));
+	RETURN_TEST(fn, 0);
+}
+
 int test_read_error_message() {
 	constexpr auto fn = "test_read_error_message";
 	int result = 0;
@@ -122,6 +149,7 @@ int main() {
 	result += test_buffer_exception_format();
 	result += test_buffer_exception_message();
 	result += test_buffer_exception_safe_string();
+	result += test_buffer_exception_view_lifetime();
 	result += test_read_error_message();
 	result += test_read_error_safe_string();
 	result += test_write_error_message();

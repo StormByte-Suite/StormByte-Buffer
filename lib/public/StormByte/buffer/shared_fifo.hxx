@@ -104,19 +104,19 @@ namespace StormByte::Buffer {
 			 * @brief Default construct an empty SharedFIFO.
 			 * @details Behaves like @ref FIFO and may grow as needed.
 			 */
-			SharedFIFO() noexcept = default;
+			SharedFIFO() noexcept;
 
 			/**
 			 * @brief Construct with initial data (copy).
 			 * @param data Initial @ref StormByte::BinaryData.
 			 */
-			inline SharedFIFO(const StormByte::BinaryData& data) : FIFO(data) {}
+			SharedFIFO(const StormByte::BinaryData& data);
 
 			/**
 			 * @brief Construct with initial data (move).
 			 * @param data Initial @ref StormByte::BinaryData (moved into the base FIFO).
 			 */
-			inline SharedFIFO(StormByte::BinaryData&& data) noexcept : FIFO(std::move(data)) {}
+			SharedFIFO(StormByte::BinaryData&& data) noexcept;
 
 			/**
 			 * @brief Construct from an input range (copy / convert).
@@ -125,7 +125,7 @@ namespace StormByte::Buffer {
 			 */
 			template<StormByte::Type::ByteInputRange R>
 			requires (!StormByte::Type::SameAs<R, StormByte::BinaryData>)
-			inline SharedFIFO(const R& r) noexcept : FIFO(r) {}
+			STORMBYTE_FORCE_INLINE SharedFIFO(const R& r) noexcept : SharedFIFO(DataConvert(r)) {}
 
 			/**
 			 * @brief Construct from an rvalue range.
@@ -133,31 +133,31 @@ namespace StormByte::Buffer {
 			 * @param r Source range (moved when @ref StormByte::BinaryData).
 			 */
 			template<StormByte::Type::ByteInputRange Rr>
-			inline SharedFIFO(Rr&& r) noexcept : FIFO(std::forward<Rr>(r)) {}
+			STORMBYTE_FORCE_INLINE SharedFIFO(Rr&& r) noexcept : SharedFIFO(DataConvert(std::forward<Rr>(r))) {}
 
 			/**
 			 * @brief Construct from a string view (no trailing NUL).
 			 * @param sv Source characters.
 			 */
-			inline SharedFIFO(std::string_view sv) noexcept : FIFO(sv) {}
+			SharedFIFO(std::string_view sv) noexcept;
 
 			/**
 			 * @brief Construct from a null-terminated C string.
 			 * @param s Source string (may be null → empty).
 			 */
-			inline SharedFIFO(const char* s) noexcept : FIFO(s) {}
+			SharedFIFO(const char* s) noexcept;
 
 			/**
 			 * @brief Construct by copying a plain @ref FIFO.
 			 * @param other Source FIFO.
 			 */
-			inline SharedFIFO(const FIFO& other) : FIFO(other) {}
+			SharedFIFO(const FIFO& other);
 
 			/**
 			 * @brief Construct by moving a plain @ref FIFO.
 			 * @param other Source FIFO (left empty after move).
 			 */
-			inline SharedFIFO(FIFO&& other) noexcept : FIFO(std::move(other)) {}
+			SharedFIFO(FIFO&& other) noexcept;
 
 			/**
 			 * @brief Copy constructor (deleted – synchronization primitives are not copyable).
@@ -169,7 +169,9 @@ namespace StormByte::Buffer {
 			 */
 			SharedFIFO(SharedFIFO&&) = delete;
 
-			/** @brief Virtual destructor. */
+			/**
+			 * @brief Virtual destructor.
+			 */
 			virtual ~SharedFIFO() noexcept;
 
 			/**
@@ -364,9 +366,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Hexdump header (size / position / status).
-			 * @return Stream with header lines (delegates to base semantics).
+			 * @return DLL-safe owned header text, preserving the base semantics.
 			 */
-			std::ostringstream HexDumpHeader() const noexcept override;
+			StormByte::Safe::String HexDumpHeader() const noexcept override;
 
 			/**
 			 * @brief Blocking Extract / Read / Peek into @ref StormByte::BinaryData.

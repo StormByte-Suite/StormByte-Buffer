@@ -45,8 +45,8 @@
 using namespace StormByte::Buffer;
 
 Pumper::Pumper(Bridge&& bridge, const StormByte::ByteSize chunk,
-		const std::optional<StormByte::ByteSize> high_water):
-	m_backend(std::make_unique<Backend::Pumper>(std::move(bridge), chunk, high_water)) {}
+		const StormByte::Safe::Optional<StormByte::ByteSize> high_water):
+	m_backend(std::make_unique<Backend::Pumper>(std::move(bridge), chunk, std::move(high_water))) {}
 
 Pumper::Pumper(Pumper&& other) noexcept:
 	m_backend(std::move(other.m_backend)) {}

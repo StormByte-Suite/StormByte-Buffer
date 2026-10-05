@@ -121,10 +121,47 @@ namespace StormByte {
 					/**
 					 * @class Parameters
 					 * @brief Location-writer knobs. Same fields as @ref BufferedWriter::Parameters.
+					 * @note Construction and copying may allocate and throw.
 					 */
 					class Parameters: public BufferedWriter::Parameters {
 						public:
-							using BufferedWriter::Parameters::Parameters;
+							/**
+							 * @brief Construct an empty Safe-owned parameter bag.
+							 */
+							Parameters() = default;
+							/**
+							 * @brief Store writer knobs in Safe-owned optional values.
+							 * @tparam Knobs Supported writer knobs.
+							 * @param knobs Values to store.
+							 */
+							template<typename... Knobs>
+							Parameters(Knobs... knobs): BufferedWriter::Parameters(std::move(knobs)...) {}
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 */
+							Parameters(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 */
+							Parameters(Parameters&& other) noexcept = default;
+							/**
+							 * @brief Release knobs through provider callbacks.
+							 */
+							~Parameters() noexcept = default;
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(Parameters&& other) noexcept = default;
 					};
 
 					/**
@@ -197,7 +234,7 @@ namespace StormByte {
 						BufferedLocationWriter(std::move(path), location,
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
 							parameters.BackPressure().value_or(0),
-							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
 							!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
@@ -252,7 +289,7 @@ namespace StormByte {
 					 * @param absolute Byte offset from the start.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginSeek(StormByte::ByteSize absolute) = 0;
+					Result OriginSeek(StormByte::ByteSize absolute) override = 0;
 
 					/**
 					 * @brief Apply the device write window when the constructor asked for a probe.
@@ -264,8 +301,13 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
-					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedLocationWriter> m_io;	///< Location string and probe flag.
+					/**
+					 * @brief Provider-owned location state and probe flag.
+					 */
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedLocationWriter> m_io;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BufferedLocationWriter);

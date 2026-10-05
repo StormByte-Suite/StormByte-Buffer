@@ -8,7 +8,7 @@ namespace {
 }
 
 Pumper::Pumper(StormByte::Buffer::Bridge&& bridge, const StormByte::ByteSize chunk,
-		const std::optional<StormByte::ByteSize> high_water):
+		const StormByte::Safe::Optional<StormByte::ByteSize> high_water):
 	m_bridge(std::move(bridge)),
 	m_chunk(chunk) {
 	m_read = m_bridge.ReadTelemetry();

@@ -66,7 +66,13 @@ namespace StormByte {
 			 * @brief PIMPL coordinators for the public IO types.
 			 */
 			namespace IO {
+				/**
+				 * @brief Private read coordinator that updates IO telemetry.
+				 */
 				class BufferedReader;
+				/**
+				 * @brief Private write coordinator that updates IO telemetry.
+				 */
 				class BufferedWriter;
 			}
 		}
@@ -81,7 +87,7 @@ namespace StormByte {
 			 * @brief Reader counters on top of @ref StormByte::Buffer::ReadTelemetry.
 			 *
 			 * Same fields as @c BufferedReader::Telemetry in SHA c1d44cb.
-				 * The private buffered reader coordinator writes them.
+			 * The private buffered reader coordinator writes them.
 			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC ReadTelemetry: public StormByte::Buffer::ReadTelemetry {
@@ -235,24 +241,78 @@ namespace StormByte {
 				protected:
 					friend class StormByte::Buffer::Backend::IO::BufferedReader;
 
-					StormByte::ByteSize m_hit_ahead;		///< First-touch cache octets.
-					StormByte::ByteSize m_hit_back;			///< Replay after Seek.
-					StormByte::ByteSize m_miss;				///< Pulled from the origin this Read.
-					StormByte::ByteSize m_origin;			///< OriginPull octets this session.
-					StormByte::ByteSize m_cached;			///< Resident cache now.
-					StormByte::ByteSize m_cached_peak;		///< Maximum Cached.
-					StormByte::ByteSize m_cap;				///< MaxMemory snapshot.
-					std::size_t m_seek_logical;				///< Public Seek calls.
-					std::size_t m_seek_origin;				///< OriginSeek calls.
-					std::size_t m_seek_saved_full;			///< Epochs with no OriginSeek after a hit.
-					std::size_t m_seek_saved_partial;		///< Epochs that later needed OriginSeek.
-					std::size_t m_try_again;				///< Read/Peek TryAgain.
-					std::size_t m_saturated;				///< Cache hit Cap.
-					std::size_t m_evicted;					///< Spans dropped by MaxMemory.
-					std::chrono::nanoseconds m_wait_min;	///< Shortest sampled wait.
-					std::chrono::nanoseconds m_wait_max;	///< Longest sampled wait.
-					std::chrono::nanoseconds m_wait_total;	///< Sum of sampled waits.
-					std::size_t m_wait_samples;				///< Sampled waits.
+					/**
+					 * @brief First-touch cache octets.
+					 */
+					StormByte::ByteSize m_hit_ahead;
+					/**
+					 * @brief Replay after Seek.
+					 */
+					StormByte::ByteSize m_hit_back;
+					/**
+					 * @brief Pulled from the origin this Read.
+					 */
+					StormByte::ByteSize m_miss;
+					/**
+					 * @brief OriginPull octets this session.
+					 */
+					StormByte::ByteSize m_origin;
+					/**
+					 * @brief Resident cache now.
+					 */
+					StormByte::ByteSize m_cached;
+					/**
+					 * @brief Maximum Cached.
+					 */
+					StormByte::ByteSize m_cached_peak;
+					/**
+					 * @brief MaxMemory snapshot.
+					 */
+					StormByte::ByteSize m_cap;
+					/**
+					 * @brief Public Seek calls.
+					 */
+					std::size_t m_seek_logical;
+					/**
+					 * @brief OriginSeek calls.
+					 */
+					std::size_t m_seek_origin;
+					/**
+					 * @brief Epochs with no OriginSeek after a hit.
+					 */
+					std::size_t m_seek_saved_full;
+					/**
+					 * @brief Epochs that later needed OriginSeek.
+					 */
+					std::size_t m_seek_saved_partial;
+					/**
+					 * @brief Read/Peek TryAgain.
+					 */
+					std::size_t m_try_again;
+					/**
+					 * @brief Cache hit Cap.
+					 */
+					std::size_t m_saturated;
+					/**
+					 * @brief Spans dropped by MaxMemory.
+					 */
+					std::size_t m_evicted;
+					/**
+					 * @brief Shortest sampled wait.
+					 */
+					std::chrono::nanoseconds m_wait_min;
+					/**
+					 * @brief Longest sampled wait.
+					 */
+					std::chrono::nanoseconds m_wait_max;
+					/**
+					 * @brief Sum of sampled waits.
+					 */
+					std::chrono::nanoseconds m_wait_total;
+					/**
+					 * @brief Sampled waits.
+					 */
+					std::size_t m_wait_samples;
 			};
 
 			/**
@@ -260,7 +320,7 @@ namespace StormByte {
 			 * @brief Writer counters on top of @ref StormByte::Buffer::WriteTelemetry.
 			 *
 			 * Same fields as @c BufferedWriter::Telemetry in SHA c1d44cb.
-				 * The private buffered writer coordinator writes them.
+			 * The private buffered writer coordinator writes them.
 			 * MeanRate is the caller rate, not the origin rate.
 			 */
 			class STORMBYTE_BUFFER_PUBLIC WriteTelemetry: public StormByte::Buffer::WriteTelemetry {
@@ -438,29 +498,98 @@ namespace StormByte {
 				protected:
 					friend class StormByte::Buffer::Backend::IO::BufferedWriter;
 
-					StormByte::ByteSize m_behind;			///< Accepted not pushed on the caller thread.
-					StormByte::ByteSize m_direct;			///< Accepted pushed on the caller thread.
-					StormByte::ByteSize m_origin;			///< OriginPush octets.
-					StormByte::ByteSize m_materialized;		///< Durable origin length now.
-					StormByte::ByteSize m_high_water;		///< Max logical Tell since Open/Truncate.
-					StormByte::ByteSize m_hit_ahead;		///< Writes into a page at/after high-water.
-					StormByte::ByteSize m_hit_back;			///< Writes into a page behind high-water.
-					StormByte::ByteSize m_miss;				///< Writes that created or extended a page.
-					StormByte::ByteSize m_dirty;			///< Not yet on the origin.
-					StormByte::ByteSize m_dirty_peak;		///< Maximum Dirty.
-					StormByte::ByteSize m_cap;				///< Ring cap, or 0 if off.
-					std::size_t m_seek_logical;				///< Logical Seek calls.
-					std::size_t m_seek_origin;				///< OriginSeek calls.
-					std::size_t m_seek_saved_full;			///< Epochs with no OriginSeek.
-					std::size_t m_seek_saved_partial;		///< Epochs that later needed OriginSeek.
-					std::size_t m_try_again;				///< Write TryAgain.
-					std::size_t m_saturated;				///< Dirty reached Cap.
-					std::size_t m_evicted;					///< GC materialised a page.
-					std::chrono::nanoseconds m_wait_min;	///< Shortest sampled Write wait.
-					std::chrono::nanoseconds m_wait_max;	///< Longest sampled Write wait.
-					std::chrono::nanoseconds m_wait_total;	///< Sum of sampled waits.
-					std::size_t m_wait_samples;				///< Sampled waits.
+					/**
+					 * @brief Accepted not pushed on the caller thread.
+					 */
+					StormByte::ByteSize m_behind;
+					/**
+					 * @brief Accepted pushed on the caller thread.
+					 */
+					StormByte::ByteSize m_direct;
+					/**
+					 * @brief OriginPush octets.
+					 */
+					StormByte::ByteSize m_origin;
+					/**
+					 * @brief Durable origin length now.
+					 */
+					StormByte::ByteSize m_materialized;
+					/**
+					 * @brief Max logical Tell since Open/Truncate.
+					 */
+					StormByte::ByteSize m_high_water;
+					/**
+					 * @brief Writes into a page at/after high-water.
+					 */
+					StormByte::ByteSize m_hit_ahead;
+					/**
+					 * @brief Writes into a page behind high-water.
+					 */
+					StormByte::ByteSize m_hit_back;
+					/**
+					 * @brief Writes that created or extended a page.
+					 */
+					StormByte::ByteSize m_miss;
+					/**
+					 * @brief Not yet on the origin.
+					 */
+					StormByte::ByteSize m_dirty;
+					/**
+					 * @brief Maximum Dirty.
+					 */
+					StormByte::ByteSize m_dirty_peak;
+					/**
+					 * @brief Ring cap, or 0 if off.
+					 */
+					StormByte::ByteSize m_cap;
+					/**
+					 * @brief Logical Seek calls.
+					 */
+					std::size_t m_seek_logical;
+					/**
+					 * @brief OriginSeek calls.
+					 */
+					std::size_t m_seek_origin;
+					/**
+					 * @brief Epochs with no OriginSeek.
+					 */
+					std::size_t m_seek_saved_full;
+					/**
+					 * @brief Epochs that later needed OriginSeek.
+					 */
+					std::size_t m_seek_saved_partial;
+					/**
+					 * @brief Write TryAgain.
+					 */
+					std::size_t m_try_again;
+					/**
+					 * @brief Dirty reached Cap.
+					 */
+					std::size_t m_saturated;
+					/**
+					 * @brief GC materialised a page.
+					 */
+					std::size_t m_evicted;
+					/**
+					 * @brief Shortest sampled Write wait.
+					 */
+					std::chrono::nanoseconds m_wait_min;
+					/**
+					 * @brief Longest sampled Write wait.
+					 */
+					std::chrono::nanoseconds m_wait_max;
+					/**
+					 * @brief Sum of sampled waits.
+					 */
+					std::chrono::nanoseconds m_wait_total;
+					/**
+					 * @brief Sampled waits.
+					 */
+					std::size_t m_wait_samples;
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReadTelemetry);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteTelemetry);

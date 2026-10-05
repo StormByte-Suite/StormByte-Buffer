@@ -43,6 +43,20 @@
 
 using namespace StormByte::Buffer;
 
+SharedFIFO::SharedFIFO() noexcept = default;
+
+SharedFIFO::SharedFIFO(const StormByte::BinaryData& data): FIFO(data) {}
+
+SharedFIFO::SharedFIFO(StormByte::BinaryData&& data) noexcept: FIFO(std::move(data)) {}
+
+SharedFIFO::SharedFIFO(std::string_view sv) noexcept: FIFO(sv) {}
+
+SharedFIFO::SharedFIFO(const char* s) noexcept: FIFO(s) {}
+
+SharedFIFO::SharedFIFO(const FIFO& other): FIFO(other) {}
+
+SharedFIFO::SharedFIFO(FIFO&& other) noexcept: FIFO(std::move(other)) {}
+
 SharedFIFO::~SharedFIFO() noexcept = default;
 
 SharedFIFO& SharedFIFO::operator=(const FIFO& other) {
@@ -159,7 +173,7 @@ StormByte::ByteSize SharedFIFO::Size() const noexcept {
 	return FIFO::Size();
 }
 
-std::ostringstream SharedFIFO::HexDumpHeader() const noexcept {
+StormByte::Safe::String SharedFIFO::HexDumpHeader() const noexcept {
 	return FIFO::HexDumpHeader();
 }
 

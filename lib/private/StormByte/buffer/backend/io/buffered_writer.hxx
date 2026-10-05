@@ -61,10 +61,6 @@
 #include <span>
 #include <thread>
 
-namespace StormByte::Buffer {
-	class LockFreeRing;
-}
-
 /**
  * @namespace StormByte
  * @brief Root namespace of the StormByte C++ suite.
@@ -75,6 +71,10 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
+		/**
+		 * @brief Provider-owned drain ring used by the IO write coordinator.
+		 */
+		class LockFreeRing;
 		/**
 		 * @namespace StormByte::Buffer::Backend
 		 * @brief PIMPL coordinators for public Buffer types that are not IO.
@@ -381,8 +381,14 @@ namespace StormByte {
 						 * @brief Dirty page: absolute start and payload.
 						 */
 						struct Page {
-							StormByte::ByteSize offset {0};	///< First byte of this span.
-							BinaryData bytes;					///< Octets not yet on the origin.
+							/**
+							 * @brief First byte of this span.
+							 */
+							StormByte::ByteSize offset {0};
+							/**
+							 * @brief Octets not yet on the origin.
+							 */
+							BinaryData bytes;
 						};
 
 						/**
@@ -533,61 +539,202 @@ namespace StormByte {
 						 */
 						StormByte::Buffer::IO::WriteTelemetry* IoTelemetry() const noexcept;
 
-						StormByte::Buffer::IO::BufferedWriter* m_owner;						///< Public leaf (hooks).
-						StormByte::Safe::String m_path;					///< Locator
-						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};		///< Local or remote
+						/**
+						 * @brief Public leaf supplying origin hooks.
+						 */
+						StormByte::Buffer::IO::BufferedWriter* m_owner;
+						/**
+						 * @brief Immutable locator.
+						 */
+						StormByte::Safe::String m_path;
+						/**
+						 * @brief Local or remote location kind.
+						 */
+						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};
 
-						mutable std::mutex m_mutex;							///< Session + knobs.
-						mutable std::mutex m_origin_io;						///< Serialises every Origin* hook.
-						mutable std::condition_variable m_cv;				///< Worker / flush waits.
+						/**
+						 * @brief Protects session state and policy knobs.
+						 */
+						mutable std::mutex m_mutex;
+						/**
+						 * @brief Serialises every Origin hook.
+						 */
+						mutable std::mutex m_origin_io;
+						/**
+						 * @brief Coordinates worker and flush waits.
+						 */
+						mutable std::condition_variable m_cv;
 
-						StormByte::ByteSize m_write_chunk {0};				///< Origin push unit.
-						std::size_t m_back_pressure {0};					///< Cap in WriteChunk units.
-						StormByte::ByteSize m_max_memory {0};				///< Page-map budget.
-						std::chrono::milliseconds m_max_wait {0};			///< OriginPush wait cap.
+						/**
+						 * @brief Origin push unit.
+						 */
+						StormByte::ByteSize m_write_chunk {0};
+						/**
+						 * @brief Cap in WriteChunk units.
+						 */
+						std::size_t m_back_pressure {0};
+						/**
+						 * @brief Page-map budget.
+						 */
+						StormByte::ByteSize m_max_memory {0};
+						/**
+						 * @brief OriginPush wait cap.
+						 */
+						std::chrono::milliseconds m_max_wait {0};
 
-						enum StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };			///< Session state.
-						bool m_open {false};								///< Session armed.
-						mutable bool m_failed {false};						///< Permanent failure.
-						mutable StormByte::ByteSize m_tell {0};				///< Logical cursor.
-						StormByte::ByteSize m_high_water {0};				///< Max Tell seen this session.
-						bool m_origin_cursor_dirty {false};					///< OriginFlush may desync the fd.
-						StormByte::ByteSize m_origin_pos {0};				///< Device cursor.
-						StormByte::ByteSize m_materialized {0};				///< Durable origin length.
+						/**
+						 * @brief Session state.
+						 */
+						enum StormByte::Buffer::IO::State m_state { StormByte::Buffer::IO::State::Unavailable };
+						/**
+						 * @brief Session armed.
+						 */
+						bool m_open {false};
+						/**
+						 * @brief Permanent failure.
+						 */
+						mutable bool m_failed {false};
+						/**
+						 * @brief Logical cursor.
+						 */
+						mutable StormByte::ByteSize m_tell {0};
+						/**
+						 * @brief Maximum Tell seen this session.
+						 */
+						StormByte::ByteSize m_high_water {0};
+						/**
+						 * @brief OriginFlush may desynchronise the device cursor.
+						 */
+						bool m_origin_cursor_dirty {false};
+						/**
+						 * @brief Device cursor.
+						 */
+						StormByte::ByteSize m_origin_pos {0};
+						/**
+						 * @brief Durable origin length.
+						 */
+						StormByte::ByteSize m_materialized {0};
 
-						std::map<std::size_t, Page> m_pages;				///< Dirty pages by offset.
-						std::unique_ptr<LockFreeRing> m_ring;				///< Drain pipe. Null if ring off.
+						/**
+						 * @brief Dirty pages by offset.
+						 */
+						std::map<std::size_t, Page> m_pages;
+						/**
+						 * @brief Drain ring; null when disabled.
+						 */
+						std::unique_ptr<LockFreeRing> m_ring;
 
-						bool m_epoch_open {false};							///< Logical seek pending close.
-						bool m_epoch_hit {false};							///< Epoch wrote into a resident page.
-						bool m_epoch_origin {false};						///< Epoch already OriginSeek'd.
+						/**
+						 * @brief Logical seek pending close.
+						 */
+						bool m_epoch_open {false};
+						/**
+						 * @brief Epoch wrote into a resident page.
+						 */
+						bool m_epoch_hit {false};
+						/**
+						 * @brief Epoch already called OriginSeek.
+						 */
+						bool m_epoch_origin {false};
 
-						mutable StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_telemetry;	///< Session counters.
+						/**
+						 * @brief Session counters.
+						 */
+						mutable StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_telemetry;
 
-						mutable StormByte::ByteSize m_accepted {0};			///< Telemetry.Accepted.
-						mutable StormByte::ByteSize m_behind {0};			///< Telemetry.Behind.
-						mutable StormByte::ByteSize m_direct {0};			///< Telemetry.Direct.
-						mutable StormByte::ByteSize m_origin_bytes {0};		///< Telemetry.Origin.
-						mutable StormByte::ByteSize m_hit_ahead {0};		///< Telemetry.HitAhead.
-						mutable StormByte::ByteSize m_hit_back {0};			///< Telemetry.HitBack.
-						mutable StormByte::ByteSize m_miss {0};				///< Telemetry.Miss.
-						mutable StormByte::ByteSize m_dirty_peak {0};		///< Telemetry.DirtyPeak.
-						mutable std::size_t m_seek_logical {0};				///< Telemetry.SeekLogical.
-						mutable std::size_t m_seek_origin {0};				///< Telemetry.SeekOrigin.
-						mutable std::size_t m_seek_saved_full {0};			///< Telemetry.SeekSavedFull.
-						mutable std::size_t m_seek_saved_partial {0};		///< Telemetry.SeekSavedPartial.
-						mutable std::size_t m_try_again {0};				///< Telemetry.TryAgain.
-						mutable std::size_t m_saturated {0};				///< Telemetry.Saturated.
-						mutable std::size_t m_evicted {0};					///< Telemetry.Evicted.
-						mutable std::chrono::nanoseconds m_wait_min {0};	///< Telemetry.WaitMin.
-						mutable std::chrono::nanoseconds m_wait_max {0};	///< Telemetry.WaitMax.
-						mutable std::chrono::nanoseconds m_wait_total {0};	///< Telemetry.WaitTotal.
-						mutable std::size_t m_wait_samples {0};				///< Telemetry.WaitSamples.
+						/**
+						 * @brief Telemetry.Accepted.
+						 */
+						mutable StormByte::ByteSize m_accepted {0};
+						/**
+						 * @brief Telemetry.Behind.
+						 */
+						mutable StormByte::ByteSize m_behind {0};
+						/**
+						 * @brief Telemetry.Direct.
+						 */
+						mutable StormByte::ByteSize m_direct {0};
+						/**
+						 * @brief Telemetry.Origin.
+						 */
+						mutable StormByte::ByteSize m_origin_bytes {0};
+						/**
+						 * @brief Telemetry.HitAhead.
+						 */
+						mutable StormByte::ByteSize m_hit_ahead {0};
+						/**
+						 * @brief Telemetry.HitBack.
+						 */
+						mutable StormByte::ByteSize m_hit_back {0};
+						/**
+						 * @brief Telemetry.Miss.
+						 */
+						mutable StormByte::ByteSize m_miss {0};
+						/**
+						 * @brief Telemetry.DirtyPeak.
+						 */
+						mutable StormByte::ByteSize m_dirty_peak {0};
+						/**
+						 * @brief Telemetry.SeekLogical.
+						 */
+						mutable std::size_t m_seek_logical {0};
+						/**
+						 * @brief Telemetry.SeekOrigin.
+						 */
+						mutable std::size_t m_seek_origin {0};
+						/**
+						 * @brief Telemetry.SeekSavedFull.
+						 */
+						mutable std::size_t m_seek_saved_full {0};
+						/**
+						 * @brief Telemetry.SeekSavedPartial.
+						 */
+						mutable std::size_t m_seek_saved_partial {0};
+						/**
+						 * @brief Telemetry.TryAgain.
+						 */
+						mutable std::size_t m_try_again {0};
+						/**
+						 * @brief Telemetry.Saturated.
+						 */
+						mutable std::size_t m_saturated {0};
+						/**
+						 * @brief Telemetry.Evicted.
+						 */
+						mutable std::size_t m_evicted {0};
+						/**
+						 * @brief Telemetry.WaitMin.
+						 */
+						mutable std::chrono::nanoseconds m_wait_min {0};
+						/**
+						 * @brief Telemetry.WaitMax.
+						 */
+						mutable std::chrono::nanoseconds m_wait_max {0};
+						/**
+						 * @brief Telemetry.WaitTotal.
+						 */
+						mutable std::chrono::nanoseconds m_wait_total {0};
+						/**
+						 * @brief Telemetry.WaitSamples.
+						 */
+						mutable std::size_t m_wait_samples {0};
 
-						mutable std::atomic<bool> m_stop {false};			///< Worker teardown.
-						mutable std::atomic<bool> m_flush {false};			///< Drain entire ring.
-						mutable bool m_drain_run {false};					///< Worker has work.
-						std::thread m_worker;								///< Push thread.
+						/**
+						 * @brief Worker teardown requested.
+						 */
+						mutable std::atomic<bool> m_stop {false};
+						/**
+						 * @brief Drain the entire ring.
+						 */
+						mutable std::atomic<bool> m_flush {false};
+						/**
+						 * @brief Worker has work.
+						 */
+						mutable bool m_drain_run {false};
+						/**
+						 * @brief Push thread.
+						 */
+						std::thread m_worker;
 				};
 			}
 		}

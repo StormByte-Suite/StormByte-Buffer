@@ -51,162 +51,277 @@
 #include <utility>
 
 /**
- * @namespace StormByte::Buffer
- * @brief Buffer module of the StormByte suite.
+ * @namespace StormByte
+ * @brief Root namespace of the StormByte suite.
  */
-namespace StormByte::Buffer {
+namespace StormByte {
 	/**
-	 * @class Exception
-	 * @brief Root exception for Buffer. `what()` is `StormByte.Buffer: message`.
-	 *
-	 * Forwards the format and the arguments. Does not format. A child segment
-	 * is prepended under `Buffer`.
-	 *
-	 * @see Error, ReadError, WriteError
+	 * @namespace StormByte::Buffer
+	 * @brief Buffer module of the StormByte suite.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
-		public:
-			/**
-			 * @brief Format under `StormByte.Buffer`.
-			 * @tparam Args Format argument types.
-			 * @param fmt Format string.
-			 * @param args Format arguments.
-			 */
-			template <typename... Args>
-			explicit Exception(std::format_string<Args...> fmt, Args&&... args)
-				: StormByte::Exception(StormByte::Exception::Path{"Buffer"}, fmt, std::forward<Args>(args)...) {}
+	namespace Buffer {
+		/**
+		 * @class Exception
+		 * @brief Root exception for Buffer. `what()` is `StormByte.Buffer: message`.
+		 *
+		 * Formatting runs in the caller and copies into Base-owned safe text.
+		 * Buffer joins child segments in its provider before passing safe text to
+		 * the out-of-line Base constructor. No caller string allocation is adopted.
+		 *
+		 * @see Error, ReadError, WriteError
+		 */
+		class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
+			public:
+				/**
+				 * @brief Format under `StormByte.Buffer`.
+				 * @tparam Args Format argument types.
+				 * @param fmt Format string.
+				 * @param args Format arguments.
+				 */
+				template <typename... Args>
+				STORMBYTE_FORCE_INLINE explicit Exception(std::format_string<Args...> fmt, Args&&... args)
+					: Exception(Format(fmt, std::forward<Args>(args)...)) {}
 
-			/**
-			 * @brief Format a plain message under `StormByte.Buffer`.
-			 * @param message Exception text.
-			 */
-			explicit Exception(std::string message)
-				: Exception("{}", std::move(message)) {}
+				/**
+				 * @brief Copy a borrowed plain message under `StormByte.Buffer` in the provider.
+				 * @param message Exception text; copied during the call and never retained.
+				 */
+				explicit Exception(std::string_view message);
 
-			/**
-			 * @brief Copies Base-owned text under `StormByte.Buffer`.
-			 * @param message Exception text.
-			 */
-			explicit Exception(const StormByte::Safe::String& message)
-				: StormByte::Exception(StormByte::Exception::Path{"Buffer"}, "{}", std::string_view(message)) {}
+				/**
+				 * @brief Copies Base-owned text under `StormByte.Buffer`.
+				 * @param message Exception text.
+				 */
+				explicit Exception(const StormByte::Safe::String& message);
 
-			/**
-			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
-			 */
-			~Exception() noexcept override;
+				/**
+				 * @brief Copy Base-owned message storage through its provider.
+				 * @param other Exception to copy.
+				 */
+				Exception(const Exception& other);
 
-		protected:
-			/**
-			 * @brief Format under StormByte.Buffer.\<child\>.
-			 * @tparam Args Format argument types.
-			 * @param child Segment under `Buffer`.
-			 * @param fmt Format string.
-			 * @param args Format arguments.
-			 */
-			template <typename... Args>
-			explicit Exception(StormByte::Exception::Path child, std::format_string<Args...> fmt, Args&&... args)
-				: StormByte::Exception(
-					StormByte::Exception::Path{std::string("Buffer.") + std::string(child.text)},
-					fmt,
-					std::forward<Args>(args)...) {}
+				/**
+				 * @brief Transfer Base-owned message storage without allocating.
+				 * @param other Exception to move from.
+				 */
+				Exception(Exception&& other) noexcept;
 
-			/**
-			 * @brief Copies Base-owned text under `StormByte.Buffer.child`.
-			 * @param child Segment under `Buffer`.
-			 * @param message Exception text.
-			 */
-			explicit Exception(StormByte::Exception::Path child, const StormByte::Safe::String& message)
-				: StormByte::Exception(
-					StormByte::Exception::Path{std::string("Buffer.") + std::string(child.text)},
-					"{}",
-					std::string_view(message)) {}
-	};
+				/**
+				 * @brief Copy Base-owned message storage through its provider.
+				 * @param other Exception to copy.
+				 * @return This exception.
+				 */
+				Exception& operator=(const Exception& other);
 
-	/**
-	 * @class Error
-	 * @brief General exception for buffer errors. Same path as @ref Exception.
-	 *
-	 * @see ReadError, WriteError
-	 */
-	class STORMBYTE_BUFFER_PUBLIC Error: public Exception {
-		public:
-			using Exception::Exception;
+				/**
+				 * @brief Transfer Base-owned message storage without allocating.
+				 * @param other Exception to move from.
+				 * @return This exception.
+				 */
+				Exception& operator=(Exception&& other) noexcept;
 
-			/**
-			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
-			 */
-			~Error() noexcept override;
-	};
+				/**
+				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 */
+				~Exception() noexcept override;
 
-	/**
-	 * @class ReadError
-	 * @brief Read, extract or peek failed. `what()` is `StormByte.Buffer.Read: message`.
-	 */
-	class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
-		public:
-			/**
-			 * @brief Format under `StormByte.Buffer.Read`.
-			 * @tparam Args Format argument types.
-			 * @param fmt Format string.
-			 * @param args Format arguments.
-			 */
-			template <typename... Args>
-			explicit ReadError(std::format_string<Args...> fmt, Args&&... args)
-				: Error(StormByte::Exception::Path{"Read"}, fmt, std::forward<Args>(args)...) {}
+			protected:
+				/**
+				 * @brief Join a child path and plain message in the Buffer provider.
+				 * @param child Joined segments under `Buffer`; empty selects `Buffer`.
+				 * @param message Base-owned exception text.
+				 */
+				explicit Exception(const StormByte::Safe::String& child, const StormByte::Safe::String& message);
 
-			/**
-			 * @brief Format a plain message under `StormByte.Buffer.Read`.
-			 * @param message Exception text.
-			 */
-			explicit ReadError(std::string message)
-				: ReadError("{}", std::move(message)) {}
+				/**
+				 * @brief Format in the caller and copy the result into Base-owned text.
+				 * @tparam Args Format argument types.
+				 * @param fmt Format string; used verbatim when there are no arguments.
+				 * @param args Format arguments.
+				 * @return Base-owned formatted message.
+				 */
+				template <typename... Args>
+				static STORMBYTE_FORCE_INLINE StormByte::Safe::String Format(std::format_string<Args...> fmt, Args&&... args) {
+					if constexpr (sizeof...(Args) == 0)
+						return StormByte::Safe::String(fmt.get());
+					else {
+						const std::string message = std::format(fmt, std::forward<Args>(args)...);
+						return StormByte::Safe::String(std::string_view(message));
+					}
+				}
 
-			/**
-			 * @brief Copies Base-owned text under `StormByte.Buffer.Read`.
-			 * @param message Exception text.
-			 */
-			explicit ReadError(const StormByte::Safe::String& message)
-				: Error(StormByte::Exception::Path{"Read"}, "{}", std::string_view(message)) {}
+			private:
+				/**
+				 * @brief Compose the `Buffer.child` path in the Buffer provider.
+				 * @param child Joined child segments, or empty for `Buffer`.
+				 * @return Base-owned path consumed synchronously by the Base constructor.
+				 */
+				static StormByte::Safe::String Compose(const StormByte::Safe::String& child);
+		};
 
-			/**
-			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
-			 */
-			~ReadError() noexcept override;
-	};
+		/**
+		 * @class Error
+		 * @brief General exception for buffer errors. Same path as @ref Exception.
+		 *
+		 * @see ReadError, WriteError
+		 */
+		class STORMBYTE_BUFFER_PUBLIC Error: public Exception {
+			public:
+				/**
+				 * @brief Inherit the Buffer message constructors without adding a segment.
+				 */
+				using Exception::Exception;
 
-	/**
-	 * @class WriteError
-	 * @brief Write failed. `what()` is `StormByte.Buffer.Write: message`.
-	 */
-	class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
-		public:
-			/**
-			 * @brief Format under `StormByte.Buffer.Write`.
-			 * @tparam Args Format argument types.
-			 * @param fmt Format string.
-			 * @param args Format arguments.
-			 */
-			template <typename... Args>
-			explicit WriteError(std::format_string<Args...> fmt, Args&&... args)
-				: Error(StormByte::Exception::Path{"Write"}, fmt, std::forward<Args>(args)...) {}
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 */
+				Error(const Error& other);
 
-			/**
-			 * @brief Format a plain message under `StormByte.Buffer.Write`.
-			 * @param message Exception text.
-			 */
-			explicit WriteError(std::string message)
-				: WriteError("{}", std::move(message)) {}
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 */
+				Error(Error&& other) noexcept;
 
-			/**
-			 * @brief Copies Base-owned text under `StormByte.Buffer.Write`.
-			 * @param message Exception text.
-			 */
-			explicit WriteError(const StormByte::Safe::String& message)
-				: Error(StormByte::Exception::Path{"Write"}, "{}", std::string_view(message)) {}
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 * @return This error.
+				 */
+				Error& operator=(const Error& other);
 
-			/**
-			 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
-			 */
-			~WriteError() noexcept override;
-	};
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 * @return This error.
+				 */
+				Error& operator=(Error&& other) noexcept;
+
+				/**
+				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 */
+				~Error() noexcept override;
+		};
+
+		/**
+		 * @class ReadError
+		 * @brief Read, extract or peek failed. `what()` is `StormByte.Buffer.Read: message`.
+		 */
+		class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
+			public:
+				/**
+				 * @brief Format under `StormByte.Buffer.Read`.
+				 * @tparam Args Format argument types.
+				 * @param fmt Format string.
+				 * @param args Format arguments.
+				 */
+				template <typename... Args>
+				STORMBYTE_FORCE_INLINE explicit ReadError(std::format_string<Args...> fmt, Args&&... args)
+					: ReadError(Format(fmt, std::forward<Args>(args)...)) {}
+
+				/**
+				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Read` in the provider.
+				 * @param message Exception text; copied during the call and never retained.
+				 */
+				explicit ReadError(std::string_view message);
+
+				/**
+				 * @brief Copies Base-owned text under `StormByte.Buffer.Read`.
+				 * @param message Exception text.
+				 */
+				explicit ReadError(const StormByte::Safe::String& message);
+
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 */
+				ReadError(const ReadError& other);
+
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 */
+				ReadError(ReadError&& other) noexcept;
+
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 * @return This error.
+				 */
+				ReadError& operator=(const ReadError& other);
+
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 * @return This error.
+				 */
+				ReadError& operator=(ReadError&& other) noexcept;
+
+				/**
+				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 */
+				~ReadError() noexcept override;
+		};
+
+		/**
+		 * @class WriteError
+		 * @brief Write failed. `what()` is `StormByte.Buffer.Write: message`.
+		 */
+		class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
+			public:
+				/**
+				 * @brief Format under `StormByte.Buffer.Write`.
+				 * @tparam Args Format argument types.
+				 * @param fmt Format string.
+				 * @param args Format arguments.
+				 */
+				template <typename... Args>
+				STORMBYTE_FORCE_INLINE explicit WriteError(std::format_string<Args...> fmt, Args&&... args)
+					: WriteError(Format(fmt, std::forward<Args>(args)...)) {}
+
+				/**
+				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Write` in the provider.
+				 * @param message Exception text; copied during the call and never retained.
+				 */
+				explicit WriteError(std::string_view message);
+
+				/**
+				 * @brief Copies Base-owned text under `StormByte.Buffer.Write`.
+				 * @param message Exception text.
+				 */
+				explicit WriteError(const StormByte::Safe::String& message);
+
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 */
+				WriteError(const WriteError& other);
+
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 */
+				WriteError(WriteError&& other) noexcept;
+
+				/**
+				 * @brief Copy the message through the Base storage provider.
+				 * @param other Error to copy.
+				 * @return This error.
+				 */
+				WriteError& operator=(const WriteError& other);
+
+				/**
+				 * @brief Transfer Base-owned message storage.
+				 * @param other Error to move from.
+				 * @return This error.
+				 */
+				WriteError& operator=(WriteError&& other) noexcept;
+
+				/**
+				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 */
+				~WriteError() noexcept override;
+		};
+	}
 }

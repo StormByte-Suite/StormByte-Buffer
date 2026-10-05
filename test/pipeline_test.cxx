@@ -42,19 +42,24 @@
 #include <StormByte/buffer/pipe.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/exception.hxx>
 #include <StormByte/logger/log.hxx>
+#include <StormByte/safe/pointers.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using StormByte::BinaryData;
@@ -63,13 +68,68 @@ using StormByte::Buffer::ExecutionMode;
 using StormByte::Buffer::Pipe;
 using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
-using StormByte::Buffer::ReadOnly;
-using StormByte::Buffer::WriteOnly;
+using StormByte::Buffer::PipeInput;
+using StormByte::Buffer::PipeOutput;
 
 #define LARGE_TEST_SIZE_KB 1024
 
 namespace {
 	constexpr ExecutionMode kAsyncParallel = ExecutionMode::Async | ExecutionMode::Parallel;
+
+	template<typename Signature>
+	concept FunctionAdmits = requires { typename StormByte::Safe::Function<Signature>::Invoke; };
+
+	static_assert(FunctionAdmits<void(PipeInput, PipeOutput)>);
+	static_assert(FunctionAdmits<void(const PipeInput&, const PipeOutput&)>);
+	static_assert(!FunctionAdmits<void(PipeInput&, const PipeOutput&)>);
+	static_assert(!FunctionAdmits<void(const PipeInput&, PipeOutput&)>);
+
+	bool WaitUntil(const auto& predicate) {
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (!predicate()) {
+			if (std::chrono::steady_clock::now() >= deadline)
+				return false;
+			std::this_thread::yield();
+		}
+		return true;
+	}
+
+	struct FailureContext {
+		std::atomic<bool>* ready;
+		std::atomic<int>* clones;
+		std::atomic<int>* releases;
+	};
+
+	Pipe MakeFailurePipe(std::atomic<bool>& ready, std::atomic<int>& clones,
+			std::atomic<int>& releases) {
+		std::unique_ptr<FailureContext, StormByte::Safe::Heap::ObjectDeleter> context =
+			StormByte::Safe::Heap::MakeUnique<FailureContext>(FailureContext{&ready, &clones, &releases});
+		Pipe::Callback callback(context.get(),
+			[](void* state, const PipeInput&, const PipeOutput&,
+					const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+				const auto& context = *static_cast<FailureContext*>(state);
+				while (!context.ready->load())
+					std::this_thread::yield();
+				return StormByte::Safe::Status::Failure;
+			},
+			[](const void* state) noexcept -> void* {
+				try {
+					const auto& context = *static_cast<const FailureContext*>(state);
+					std::unique_ptr<FailureContext, StormByte::Safe::Heap::ObjectDeleter> copy =
+						StormByte::Safe::Heap::MakeUnique<FailureContext>(context);
+					++*context.clones;
+					return copy.release();
+				} catch (...) {
+					return nullptr;
+				}
+			},
+			[](void* state) noexcept {
+				++*static_cast<FailureContext*>(state)->releases;
+				StormByte::Safe::Heap::ObjectDeleter{}(static_cast<FailureContext*>(state));
+			});
+		(void)context.release();
+		return Pipe(std::move(callback));
+	}
 
 	std::ostringstream logging_stream;
 	const StormByte::Safe::Shared<StormByte::Logger::Log> logging =
@@ -119,36 +179,12 @@ namespace {
 		return ExpectBytes(fn, result, consumer, TextBytes(expected));
 	}
 
-	class FnPipe final: public Pipe {
-		public:
-			using Fn = std::function<void(ReadOnly&, WriteOnly&,
-				const StormByte::Safe::Shared<StormByte::Logger::Log>&)>;
-
-			explicit FnPipe(Fn fn):
-				m_fn(std::move(fn)) {}
-
-			void Run(ReadOnly& in, WriteOnly& out,
-					const StormByte::Safe::Shared<StormByte::Logger::Log>& log) override {
-				m_fn(in, out, log);
-			}
-
-			PointerType Clone() const noexcept override {
-				return StormByte::Safe::Unique<Pipe>::MakePointer<FnPipe>(*this);
-			}
-
-			PointerType Move() noexcept override {
-				return StormByte::Safe::Unique<Pipe>::MakePointer<FnPipe>(std::move(*this));
-			}
-
-		private:
-			Fn m_fn;
-	};
-
-	FnPipe MakePipe(FnPipe::Fn fn) {
-		return FnPipe(std::move(fn));
+	template<typename Callable>
+	Pipe MakePipe(Callable&& callable) {
+		return Pipe(std::forward<Callable>(callable));
 	}
 
-	void CopyAll(ReadOnly& in, WriteOnly& out) {
+	void CopyAll(const PipeInput& in, const PipeOutput& out) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty())
@@ -157,7 +193,7 @@ namespace {
 		out.Close();
 	}
 
-	void UpperAll(ReadOnly& in, WriteOnly& out) {
+	void UpperAll(const PipeInput& in, const PipeOutput& out) {
 		while (!in.EoF()) {
 			BinaryData data;
 			if (in.Read(0, data) && !data.empty()) {
@@ -196,7 +232,7 @@ int test_pipeline_empty_input() {
 	constexpr auto fn = "test_pipeline_empty_input";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
@@ -210,7 +246,7 @@ int test_pipeline_filter_stage() {
 	constexpr auto fn = "test_pipeline_filter_stage";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -236,7 +272,7 @@ int test_pipeline_incremental_processing() {
 	constexpr auto fn = "test_pipeline_incremental_processing";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -259,7 +295,7 @@ int test_pipeline_multiple_writes() {
 	constexpr auto fn = "test_pipeline_multiple_writes";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -281,7 +317,7 @@ int test_pipeline_single_stage() {
 	constexpr auto fn = "test_pipeline_single_stage";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
@@ -296,11 +332,11 @@ int test_pipeline_three_stages() {
 	constexpr auto fn = "test_pipeline_three_stages";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -312,7 +348,7 @@ int test_pipeline_three_stages() {
 		}
 		out.Close();
 	}));
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		(void)out.Write("[");
 		while (!in.EoF()) {
@@ -334,11 +370,11 @@ int test_pipeline_two_stages() {
 	constexpr auto fn = "test_pipeline_two_stages";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -365,7 +401,7 @@ int test_pipeline_add_move() {
 	constexpr auto fn = "test_pipeline_add_move";
 	int result = 0;
 	Pipeline pipeline;
-	FnPipe pipe = MakePipe([](ReadOnly& in, WriteOnly& out,
+	Pipe pipe = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	});
@@ -381,7 +417,7 @@ int test_pipeline_copy_constructor() {
 	constexpr auto fn = "test_pipeline_copy_constructor";
 	int result = 0;
 	Pipeline pipeline1;
-	pipeline1.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline1.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
@@ -397,7 +433,7 @@ int test_pipeline_move_constructor() {
 	constexpr auto fn = "test_pipeline_move_constructor";
 	int result = 0;
 	Pipeline pipeline1;
-	pipeline1.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline1.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -418,11 +454,120 @@ int test_pipeline_move_constructor() {
 	return ExpectText(fn, result, out, "test");
 }
 
+int test_pipeline_callable_copy_state() {
+	constexpr auto fn = "test_pipeline_callable_copy_state";
+	int result = 0;
+	std::string text(256, 'X');
+	text.append("\0tail", 5);
+	const std::string expected = text;
+	Pipe source([text, count = 0](const PipeInput&, const PipeOutput& out,
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) mutable {
+		(void)out.Write(std::string_view(text.data(), text.size()));
+		(void)out.Write(std::to_string(++count));
+		out.Close();
+	});
+	text.clear();
+	Pipe pipe_copy(source);
+	Pipe pipe_assigned = MakePipe([](const PipeInput& in, const PipeOutput& out,
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+		CopyAll(in, out);
+	});
+	pipe_assigned = source;
+	Pipeline original;
+	original.Add(source);
+	Pipeline copied(original);
+	Pipeline assigned;
+	assigned.Add(pipe_assigned);
+	assigned = original;
+	Pipeline added;
+	added.Add(source);
+	auto run_pipe = [&](const Pipe& pipe, int count) {
+		Producer input;
+		input.Close();
+		Consumer reader = input.Consumer();
+		Producer output;
+		ASSERT_TRUE(fn, pipe.Run(PipeInput(reader), PipeOutput(output), {}) ==
+			StormByte::Safe::Status::Success);
+		Consumer consumer = output.Consumer();
+		return ExpectText(fn, result, consumer, expected + std::to_string(count));
+	};
+	auto run_pipeline = [&](const Pipeline& pipeline, int count) {
+		Producer input;
+		input.Close();
+		Consumer output = pipeline.Process(input.Consumer(), {}, ExecutionMode::Sync);
+		return ExpectText(fn, result, output, expected + std::to_string(count));
+	};
+	if (run_pipe(source, 1) || run_pipe(source, 2) ||
+			run_pipe(pipe_copy, 1) || run_pipe(pipe_assigned, 1) ||
+			run_pipe(source, 3) || run_pipe(pipe_copy, 2) || run_pipe(pipe_assigned, 2))
+		return 1;
+	if (run_pipeline(original, 1) || run_pipeline(original, 2) ||
+			run_pipeline(copied, 1) || run_pipeline(assigned, 1) || run_pipeline(added, 1) ||
+			run_pipeline(original, 3) || run_pipeline(copied, 2) ||
+			run_pipeline(assigned, 2) || run_pipeline(added, 2))
+		return 1;
+	RETURN_TEST(fn, result);
+}
+
+int test_pipe_moved_from_missing() {
+	constexpr auto fn = "test_pipe_moved_from_missing";
+	int result = 0;
+	Pipe source = MakePipe([](const PipeInput& in, const PipeOutput& out,
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+		CopyAll(in, out);
+	});
+	Pipe moved(std::move(source));
+	Producer input;
+	(void)input.Write("moved");
+	input.Close();
+	Consumer reader = input.Consumer();
+	Producer output;
+	const PipeInput in(reader);
+	const PipeOutput out(output);
+	ASSERT_TRUE(fn, source.Run(in, out, {}) == StormByte::Safe::Status::Missing);
+	ASSERT_TRUE(fn, out.IsWritable());
+	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, in.Available());
+	source = std::move(moved);
+	ASSERT_TRUE(fn, moved.Run(in, out, {}) == StormByte::Safe::Status::Missing);
+	ASSERT_TRUE(fn, source.Run(in, out, {}) == StormByte::Safe::Status::Success);
+	Consumer consumer = output.Consumer();
+	return ExpectText(fn, result, consumer, "moved");
+}
+
+int test_pipe_explicit_callback_failure() {
+	constexpr auto fn = "test_pipe_explicit_callback_failure";
+	int result = 0;
+	std::atomic<bool> ready{true};
+	std::atomic<int> clones{0};
+	std::atomic<int> releases{0};
+	{
+		Pipe source = MakeFailurePipe(ready, clones, releases);
+		Pipe copied(source);
+		Pipeline pipeline;
+		pipeline.Add(source);
+		ASSERT_EQUAL(fn, 2, clones.load());
+		Producer input;
+		input.Close();
+		Consumer reader = input.Consumer();
+		Producer output;
+		ASSERT_TRUE(fn, source.Run(PipeInput(reader), PipeOutput(output), {}) ==
+			StormByte::Safe::Status::Failure);
+		ASSERT_TRUE(fn, copied.Run(PipeInput(reader), PipeOutput(output), {}) ==
+			StormByte::Safe::Status::Failure);
+		Consumer consumer = pipeline.Process(input.Consumer(), {}, ExecutionMode::Sync);
+		ASSERT_TRUE(fn, consumer.HasError());
+		ASSERT_TRUE(fn, consumer.EoF());
+		ASSERT_EQUAL(fn, 0, releases.load());
+	}
+	ASSERT_EQUAL(fn, 3, releases.load());
+	RETURN_TEST(fn, result);
+}
+
 int test_pipeline_null_logger() {
 	constexpr auto fn = "test_pipeline_null_logger";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
@@ -437,7 +582,7 @@ int test_pipeline_reuse() {
 	constexpr auto fn = "test_pipeline_reuse";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		(void)out.Write(">");
 		while (!in.EoF()) {
@@ -468,7 +613,7 @@ int test_pipeline_stage_must_close() {
 	constexpr auto fn = "test_pipeline_stage_must_close";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
@@ -488,7 +633,7 @@ int test_pipeline_async_reuse_many_times() {
 	constexpr auto fn = "test_pipeline_async_reuse_many_times";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
@@ -509,7 +654,7 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 12; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				if (!out.IsWritable())
@@ -543,7 +688,7 @@ int test_pipeline_interrupted_by_seterror() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 8; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
@@ -578,7 +723,7 @@ int test_pipeline_large_async_many_stages() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 25; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			UpperAll(in, out);
 		}));
@@ -595,7 +740,7 @@ int test_pipeline_parallel_async_correctness() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 6; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			UpperAll(in, out);
 		}));
@@ -612,7 +757,7 @@ int test_pipeline_parallel_blocking() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 4; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
@@ -643,11 +788,11 @@ int test_pipeline_sync_execution() {
 	constexpr auto fn = "test_pipeline_sync_execution";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		UpperAll(in, out);
 	}));
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -678,9 +823,9 @@ int test_pipeline_pipe_exception_sets_error() {
 	};
 	for (const ExecutionMode mode : modes) {
 		Pipeline pipeline;
-		pipeline.Add(MakePipe([](ReadOnly&, WriteOnly&,
+		pipeline.Add(MakePipe([](const PipeInput&, const PipeOutput&,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
-			throw std::runtime_error("pipe failure");
+			throw StormByte::OperationError("pipe failure");
 		}));
 		Producer input;
 		Consumer output = pipeline.Process(input.Consumer(), {}, mode);
@@ -691,6 +836,107 @@ int test_pipeline_pipe_exception_sets_error() {
 	RETURN_TEST(fn, result);
 }
 
+int test_pipe_exception_status() {
+	constexpr auto fn = "test_pipe_exception_status";
+	int result = 0;
+	Pipe safe = MakePipe([](const PipeInput&, const PipeOutput&,
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+		throw StormByte::OperationError("safe pipe failure");
+	});
+	Pipe foreign = MakePipe([](const PipeInput&, const PipeOutput&,
+			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+		throw std::runtime_error("foreign pipe failure");
+	});
+	Producer input;
+	input.Close();
+	Consumer reader = input.Consumer();
+	Producer output;
+	bool propagated = false;
+	try {
+		(void)safe.Run(PipeInput(reader), PipeOutput(output), {});
+	} catch (const StormByte::OperationError&) {
+		propagated = true;
+	}
+	ASSERT_TRUE(fn, propagated);
+	ASSERT_TRUE(fn, foreign.Run(PipeInput(reader), PipeOutput(output), {}) ==
+		StormByte::Safe::Status::Failure);
+	constexpr ExecutionMode modes[] = {
+		ExecutionMode::Sync, ExecutionMode::Async, ExecutionMode::Parallel, kAsyncParallel
+	};
+	for (const ExecutionMode mode : modes) {
+		Pipeline pipeline;
+		pipeline.Add(foreign);
+		Consumer consumer = pipeline.Process(input.Consumer(), {}, mode);
+		const bool failed = WaitUntil([&] { return !consumer.IsWritable(); });
+		if (!failed)
+			pipeline.SetError();
+		ASSERT_TRUE(fn, failed);
+		ASSERT_TRUE(fn, consumer.HasError());
+		ASSERT_TRUE(fn, consumer.EoF());
+	}
+	RETURN_TEST(fn, result);
+}
+
+int test_pipeline_callback_failure_wakes_readers() {
+	constexpr auto fn = "test_pipeline_callback_failure_wakes_readers";
+	int result = 0;
+	std::atomic<bool> ready{false};
+	std::atomic<int> clones{0};
+	std::atomic<int> releases{0};
+	std::atomic<int> entered{0};
+	std::atomic<int> completed{0};
+	std::atomic<int> failed_reads{0};
+	std::atomic<int> failed_outputs{0};
+	std::atomic<bool> final_read_completed{false};
+	bool waiting = false;
+	bool woke = false;
+	bool read_succeeded = true;
+	{
+		Pipeline pipeline;
+		pipeline.Add(MakeFailurePipe(ready, clones, releases));
+		for (int stage = 0; stage < 3; ++stage) {
+			pipeline.Add(MakePipe([&](const PipeInput& in, const PipeOutput& out,
+					const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
+				++entered;
+				BinaryData data;
+				if (!in.Read(1, data) && !in.IsReadable())
+					++failed_reads;
+				if (WaitUntil([&] { return !out.IsWritable(); }))
+					++failed_outputs;
+				++completed;
+			}));
+		}
+		Producer input;
+		input.Close();
+		Consumer output = pipeline.Process(input.Consumer(), {}, kAsyncParallel);
+		std::thread reader([&] {
+			++entered;
+			BinaryData data;
+			read_succeeded = output.Read(1, data);
+			final_read_completed = true;
+		});
+		waiting = WaitUntil([&] { return entered.load() == 4; });
+		const bool premature = completed.load() != 0 || final_read_completed.load();
+		ready = true;
+		woke = WaitUntil([&] {
+			return completed.load() == 3 && final_read_completed.load();
+		});
+		if (!woke)
+			pipeline.SetError();
+		reader.join();
+		ASSERT_TRUE(fn, waiting);
+		ASSERT_FALSE(fn, premature);
+		ASSERT_TRUE(fn, woke);
+		ASSERT_FALSE(fn, read_succeeded);
+		ASSERT_EQUAL(fn, 3, failed_reads.load());
+		ASSERT_EQUAL(fn, 3, failed_outputs.load());
+		ASSERT_TRUE(fn, output.HasError());
+		ASSERT_TRUE(fn, output.EoF());
+	}
+	ASSERT_EQUAL(fn, 1, releases.load());
+	RETURN_TEST(fn, result);
+}
+
 int test_pipeline_sync_vs_parallel_cpu_bound() {
 	constexpr auto fn = "test_pipeline_sync_vs_parallel_cpu_bound";
 	int result = 0;
@@ -698,7 +944,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	constexpr std::size_t kSize = 12 * 1024 * 1024;
 	constexpr std::size_t kChunk = 2048;
 	constexpr int kInnerWork = 48;
-	auto cpu_fn = [](ReadOnly& in, WriteOnly& out,
+	auto cpu_fn = [](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -761,7 +1007,7 @@ int test_pipeline_available_bytes_during_process() {
 	constexpr auto fn = "test_pipeline_available_bytes_during_process";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		CopyAll(in, out);
 	}));
@@ -777,7 +1023,7 @@ int test_pipeline_byte_arithmetic() {
 	int result = 0;
 	Pipeline pipeline;
 	auto map = [](auto op) {
-		return MakePipe([op](ReadOnly& in, WriteOnly& out,
+		return MakePipe([op](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			while (!in.EoF()) {
 				BinaryData data;
@@ -812,7 +1058,7 @@ int test_pipeline_identity_many_stages() {
 	int result = 0;
 	Pipeline pipeline;
 	for (int i = 0; i < 10; ++i) {
-		pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+		pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 				const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 			CopyAll(in, out);
 		}));
@@ -829,7 +1075,7 @@ int test_pipeline_large_concurrent_stress() {
 	constexpr auto fn = "test_pipeline_large_concurrent_stress";
 	int result = 0;
 	Pipeline pipeline;
-	auto xor55 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto xor55 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -841,7 +1087,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto add17 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto add17 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -853,7 +1099,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto bnot = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto bnot = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -865,7 +1111,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto xorAA = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto xorAA = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -877,7 +1123,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto mul3 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto mul3 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -889,7 +1135,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto rotl3 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto rotl3 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -903,7 +1149,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto sub42 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto sub42 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -915,7 +1161,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto xor33 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto xor33 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -927,7 +1173,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto mul171 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto mul171 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -939,7 +1185,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto rotr3 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto rotr3 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -953,7 +1199,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto add42 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto add42 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -965,7 +1211,7 @@ int test_pipeline_large_concurrent_stress() {
 		}
 		out.Close();
 	});
-	auto sub17 = MakePipe([](ReadOnly& in, WriteOnly& out,
+	auto sub17 = MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -1021,7 +1267,7 @@ int test_pipeline_large_data() {
 	constexpr auto fn = "test_pipeline_large_data";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::size_t count = 0;
 		while (!in.EoF()) {
@@ -1043,7 +1289,7 @@ int test_pipeline_reverse_string() {
 	constexpr auto fn = "test_pipeline_reverse_string";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::string buffer;
 		while (!in.EoF()) {
@@ -1066,7 +1312,7 @@ int test_pipeline_streaming_data() {
 	constexpr auto fn = "test_pipeline_streaming_data";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
 			BinaryData data;
@@ -1094,7 +1340,7 @@ int test_pipeline_word_count() {
 	constexpr auto fn = "test_pipeline_word_count";
 	int result = 0;
 	Pipeline pipeline;
-	pipeline.Add(MakePipe([](ReadOnly& in, WriteOnly& out,
+	pipeline.Add(MakePipe([](const PipeInput& in, const PipeOutput& out,
 			const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		std::string buffer;
 		while (!in.EoF()) {
@@ -1141,6 +1387,9 @@ int main() {
 	// Construct
 	// -------------------
 	result += test_pipeline_add_move();
+	result += test_pipeline_callable_copy_state();
+	result += test_pipe_explicit_callback_failure();
+	result += test_pipe_moved_from_missing();
 	result += test_pipeline_copy_constructor();
 	result += test_pipeline_move_constructor();
 	result += test_pipeline_null_logger();
@@ -1158,6 +1407,8 @@ int main() {
 	result += test_pipeline_parallel_blocking();
 	result += test_pipeline_sync_execution();
 	result += test_pipeline_pipe_exception_sets_error();
+	result += test_pipe_exception_status();
+	result += test_pipeline_callback_failure_wakes_readers();
 	result += test_pipeline_sync_vs_parallel_cpu_bound();
 
 	// -------------------

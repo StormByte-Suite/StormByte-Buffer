@@ -66,6 +66,20 @@ namespace {
 		return std::string(reinterpret_cast<const char*>(data.data()),
 			static_cast<std::size_t>(data.size()));
 	}
+
+	/**
+	 * @brief Consumer-defined SharedFIFO with a DLL-safe formatting hook.
+	 */
+	class HeaderSharedFIFO final: public SharedFIFO {
+		protected:
+			/**
+			 * @brief Return consumer-owned header text without exporting a stream.
+			 * @return DLL-safe custom header, including an embedded NUL.
+			 */
+			StormByte::Safe::String HexDumpHeader() const noexcept override {
+				return StormByte::Safe::String{std::string_view("shared\0header", 13)};
+			}
+	};
 }
 
 // -------------------
@@ -227,6 +241,18 @@ int test_sharedfifo_equality() {
 // -------------------
 // HexDump
 // -------------------
+
+int test_shared_fifo_safe_header_hook() {
+	const std::string fn = "test_shared_fifo_safe_header_hook";
+	HeaderSharedFIFO fifo;
+	ASSERT_TRUE(fn, fifo.Write("A"));
+	const FIFO& base = fifo;
+	const auto dump = base.HexDump();
+	ASSERT_TRUE(fn, std::string_view(dump).starts_with(std::string_view("shared\0header\n", 14)));
+	ASSERT_TRUE(fn, dump.contains("41"));
+	ASSERT_EQUAL(fn, fifo.Available(), StormByte::ByteSize{1});
+	RETURN_TEST(fn, 0);
+}
 
 int test_hexdump1() {
 	const std::string fn = "test_shared_hexdump";
@@ -748,6 +774,7 @@ int main() {
 	// -------------------
 	// HexDump
 	// -------------------
+	result += test_shared_fifo_safe_header_hook();
 	result += test_hexdump1();
 	result += test_hexdump2();
 	result += test_hexdump3();

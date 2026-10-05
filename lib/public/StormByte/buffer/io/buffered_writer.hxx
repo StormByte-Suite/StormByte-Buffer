@@ -238,13 +238,48 @@ namespace StormByte {
 					 * @class Parameters
 					 * @brief Writer knobs. A missing field keeps the base default (0 / 0 ms).
 					 *
-					 * Header-only. The variadic list is applied in the caller
-					 * (@c STORMBYTE_FORCE_INLINE). This module never
-					 * instantiates @c Parameters.
+					 * Header-only bag with Safe provider-owned optional values.
+					 * @note Construction and copying may allocate and throw.
 					 */
 					class Parameters: public WriterParameters {
 						public:
-							using WriterParameters::WriterParameters;
+							/**
+							 * @brief Construct an empty Safe-owned parameter bag.
+							 */
+							Parameters() = default;
+							/**
+							 * @brief Store writer knobs in Safe-owned optional values.
+							 * @tparam Knobs Supported writer knobs.
+							 * @param knobs Values to store.
+							 */
+							template<typename... Knobs>
+							Parameters(Knobs... knobs): WriterParameters(std::move(knobs)...) {}
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 */
+							Parameters(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 */
+							Parameters(Parameters&& other) noexcept = default;
+							/**
+							 * @brief Release knobs through provider callbacks.
+							 */
+							~Parameters() noexcept = default;
+							/**
+							 * @brief Copy Safe-owned knobs; may allocate and throw.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(const Parameters& other) = default;
+							/**
+							 * @brief Transfer Safe-owned knobs.
+							 * @param other Source bag.
+							 * @return This bag.
+							 */
+							Parameters& operator=(Parameters&& other) noexcept = default;
 					};
 
 					/**
@@ -549,7 +584,7 @@ namespace StormByte {
 						BufferedWriter(std::move(path), location,
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
 							parameters.BackPressure().value_or(0),
-							parameters.MaxWait().value_or(std::chrono::milliseconds{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0})) {}
 
 					/**
@@ -662,7 +697,10 @@ namespace StormByte {
 					 */
 
 				private:
-					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedWriter> m_io;	///< Private coordinator state.
+					/**
+					 * @brief Private coordinator state created and destroyed in the provider module.
+					 */
+					std::unique_ptr<StormByte::Buffer::Backend::IO::BufferedWriter> m_io;
 			};
 		}
 	}

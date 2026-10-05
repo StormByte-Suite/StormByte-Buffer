@@ -52,6 +52,17 @@
 
 using namespace StormByte::Buffer;
 
+Ring::Ring() noexcept = default;
+
+Ring::Ring(const StormByte::BinaryData& data) noexcept
+	: m_buffer(data.begin(), data.end()) {}
+
+Ring::Ring(StormByte::BinaryData&& data) noexcept
+	: m_buffer(std::make_move_iterator(data.begin()), std::make_move_iterator(data.end())) {}
+
+Ring::Ring(std::string_view sv) noexcept
+	: Ring(DataConvert(sv)) {}
+
 Ring::Ring(Ring&& other) noexcept {
 	std::unique_lock lock(other.m_mutex);
 	m_buffer          = std::move(other.m_buffer);
@@ -242,27 +253,27 @@ StormByte::Safe::String Ring::HexDump(const StormByte::ByteSize& columns,
 	const StormByte::ByteSize end = (byte_limit > StormByte::ByteSize{0})
 		? std::min(stored, m_position_offset + byte_limit)
 		: stored;
-	std::ostringstream oss = HexDumpHeader();
-	oss << '\n';
+	std::ostringstream oss;
+	oss << std::string_view(HexDumpHeader()) << '\n';
 	if (end > m_position_offset) {
 		StormByte::BinaryData tmp;
 		tmp.assign(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset),
 					m_buffer.begin() + static_cast<std::ptrdiff_t>(end));
 		std::span<const std::byte> view(tmp.data(), static_cast<std::size_t>(tmp.size()));
 		const StormByte::Safe::String lines = FormatHexLines(view, m_position_offset, cols);
-		oss << lines.data();
+		oss << std::string_view(lines);
 	}
 
 	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
-std::ostringstream Ring::HexDumpHeader() const noexcept {
+StormByte::Safe::String Ring::HexDumpHeader() const noexcept {
 	std::ostringstream oss;
 	oss << "Size: " << m_buffer.size() << " bytes\n";
 	oss << "Read Position: " << static_cast<std::size_t>(m_position_offset) << '\n';
 	oss << "Status: " << (m_closed ? "closed" : "opened")
 		<< " and " << (m_error ? "error" : "ready");
-	return oss;
+	return StormByte::Safe::String{std::string_view(oss.str())};
 }
 
 StormByte::Safe::String Ring::FormatHexLines(std::span<const std::byte> data,

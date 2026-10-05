@@ -66,11 +66,81 @@ namespace {
 		return std::string(reinterpret_cast<const char*>(data.data()),
 			static_cast<std::size_t>(data.size()));
 	}
+
+	/**
+	 * @brief Consumer-defined Ring with a DLL-safe formatting hook.
+	 */
+	class HeaderRing final: public Ring {
+		protected:
+			/**
+			 * @brief Return consumer-owned header text without exporting a stream.
+			 * @return DLL-safe custom header, including an embedded NUL.
+			 */
+			StormByte::Safe::String HexDumpHeader() const noexcept override {
+				return StormByte::Safe::String{std::string_view("ring\0header", 11)};
+			}
+	};
 }
 
 // -------------------
 // Basic
 // -------------------
+
+int test_ring_construction_and_moves() {
+	const std::string fn = "test_ring_construction_and_moves";
+	const std::vector<std::byte> bytes{std::byte{0x41}, std::byte{0}, std::byte{0x42}};
+	const std::string expected("A\0B", 3);
+	const BinaryData data(bytes);
+	Ring copied(data);
+	Ring moved{BinaryData(data)};
+	Ring range_copy(bytes);
+	Ring range_move(std::vector<std::byte>{bytes});
+	Ring view{std::string_view(expected)};
+	Ring span(std::span<const std::byte>{bytes});
+	std::string text = expected;
+	Ring text_copy(text);
+	Ring text_move(std::move(text));
+	for (Ring* ring: {&copied, &moved, &range_copy, &range_move, &view, &span, &text_copy, &text_move}) {
+		ASSERT_EQUAL(fn, BytesToText(ring->Data()), expected);
+		ASSERT_TRUE(fn, ring->IsWritable());
+		ASSERT_EQUAL(fn, ring->Available(), StormByte::ByteSize{3});
+	}
+	Ring empty;
+	Ring null_text(static_cast<const char*>(nullptr));
+	Ring literal("ABC");
+	ASSERT_TRUE(fn, empty.Empty());
+	ASSERT_TRUE(fn, null_text.Empty());
+	ASSERT_EQUAL(fn, BytesToText(literal.Data()), std::string("ABC"));
+	copied.Seek(1, Position::Absolute);
+	copied.Close();
+	Ring destination(std::move(copied));
+	ASSERT_EQUAL(fn, destination.Available(), StormByte::ByteSize{2});
+	ASSERT_FALSE(fn, destination.IsWritable());
+	ASSERT_EQUAL(fn, BytesToText(destination.Data()), expected);
+	ASSERT_TRUE(fn, copied.Empty());
+	ASSERT_TRUE(fn, copied.Write("reused"));
+	empty = std::move(destination);
+	ASSERT_EQUAL(fn, empty.Available(), StormByte::ByteSize{2});
+	ASSERT_FALSE(fn, empty.IsWritable());
+	BinaryData remaining;
+	ASSERT_TRUE(fn, empty.Read(0, remaining));
+	ASSERT_EQUAL(fn, BytesToText(remaining), std::string("\0B", 2));
+	ASSERT_TRUE(fn, destination.Empty());
+	ASSERT_TRUE(fn, destination.Write("reused"));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_safe_header_hook() {
+	const std::string fn = "test_ring_safe_header_hook";
+	HeaderRing ring;
+	ASSERT_TRUE(fn, ring.Write("A"));
+	const Ring& base = ring;
+	const auto dump = base.HexDump();
+	ASSERT_TRUE(fn, std::string_view(dump).starts_with(std::string_view("ring\0header\n", 12)));
+	ASSERT_TRUE(fn, dump.contains("41"));
+	ASSERT_EQUAL(fn, ring.Available(), StormByte::ByteSize{1});
+	RETURN_TEST(fn, 0);
+}
 
 int test_ring_basic_write_read() {
 	const std::string fn = "test_ring_basic_write_read";
@@ -729,6 +799,8 @@ int main() {
 	// -------------------
 	// Basic
 	// -------------------
+	result += test_ring_construction_and_moves();
+	result += test_ring_safe_header_hook();
 	result += test_ring_basic_write_read();
 	result += test_ring_clear();
 	result += test_ring_clean_after_seek();

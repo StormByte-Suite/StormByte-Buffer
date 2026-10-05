@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/sink.hxx>
+#include <StormByte/safe/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
@@ -50,33 +51,156 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
 
 using StormByte::Buffer::Sink;
 
+/**
+ * @brief Exact provider-declared pointer facade storing only an integer, with no external ownership.
+ * @note Its provider remains loaded and all participants use a compatible ABI.
+ */
 class NonNullableSmartPointer {
-    public:
-        NonNullableSmartPointer() noexcept = default;
-        explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
-        NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
-        NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
-        ~NonNullableSmartPointer() noexcept = default;
-        NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
-        NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
+	public:
+		/**
+		 * @brief Constructs a zero-valued facade.
+		 */
+		NonNullableSmartPointer() noexcept = default;
+		/**
+		 * @brief Constructs a facade with an embedded value.
+		 * @param value Initial embedded value.
+		 */
+		explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
+		/**
+		 * @brief Copies the embedded integer.
+		 */
+		NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
+		/**
+		 * @brief Moves the embedded integer.
+		 */
+		NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
+		/**
+		 * @brief Destroys the facade without releasing external resources.
+		 */
+		~NonNullableSmartPointer() noexcept = default;
+		/**
+		 * @brief Copies the embedded integer.
+		 * @return This facade.
+		 */
+		NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
+		/**
+		 * @brief Moves the embedded integer.
+		 * @return This facade.
+		 */
+		NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
 
-        int* get() noexcept { return &m_value; }
-        const int* get() const noexcept { return &m_value; }
-        int& operator*() noexcept { return m_value; }
-        const int& operator*() const noexcept { return m_value; }
-        int* operator->() noexcept { return &m_value; }
-        const int* operator->() const noexcept { return &m_value; }
+		/**
+		 * @brief Gets mutable embedded storage.
+		 * @return Address of the embedded integer.
+		 */
+		int* get() noexcept { return &m_value; }
+		/**
+		 * @brief Gets constant embedded storage.
+		 * @return Address of the embedded integer.
+		 */
+		const int* get() const noexcept { return &m_value; }
+		/**
+		 * @brief Dereferences mutable embedded storage.
+		 * @return Embedded integer.
+		 */
+		int& operator*() noexcept { return m_value; }
+		/**
+		 * @brief Dereferences constant embedded storage.
+		 * @return Embedded integer.
+		 */
+		const int& operator*() const noexcept { return m_value; }
+		/**
+		 * @brief Gets mutable arrow access.
+		 * @return Address of the embedded integer.
+		 */
+		int* operator->() noexcept { return &m_value; }
+		/**
+		 * @brief Gets constant arrow access.
+		 * @return Address of the embedded integer.
+		 */
+		const int* operator->() const noexcept { return &m_value; }
 
-    private:
-        int m_value = 0;
+	private:
+		/**
+		 * @brief Integer owned directly by the facade.
+		 */
+		int m_value = 0;
 };
+
+STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
+
+/**
+ * @brief Provider-declared element with unsupported extended alignment.
+ */
+struct alignas(alignof(std::max_align_t) * 2) OveralignedValue {
+	/**
+	 * @brief Embedded integer with no allocator or external lifetime.
+	 */
+	int value = 0;
+};
+STORMBYTE_DECLARE_MAYBE_SAFE(OveralignedValue);
+
+/**
+ * @brief Provider-declared element with throwing default construction.
+ */
+struct ThrowingDefaultValue {
+	/**
+	 * @brief Provides a potentially throwing default signature for admission testing.
+	 */
+	ThrowingDefaultValue() noexcept(false) {}
+};
+STORMBYTE_DECLARE_MAYBE_SAFE(ThrowingDefaultValue);
+
+/**
+ * @brief Tests whether Sink admits an element without instantiating its storage.
+ * @tparam Value Candidate element.
+ */
+template<typename Value>
+concept SinkAdmits = requires { typename Sink<Value>; };
+
+/**
+ * @brief Undeclared movable payloads do not acquire a SafeValue contract automatically.
+ */
+struct UndeclaredValue {
+	/**
+	 * @brief Embedded integer.
+	 */
+	int value = 0;
+};
+
+/**
+ * @brief A derived queue does not inherit an exact-type MaybeSafe declaration.
+ */
+struct DerivedSink: Sink<int> {};
+
+static_assert(StormByte::Type::Movable<UndeclaredValue>);
+static_assert(!StormByte::Type::SafeValue<UndeclaredValue>);
+static_assert(!SinkAdmits<UndeclaredValue>);
+static_assert(StormByte::Type::MaybeSafe<Sink<int>>);
+static_assert(!StormByte::Type::MaybeSafe<DerivedSink>);
+static_assert(SinkAdmits<int>);
+static_assert(SinkAdmits<StormByte::Safe::String>);
+static_assert(SinkAdmits<StormByte::Safe::Shared<int>>);
+static_assert(SinkAdmits<NonNullableSmartPointer>);
+static_assert(StormByte::Type::SafeValue<OveralignedValue>);
+static_assert(!SinkAdmits<OveralignedValue>);
+static_assert(StormByte::Type::SafeValue<ThrowingDefaultValue>);
+static_assert(!SinkAdmits<ThrowingDefaultValue>);
+static_assert(!SinkAdmits<const int>);
+static_assert(!SinkAdmits<volatile int>);
+static_assert(!SinkAdmits<int&>);
+static_assert(!SinkAdmits<int*>);
+static_assert(!SinkAdmits<std::string>);
+static_assert(!SinkAdmits<std::shared_ptr<int>>);
+static_assert(!SinkAdmits<std::unique_ptr<int>>);
+static_assert(!SinkAdmits<StormByte::Safe::Unique<int>>);
 
 static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
 static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
@@ -153,7 +277,8 @@ int test_sink_concurrent_wire_and_notify() {
 	std::atomic<bool> woken{false};
 	std::thread wait_thread([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		bool ok = cv.wait_for(lock, std::chrono::seconds(1), [&]() {
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+		bool ok = cv.wait_until(lock, deadline, [&]() {
 			int val = consumer.Pop();
 			if (val != 0) {
 				received_val.store(val, std::memory_order_release);
@@ -161,11 +286,14 @@ int test_sink_concurrent_wire_and_notify() {
 			}
 			return false;
 		});
-		woken.store(ok, std::memory_order_release);
+		woken.store(ok && std::chrono::steady_clock::now() < deadline, std::memory_order_release);
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	producer.Push(200, 7777);
+	{
+		std::lock_guard<std::mutex> lock(m);
+		producer.Push(200, 7777);
+	}
 
 	wait_thread.join();
 	ASSERT_TRUE("test_sink_concurrent_wire_and_notify woken by push", woken.load(std::memory_order_acquire));
@@ -306,6 +434,10 @@ int test_sink_pop_custom_select() {
 	RETURN_TEST("test_sink_pop_custom_select", 0);
 }
 
+/**
+ * @brief Selector exceptions do not dequeue any bucket.
+ * @return Zero on success.
+ */
 int test_sink_pop_selector_exception_preserves_items() {
 	constexpr auto fn = "test_sink_pop_selector_exception_preserves_items";
 	Sink<int> producer;
@@ -316,7 +448,7 @@ int test_sink_pop_selector_exception_preserves_items() {
 	producer.Push(2, 222);
 
 	const auto fail = [](StormByte::Size) -> StormByte::Size {
-		throw std::runtime_error("selector failure");
+		throw StormByte::Exception("selector failure");
 	};
 	ASSERT_EQUAL(fn, 0, consumer.Pop(fail));
 	ASSERT_EQUAL(fn, StormByte::Size{1}, consumer.Size(1));
@@ -324,6 +456,196 @@ int test_sink_pop_selector_exception_preserves_items() {
 	ASSERT_EQUAL(fn, 111, consumer.Pop());
 	ASSERT_EQUAL(fn, 222, consumer.Pop());
 	RETURN_TEST(fn, 0);
+}
+
+/**
+ * @brief Borrowed mutable and move-only selectors preserve their original captures.
+ * @return Zero on success.
+ */
+int test_sink_selector_borrowed_state() {
+	constexpr auto name = "test_sink_selector_borrowed_state";
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
+	producer.To(2) >> consumer;
+	producer.Push(1, 11);
+	producer.Push(2, 22);
+	producer.Push(1, 33);
+	producer.Push(2, 44);
+	int calls = 0;
+	auto selector = [state = std::make_unique<std::size_t>(0), &calls](StormByte::Size count) mutable {
+		++calls;
+		return StormByte::Size{(*state)++ % static_cast<std::size_t>(count)};
+	};
+	ASSERT_EQUAL(name, 11, consumer.Pop(selector));
+	ASSERT_EQUAL(name, 22, consumer.Pop(selector));
+	ASSERT_EQUAL(name, 2, calls);
+	ASSERT_EQUAL(name, 33, consumer.Pop([&calls](StormByte::Size) {
+		++calls;
+		return StormByte::Size{20};
+	}));
+	ASSERT_EQUAL(name, 44, consumer.Pop());
+	ASSERT_EQUAL(name, 3, calls);
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Explicit Safe selectors report failure, missing context and successful output.
+ * @return Zero on success.
+ */
+int test_sink_safe_selector_status() {
+	constexpr auto name = "test_sink_safe_selector_status";
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
+	producer.To(2) >> consumer;
+	producer.Push(1, 11);
+	producer.Push(2, 22);
+	auto* status = ::new (StormByte::Safe::Heap::Allocate(sizeof(StormByte::Safe::Status)))
+		StormByte::Safe::Status(StormByte::Safe::Status::Failure);
+	const auto invoke = [](void* context, StormByte::Size* output, StormByte::Size) {
+		*output = StormByte::Size{1};
+		return *static_cast<StormByte::Safe::Status*>(context);
+	};
+	Sink<int>::Select selector(status, invoke,
+		[](const void* context) noexcept -> void* {
+			try {
+				return ::new (StormByte::Safe::Heap::Allocate(sizeof(StormByte::Safe::Status)))
+					StormByte::Safe::Status(*static_cast<const StormByte::Safe::Status*>(context));
+			}
+			catch (...) {
+				return nullptr;
+			}
+		},
+		[](void* context) noexcept {
+			StormByte::Safe::Heap::ObjectDeleter{}(static_cast<StormByte::Safe::Status*>(context));
+		});
+	StormByte::Size output{7};
+	ASSERT_EQUAL(name, StormByte::Safe::Status::Failure, selector.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(name, StormByte::Size{7}, output);
+	ASSERT_EQUAL(name, 0, consumer.Pop(selector));
+	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(2));
+	Sink<int>::Select moved(std::move(selector));
+	ASSERT_EQUAL(name, StormByte::Safe::Status::Missing, selector.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(name, StormByte::Size{7}, output);
+	ASSERT_EQUAL(name, 0, consumer.Pop(selector));
+	*status = StormByte::Safe::Status::Success;
+	ASSERT_EQUAL(name, StormByte::Safe::Status::Success, moved.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(name, StormByte::Size{1}, output);
+	ASSERT_EQUAL(name, 22, consumer.Pop(moved));
+	ASSERT_EQUAL(name, 11, consumer.Pop());
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Safe selector copies own independent state and Pop neither clones nor releases the borrow.
+ * @return Zero on success.
+ */
+int test_sink_safe_selector_provider_release() {
+	constexpr auto name = "test_sink_safe_selector_provider_release";
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
+	producer.Push(1, 42);
+	int releases = 0;
+	int clones = 0;
+	/**
+	 * @brief Provider-owned selector state with borrowed lifetime counters.
+	 */
+	struct Context {
+		/**
+		 * @brief Independent selection counter owned by each callback.
+		 */
+		std::size_t next;
+		/**
+		 * @brief Borrowed release counter that outlives every callback.
+		 */
+		int* releases;
+		/**
+		 * @brief Borrowed clone counter that outlives every callback.
+		 */
+		int* clones;
+	};
+	{
+		auto* context = ::new (StormByte::Safe::Heap::Allocate(sizeof(Context))) Context{0, &releases, &clones};
+		Sink<int>::Select selector(context,
+			[](void* context, StormByte::Size* output, StormByte::Size count) {
+				auto* state = static_cast<Context*>(context);
+				*output = StormByte::Size{state->next++ % static_cast<std::size_t>(count)};
+				return StormByte::Safe::Status::Success;
+			},
+			[](const void* context) noexcept -> void* {
+				try {
+					auto* copy = ::new (StormByte::Safe::Heap::Allocate(sizeof(Context)))
+						Context(*static_cast<const Context*>(context));
+					++*copy->clones;
+					return copy;
+				}
+				catch (...) {
+					return nullptr;
+				}
+			},
+			[](void* context) noexcept {
+				auto* state = static_cast<Context*>(context);
+				++*state->releases;
+				StormByte::Safe::Heap::ObjectDeleter{}(state);
+			});
+		ASSERT_EQUAL(name, 42, consumer.Pop(selector));
+		ASSERT_EQUAL(name, 0, releases);
+		ASSERT_EQUAL(name, 0, clones);
+		{
+			Sink<int>::Select copy(selector);
+			ASSERT_EQUAL(name, 1, clones);
+			StormByte::Size output{9};
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{1}, output);
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{2}, output);
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{1}, output);
+			copy = selector;
+			ASSERT_EQUAL(name, 2, clones);
+			ASSERT_EQUAL(name, 1, releases);
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{2}, output);
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{0}, output);
+			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(name, StormByte::Size{2}, output);
+		}
+		ASSERT_EQUAL(name, 2, releases);
+	}
+	ASSERT_EQUAL(name, 3, releases);
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief A selector must run before dequeue even when only one bucket exists.
+ * @return Zero on success.
+ */
+int test_sink_single_bucket_selector_failure() {
+	constexpr auto name = "test_sink_single_bucket_selector_failure";
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
+	producer.Push(1, 42);
+	int calls = 0;
+	const auto safe_failure = [&calls](StormByte::Size count) -> StormByte::Size {
+		++calls;
+		if (count == StormByte::Size{1})
+			throw StormByte::Exception("selector failure");
+		return StormByte::Size{0};
+	};
+	ASSERT_EQUAL(name, 0, consumer.Pop(safe_failure));
+	const auto foreign_failure = [](StormByte::Size) -> StormByte::Size {
+		throw 7;
+	};
+	ASSERT_EQUAL(name, 0, consumer.Pop(foreign_failure));
+	ASSERT_EQUAL(name, 1, calls);
+	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(name, 42, consumer.Pop());
+	RETURN_TEST(name, 0);
 }
 
 /**
@@ -374,12 +696,15 @@ int test_sink_notify_condition_variable() {
 	std::atomic<int> read_val{-1};
 	std::thread consumer_thread([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return consumer.Ready(); });
-		read_val.store(consumer.Pop(), std::memory_order_release);
+		if (cv.wait_for(lock, std::chrono::seconds(1), [&]() { return consumer.Ready(); }))
+			read_val.store(consumer.Pop(), std::memory_order_release);
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	producer.Push(1, 555);
+	{
+		std::lock_guard<std::mutex> lock(m);
+		producer.Push(1, 555);
+	}
 	consumer_thread.join();
 
 	ASSERT_EQUAL("test_sink_notify_condition_variable read value", 555, read_val.load(std::memory_order_acquire));
@@ -412,6 +737,180 @@ int test_sink_unnotify_before_cv_dies() {
 	ASSERT_TRUE("test_sink_unnotify_before_cv_dies producer eof", producer.EoF());
 
 	RETURN_TEST("test_sink_unnotify_before_cv_dies", 0);
+}
+
+/**
+ * @brief Destroying an older Sink registration must preserve a newer Sink observer.
+ * @return Zero on success.
+ */
+int test_sink_observer_identity() {
+	constexpr auto name = "test_sink_observer_identity";
+	Sink<int> producer;
+	Sink<int> newer;
+	std::condition_variable wake;
+	std::mutex mutex;
+	{
+		std::condition_variable old_wake;
+		Sink<int> older;
+		producer.To(1) >> older;
+		older >> newer;
+		older.Notify(old_wake);
+		newer.Notify(wake);
+		older.Unnotify();
+		older.Unnotify();
+		older.Notify(wake);
+		newer.Notify(wake);
+	}
+	std::atomic<bool> waiting{false};
+	bool notified = false;
+	std::thread waiter([&] {
+		std::unique_lock<std::mutex> lock(mutex);
+		waiting.store(true, std::memory_order_release);
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+		notified = wake.wait_until(lock, deadline, [&] { return newer.Ready(); })
+			&& std::chrono::steady_clock::now() < deadline;
+	});
+	while (!waiting.load(std::memory_order_acquire))
+		std::this_thread::yield();
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		producer.Push(1, 42);
+	}
+	waiter.join();
+	ASSERT_TRUE(name, notified);
+	ASSERT_EQUAL(name, 42, newer.Pop(1));
+	newer.Unnotify();
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Rebinding and destruction unregister observers from retained producer hoppers.
+ * @return Zero on success.
+ */
+int test_sink_observer_rebind_and_destruction() {
+	constexpr auto name = "test_sink_observer_rebind_and_destruction";
+	Sink<int> first;
+	Sink<int> second;
+	{
+		std::condition_variable wake;
+		Sink<int> consumer;
+		first.To(1) >> consumer;
+		consumer.Notify(wake);
+		second.To(1) >> consumer;
+		second.To(2) >> consumer;
+	}
+	first.Push(1, 11);
+	second.Push(1, 22);
+	second.Push(2, 33);
+	first.Eof();
+	second.Eof();
+	ASSERT_EQUAL(name, StormByte::Size{1}, first.Size(1));
+	ASSERT_EQUAL(name, StormByte::Size{1}, second.Size(1));
+	ASSERT_EQUAL(name, StormByte::Size{1}, second.Size(2));
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Closing a rebound Sink releases its writer hold on the replaced hopper.
+ * @return Zero on success.
+ */
+int test_sink_rebound_writer_eof() {
+	constexpr auto name = "test_sink_rebound_writer_eof";
+	Sink<int> original;
+	Sink<int> consumer;
+	Sink<int> replacement;
+	original.To(1) >> consumer;
+	original.Push(1, 42);
+	replacement.To(1) >> original;
+	original.Eof();
+	ASSERT_EQUAL(name, 42, consumer.Pop(1));
+	ASSERT_TRUE(name, consumer.EoF());
+	replacement.Eof();
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Destroying a joined writer removes its observer before closing a shared hopper.
+ * @return Zero on success.
+ */
+int test_sink_writer_destruction() {
+	constexpr auto name = "test_sink_writer_destruction";
+	Sink<int> consumer;
+	{
+		std::condition_variable wake;
+		Sink<int> producer;
+		producer.To(1) >> consumer;
+		producer.Notify(wake);
+		producer.Push(1, 42);
+	}
+	ASSERT_EQUAL(name, 42, consumer.Pop(1));
+	ASSERT_TRUE(name, consumer.EoF());
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Closed wiring does not prevent release of existing writer holds.
+ * @return Zero on success.
+ */
+int test_sink_closed_binding_writer_release() {
+	constexpr auto name = "test_sink_closed_binding_writer_release";
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> closed;
+	producer.To(1) >> consumer;
+	closed.Eof();
+	closed.To(2) >> producer;
+	producer.Eof();
+	producer.Eof();
+	ASSERT_TRUE(name, consumer.EoF());
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief A closed co-writer cannot enqueue while another writer keeps the hopper open.
+ * @return Zero on success.
+ */
+int test_sink_closed_cowriter_push() {
+	constexpr auto name = "test_sink_closed_cowriter_push";
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> coworker;
+	producer.To(1) >> consumer;
+	producer.To(1) >> coworker;
+	producer.Eof();
+	producer.Push(1, 11);
+	ASSERT_TRUE(name, consumer.Empty(1));
+	ASSERT_FALSE(name, consumer.EoF(1));
+	coworker.Push(1, 22);
+	coworker.Eof();
+	ASSERT_EQUAL(name, 22, consumer.Pop(1));
+	ASSERT_TRUE(name, consumer.EoF());
+	RETURN_TEST(name, 0);
+}
+
+/**
+ * @brief Removal serializes concurrent wiring and Eof before the borrowed CV is destroyed.
+ * @return Zero on success.
+ */
+int test_sink_observer_concurrent_unnotify() {
+	constexpr auto name = "test_sink_observer_concurrent_unnotify";
+	Sink<int> producer;
+	Sink<int> consumer;
+	{
+		std::condition_variable wake;
+		consumer.Notify(wake);
+		std::thread wiring([&] {
+			for (int key = 0; key < 100; ++key)
+				producer.To(key) >> consumer;
+		});
+		std::thread closing([&] { consumer.Eof(); });
+		consumer.Unnotify();
+		wiring.join();
+		closing.join();
+	}
+	producer.Eof();
+	ASSERT_TRUE(name, consumer.EoF());
+	RETURN_TEST(name, 0);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -450,34 +949,13 @@ int test_sink_pop_key() {
 }
 
 /**
- * @brief Over-aligned payloads retain correct queue and move alignment.
+ * @brief Provider-declared over-aligned payloads are rejected before allocation.
  * @return 0 on success.
  */
 int test_sink_overaligned_payload() {
-	struct alignas(64) Item {
-		bool aligned;
-
-		Item() noexcept
-		: aligned(reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0) {}
-
-		Item(const Item&) noexcept = default;
-
-		Item(Item&& other) noexcept
-		: aligned(other.aligned && reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0) {}
-
-		Item& operator=(Item&& other) noexcept {
-			aligned = other.aligned && reinterpret_cast<std::uintptr_t>(this) % alignof(Item) == 0;
-			return *this;
-		}
-	};
-	Sink<Item> producer;
-	Sink<Item> consumer;
-	producer.To(1) >> consumer;
-	producer.Push(1, Item{});
-	producer.Eof();
-	const auto item = consumer.Pop(1);
-	ASSERT_TRUE("test_sink_overaligned_payload aligned", item.aligned);
-	ASSERT_TRUE("test_sink_overaligned_payload drained", consumer.Empty(1));
+	static_assert(StormByte::Type::SafeValue<OveralignedValue>);
+	static_assert(!SinkAdmits<OveralignedValue>);
+	static_assert(alignof(OveralignedValue) > alignof(std::max_align_t));
 	RETURN_TEST("test_sink_overaligned_payload", 0);
 }
 
@@ -627,7 +1105,10 @@ int test_sink_rewire_same_writer_eof() {
 		}), std::memory_order_release);
 	});
 
-	src.Eof();
+	{
+		std::lock_guard<std::mutex> lock(m);
+		src.Eof();
+	}
 	waiter.join();
 
 	ASSERT_TRUE("test_sink_rewire_same_writer_eof dest eof within 1s (would hang remuxer)",
@@ -733,8 +1214,8 @@ int test_sink_wire_all_hoppers() {
  * @return 0 on success.
  */
 int test_sink_wire_and_push_pop() {
-	Sink<std::shared_ptr<std::string>> producer;
-	Sink<std::shared_ptr<std::string>> consumer;
+	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> producer;
+	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> consumer;
 
 	producer.To(10) >> consumer;
 	producer.To(20) >> consumer;
@@ -742,8 +1223,8 @@ int test_sink_wire_and_push_pop() {
 	producer.Capacity(10, 5);
 	ASSERT_EQUAL("test_sink_wire_and_push_pop capacity key 10", StormByte::Size{5}, producer.Capacity(10));
 
-	producer.Push(10, std::make_shared<std::string>("String-10"));
-	producer.Push(20, std::make_shared<std::string>("String-20"));
+	producer.Push(10, StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("String-10"));
+	producer.Push(20, StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("String-20"));
 
 	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 10", StormByte::Size{1}, consumer.Size(10));
 	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 20", StormByte::Size{1}, consumer.Size(20));
@@ -802,11 +1283,22 @@ int main() {
 	failed += test_sink_overaligned_payload();
 	failed += test_sink_pop_custom_select();
 	failed += test_sink_pop_selector_exception_preserves_items();
+	failed += test_sink_selector_borrowed_state();
+	failed += test_sink_safe_selector_status();
+	failed += test_sink_safe_selector_provider_release();
+	failed += test_sink_single_bucket_selector_failure();
 	failed += test_sink_push_waiting_for_wire();
 
 	// Notify / Unnotify
 	failed += test_sink_notify_condition_variable();
 	failed += test_sink_unnotify_before_cv_dies();
+	failed += test_sink_observer_identity();
+	failed += test_sink_observer_rebind_and_destruction();
+	failed += test_sink_rebound_writer_eof();
+	failed += test_sink_writer_destruction();
+	failed += test_sink_closed_binding_writer_release();
+	failed += test_sink_closed_cowriter_push();
+	failed += test_sink_observer_concurrent_unnotify();
 
 	// Query / keyed Pop
 	failed += test_sink_pop_key();

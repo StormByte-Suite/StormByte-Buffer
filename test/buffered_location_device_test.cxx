@@ -72,6 +72,21 @@ using StormByte::Buffer::IO::State;
 using StormByte::Buffer::IO::Status;
 using StormByte::System::Device;
 
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::BufferedReader>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::BufferedWriter>);
+static_assert(StormByte::Type::MaybeSafe<BufferedLocationReader>);
+static_assert(StormByte::Type::MaybeSafe<BufferedLocationWriter>);
+static_assert(StormByte::Type::MaybeSafe<BufferedFileReader>);
+static_assert(StormByte::Type::MaybeSafe<BufferedFileWriter>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::ReadTelemetry>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::WriteTelemetry>);
+static_assert(StormByte::Type::SafeValue<Result>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::ReadAhead>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::MaxMemory>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::MaxWait>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::WriteChunk>);
+static_assert(StormByte::Type::MaybeSafe<StormByte::Buffer::IO::BackPressure>);
+
 namespace {
 	constexpr StormByte::ByteSize kFakeRead{123456};
 	constexpr StormByte::ByteSize kFakeWrite{65432};
@@ -139,7 +154,7 @@ namespace {
 				return { Status::Ok, 0 };
 			}
 
-			std::optional<StormByte::ByteSize> OriginSize() const noexcept override {
+			StormByte::Safe::Optional<StormByte::ByteSize> OriginSize() const noexcept override {
 				return StormByte::ByteSize{0};
 			}
 
@@ -243,8 +258,8 @@ namespace {
 				return { Status::Ok, 0 };
 			}
 
-			std::optional<StormByte::ByteSize> OriginSize() const noexcept override {
-				return std::nullopt;
+			StormByte::Safe::Optional<StormByte::ByteSize> OriginSize() const noexcept override {
+				return {};
 			}
 
 		private:
@@ -374,6 +389,101 @@ namespace {
 		RETURN_TEST(fn, 0);
 	}
 
+	/**
+	 * @brief Reader size hooks preserve unknown and known-empty results.
+	 * @return Zero on success.
+	 */
+	int OptionalSizeDistinguishesUnknownFromEmpty() {
+		constexpr auto name = "OptionalSizeDistinguishesUnknownFromEmpty";
+		FakeReader empty_reader(DevicePolicy::Empty);
+		ThrowingReader unknown_reader(ThrowingHook::Pull);
+		const auto empty_size = empty_reader.Size();
+		const auto unknown_size = unknown_reader.Size();
+		static_assert(StormByte::Type::SameAs<decltype(empty_reader.Size()),
+			StormByte::Safe::Optional<StormByte::ByteSize>>);
+		ASSERT_TRUE(name, empty_size.has_value());
+		ASSERT_EQUAL(name, StormByte::ByteSize{0}, *empty_size);
+		ASSERT_FALSE(name, unknown_size.has_value());
+		RETURN_TEST(name, 0);
+	}
+
+	/**
+	 * @brief Safe-owned parameter operations preserve absent knobs, explicit zero and signed waits.
+	 * @return Zero on success.
+	 */
+	int ParameterSpecialOperationsPreserveKnobs() {
+		constexpr auto name = "ParameterSpecialOperationsPreserveKnobs";
+		using namespace StormByte::Buffer::IO;
+		static_assert(StormByte::Type::SafeValue<std::chrono::milliseconds::rep>);
+		static_assert(!noexcept(BufferedFileReader::Parameters{}));
+		static_assert(!noexcept(BufferedFileWriter::Parameters{}));
+		static_assert(!noexcept(BufferedFileReader::Parameters(std::declval<const BufferedFileReader::Parameters&>())));
+		static_assert(!noexcept(BufferedFileWriter::Parameters(std::declval<const BufferedFileWriter::Parameters&>())));
+		static_assert(!noexcept(std::declval<BufferedFileReader::Parameters&>() = std::declval<const BufferedFileReader::Parameters&>()));
+		static_assert(!noexcept(std::declval<BufferedFileWriter::Parameters&>() = std::declval<const BufferedFileWriter::Parameters&>()));
+		static_assert(noexcept(BufferedFileReader::Parameters(std::declval<BufferedFileReader::Parameters&&>())));
+		static_assert(noexcept(BufferedFileWriter::Parameters(std::declval<BufferedFileWriter::Parameters&&>())));
+		BufferedFileReader::Parameters reader(ReadAhead(0), MaxWait(std::chrono::milliseconds{7}));
+		static_assert(StormByte::Type::SameAs<decltype(reader.ReadAhead()),
+			const StormByte::Safe::Optional<StormByte::ByteSize>&>);
+		static_assert(StormByte::Type::SameAs<decltype(reader.MaxMemory()),
+			const StormByte::Safe::Optional<StormByte::ByteSize>&>);
+		static_assert(StormByte::Type::SameAs<decltype(reader.MaxWait()),
+			const StormByte::Safe::Optional<std::chrono::milliseconds::rep>&>);
+		BufferedFileReader::Parameters reader_copy(reader);
+		BufferedFileReader::Parameters reader_move(std::move(reader_copy));
+		ASSERT_FALSE(name, reader_copy.ReadAhead().has_value());
+		ASSERT_FALSE(name, reader_copy.MaxWait().has_value());
+		reader_copy = reader_move;
+		reader = std::move(reader_copy);
+		ASSERT_TRUE(name, reader.ReadAhead().has_value());
+		ASSERT_EQUAL(name, StormByte::ByteSize{0}, *reader.ReadAhead());
+		ASSERT_FALSE(name, reader.MaxMemory().has_value());
+		ASSERT_EQUAL(name, std::chrono::milliseconds::rep{7}, *reader.MaxWait());
+
+		BufferedFileWriter::Parameters writer(WriteChunk(0), BackPressure(0), MaxMemory(32));
+		static_assert(StormByte::Type::SameAs<decltype(writer.WriteChunk()),
+			const StormByte::Safe::Optional<StormByte::ByteSize>&>);
+		static_assert(StormByte::Type::SameAs<decltype(writer.BackPressure()),
+			const StormByte::Safe::Optional<std::size_t>&>);
+		static_assert(StormByte::Type::SameAs<decltype(writer.MaxMemory()),
+			const StormByte::Safe::Optional<StormByte::ByteSize>&>);
+		static_assert(StormByte::Type::SameAs<decltype(writer.MaxWait()),
+			const StormByte::Safe::Optional<std::chrono::milliseconds::rep>&>);
+		BufferedFileWriter::Parameters writer_copy(writer);
+		BufferedFileWriter::Parameters writer_move(std::move(writer_copy));
+		ASSERT_FALSE(name, writer_copy.WriteChunk().has_value());
+		ASSERT_FALSE(name, writer_copy.BackPressure().has_value());
+		ASSERT_FALSE(name, writer_copy.MaxMemory().has_value());
+		writer_copy = writer_move;
+		writer = std::move(writer_copy);
+		ASSERT_TRUE(name, writer.WriteChunk().has_value());
+		ASSERT_EQUAL(name, StormByte::ByteSize{0}, *writer.WriteChunk());
+		ASSERT_TRUE(name, writer.BackPressure().has_value());
+		ASSERT_EQUAL(name, std::size_t{0}, *writer.BackPressure());
+		ASSERT_EQUAL(name, StormByte::ByteSize{32}, *writer.MaxMemory());
+		ASSERT_FALSE(name, writer.MaxWait().has_value());
+
+		const BufferedFileReader::Parameters omitted_reader;
+		const BufferedFileWriter::Parameters omitted_writer;
+		ASSERT_FALSE(name, omitted_reader.MaxWait().has_value());
+		ASSERT_FALSE(name, omitted_writer.MaxWait().has_value());
+		for (const auto wait: { std::chrono::milliseconds{0}, std::chrono::milliseconds{-7},
+				std::chrono::milliseconds::min(), std::chrono::milliseconds::max() }) {
+			const BufferedFileReader::Parameters signed_reader(MaxWait{wait});
+			const BufferedFileWriter::Parameters signed_writer(MaxWait{wait});
+			const auto signed_reader_copy = signed_reader;
+			const auto signed_writer_copy = signed_writer;
+			ASSERT_TRUE(name, signed_reader_copy.MaxWait().has_value());
+			ASSERT_TRUE(name, signed_writer_copy.MaxWait().has_value());
+			ASSERT_EQUAL(name, wait.count(), signed_reader_copy.MaxWait().value());
+			ASSERT_EQUAL(name, wait.count(), signed_writer_copy.MaxWait().value());
+			ASSERT_EQUAL(name, wait, (std::chrono::milliseconds{signed_reader_copy.MaxWait().value_or(1)}));
+			ASSERT_EQUAL(name, wait, (std::chrono::milliseconds{signed_writer_copy.MaxWait().value_or(1)}));
+		}
+		RETURN_TEST(name, 0);
+	}
+
 	int OriginHookExceptionsBecomeDomainFailures() {
 		const char* fn = "OriginHookExceptionsBecomeDomainFailures";
 		ThrowingReader open_reader(ThrowingHook::Open);
@@ -408,6 +518,8 @@ int main() {
 	result += WriterSetupFallsBackOnUnusableDevice();
 	result += FileReaderKeepsProbeBehaviour();
 	result += FileWriterKeepsProbeBehaviour();
+	result += OptionalSizeDistinguishesUnknownFromEmpty();
+	result += ParameterSpecialOperationsPreserveKnobs();
 	result += OriginHookExceptionsBecomeDomainFailures();
 
 	if (result == 0)

@@ -75,10 +75,11 @@ namespace StormByte {
 		 *
 		 * Each @ref Pipe receives the previous end and writes the
 		 * next. Intermediate pipes use a private SPSC ring; the
-		 * last writes a public @ref Producer. @ref Add clones or
-		 * moves the pipe onto Base's heap. A const add leaves the
-		 * caller's @ref Pipe untouched; that object is destroyed
-		 * in the caller's translation unit.
+		 * last writes a public @ref Producer. @ref Add copies or moves
+		 * a value-owned pipe. Copies deep-clone creator-owned callable state;
+		 * a const add leaves the caller's pipe and captures untouched.
+		 * Copying a running pipeline must be externally serialized with its
+		 * callbacks; copying does not share buffers, workers or value captures.
 		 *
 		 * @par Execution modes
 		 * Flags combine with @c operator|:
@@ -142,14 +143,15 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Clone @p pipe into this Pipeline. @p pipe is not touched.
-				 * @param pipe Caller pipe. Destroyed in the caller's TU.
+				 * @brief Copy @p pipe and independently clone its callable state.
+				 * @param pipe Caller pipe; left untouched.
+				 * @throws StormByte::Exception Callback context cloning failed.
 				 */
 				void Add(const Pipe& pipe);
 
 				/**
 				 * @brief Take @p pipe by move into this Pipeline.
-				 * @param pipe Caller pipe. Moved-from must not be used.
+				 * @param pipe Caller pipe; its moved-from callback reports Missing.
 				 */
 				void Add(Pipe&& pipe);
 
@@ -173,7 +175,8 @@ namespace StormByte {
 				 * @param log Optional. Pipes receive a scoped shared handle.
 				 * @param mode @ref ExecutionMode flags.
 				 * @return Consumer of the last pipe.
-				 * @note Exceptions from a pipe or pipeline setup mark outputs errored;
+				 * @note Failure, Missing or exceptions from a pipe mark all outputs errored
+				 *       and wake waiters. Exceptions from pipeline setup also mark outputs errored;
 				 *       none escape this noexcept boundary.
 				 */
 				Consumer Process(Consumer buffer,
@@ -191,7 +194,18 @@ namespace StormByte {
 				 */
 				struct Backend;
 
-				std::unique_ptr<Backend> m_io;	///< Opaque coordinator.
+				/**
+				 * @brief Opaque coordinator allocated, replaced and destroyed only in Buffer.
+				 */
+				std::unique_ptr<Backend> m_io;
 		};
 	}
 }
+
+/**
+ * @brief Pipeline ownership and worker teardown are implemented entirely in Buffer.
+ * @note Buffer, Base, Logger and pipe providers must remain loaded with a compatible ABI.
+ *       Pipe copies clone independent context and release through the creator callback.
+ *       Workers must complete before teardown; owner operations must be externally serialized.
+ */
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Pipeline);

@@ -61,6 +61,11 @@ namespace {
 	}
 }
 
+BufferedFileReader::BufferedFileReader(StormByte::Safe::String path,
+		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
+		const std::chrono::milliseconds max_wait, const bool probe):
+	BufferedLocationReader(std::move(path), Location::Local, read_ahead, max_memory, max_wait, probe) {}
+
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	BufferedLocationReader(std::move(other)),
 	m_file(std::move(other.m_file)),
@@ -171,7 +176,7 @@ Result BufferedFileReader::OriginPull(const StormByte::ByteSize n, FIFO& dest) {
 	if (!ended && m_size.has_value()) {
 		const auto pos = m_file.tellg();
 		if (pos != std::streampos(-1)
-				&& StormByte::ByteSize{static_cast<std::size_t>(pos)} >= *m_size)
+				&& StormByte::ByteSize{static_cast<std::size_t>(pos)} >= static_cast<StormByte::ByteSize>(*m_size))
 			ended = true;
 	}
 	if (ended)
@@ -199,6 +204,8 @@ Result BufferedFileReader::OriginSeek(const std::ptrdiff_t offset, const Positio
 	return { IO::Status::Ok, 0 };
 }
 
-std::optional<StormByte::ByteSize> BufferedFileReader::OriginSize() const noexcept {
-	return m_size;
+StormByte::Safe::Optional<StormByte::ByteSize> BufferedFileReader::OriginSize() const noexcept {
+	if (!m_size.has_value())
+		return {};
+	return *m_size;
 }
