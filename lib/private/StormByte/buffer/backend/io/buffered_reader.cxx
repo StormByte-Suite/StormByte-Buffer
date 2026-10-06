@@ -246,10 +246,18 @@ void BufferedReader::Shutdown() {
 }
 
 bool BufferedReader::Rewind() {
+	bool seekable = false;
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open)
 			return false;
+		// A faulted session, or a pipe, still needs a new origin.
+		seekable = m_owner && m_owner->OriginCanSeek()
+			&& !m_failed && m_state == StormByte::Buffer::IO::State::Idle;
+	}
+	if (seekable) {
+		const Result seeked = Seek(0, Position::Absolute);
+		return seeked.status == Status::Ok;
 	}
 	static_cast<void>(Close());
 	return Open();

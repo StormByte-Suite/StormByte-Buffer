@@ -208,8 +208,15 @@ namespace StormByte {
 						void Shutdown();
 
 						/**
-						 * @brief @ref Close then @ref Open when currently armed.
-						 * @return @c true if Idle afterwards.
+						 * @brief Move the logical cursor to offset 0.
+						 * @return @c true if the session is Idle afterwards.
+						 *         @c false if not currently armed, or if a seekable rewind fails.
+						 *
+						 * A seekable, healthy origin keeps its page map and does not call
+						 * @ref OriginClose or @ref OriginOpen. The device cursor moves only
+						 * on a later pull that misses the map. A faulted session, or an
+						 * origin that cannot seek, still re-arms with @ref Close then @ref Open
+						 * and drops the cache. Accumulators are not reset.
 						 */
 						bool Rewind();
 
