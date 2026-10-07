@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/safe/owner.hxx>
 
@@ -66,7 +68,7 @@ namespace StormByte {
 		 *
 		 * @see Consumer, Ring, WriteOnly
 		 */
-		class STORMBYTE_BUFFER_PUBLIC Producer final : public WriteOnly {
+		class STORMBYTE_BUFFER_PUBLIC Producer final: public WriteOnly {
 			public:
 				/**
 				 * @name Lifecycle
@@ -74,48 +76,48 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Construct a Producer with a new shared @ref Ring.
-				 * @throws StormByte::AllocationError If Ring ownership cannot be allocated.
+				 * @brief Create a Producer and a new shared Ring.
+				 * @throws StormByte::Safe::AllocationError Ring ownership cannot be allocated.
 				 */
 				Producer();
 
 				/**
-				 * @brief Share the Ring of a @ref Consumer.
+				 * @brief Share the Ring of a Consumer.
 				 * @param consumer Consumer whose Ring is shared.
-				 * @throws StormByte::Exception If the shared owner cannot be retained.
+				 * @throws StormByte::Exception The shared owner cannot be retained.
 				 */
 				Producer(const Consumer& consumer);
 
 				/**
-				 * @brief Copy constructor. Shares the same Ring.
-				 * @param other Source Producer.
-				 * @throws StormByte::Exception If the shared owner cannot be retained.
+				 * @brief Copy a Producer. Both share the same Ring.
+				 * @param other Source.
+				 * @throws StormByte::Exception The shared owner cannot be retained.
 				 */
 				Producer(const Producer& other);
 
 				/**
-				 * @brief Move constructor.
-				 * @param other Source Producer.
+				 * @brief Take a Producer.
+				 * @param other Source.
 				 */
 				Producer(Producer&& other) noexcept;
 
 				/**
-				 * @brief Destructor.
+				 * @brief Destroy the Producer.
 				 */
 				~Producer() noexcept override;
 
 				/**
-				 * @brief Copy assignment. Shares the same Ring afterwards.
-				 * @param other Source Producer.
-				 * @return *this.
-				 * @throws StormByte::Exception If the shared owner cannot be retained.
+				 * @brief Copy-assign a Producer. Both share the same Ring afterwards.
+				 * @param other Source.
+				 * @return This Producer.
+				 * @throws StormByte::Exception The shared owner cannot be retained.
 				 */
 				Producer& operator=(const Producer& other);
 
 				/**
-				 * @brief Move assignment.
-				 * @param other Source Producer.
-				 * @return *this.
+				 * @brief Move-assign a Producer.
+				 * @param other Source.
+				 * @return This Producer.
 				 */
 				Producer& operator=(Producer&& other) noexcept;
 
@@ -129,16 +131,16 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Equality. Same underlying Ring instance.
+				 * @brief Compare two Producers.
 				 * @param other Other Producer.
-				 * @return @c true if both refer to the same Ring.
+				 * @return Whether both refer to the same Ring.
 				 */
 				bool operator==(const Producer& other) const noexcept;
 
 				/**
-				 * @brief Inequality.
+				 * @brief Compare two Producers.
 				 * @param other Other Producer.
-				 * @return @c true if the Rings differ.
+				 * @return Whether the Rings differ.
 				 */
 				inline bool operator!=(const Producer& other) const noexcept {
 					return !(*this == other);
@@ -154,25 +156,25 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Close the shared Ring for further writes.
-				 * @details Later writes fail. Readers may still drain. Waiters are notified.
+				 * @brief Close the shared Ring for further writes and notify waiters.
+				 * @details Later writes fail. Readers may still drain.
 				 */
 				void Close() noexcept override;
 
 				/**
-				 * @brief Permanent error on the shared Ring. Notifies waiters.
+				 * @brief Put the shared Ring in a permanent error state and notify waiters.
 				 */
 				void SetError() noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring still accepts writes.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
 				bool IsWritable() const noexcept override;
 
 				/**
-				 * @brief Bytes stored in the shared Ring right now.
-				 * @return Size in bytes. 0 if empty.
+				 * @brief Bytes stored in the shared Ring.
+				 * @return Size in bytes. Zero if empty.
 				 */
 				StormByte::ByteSize Size() const noexcept override;
 
@@ -186,57 +188,57 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Append bytes from a @ref StormByte::BinaryData (copy).
+				 * @brief Append bytes from owned storage (copy).
 				 * @param count Bytes to write.
 				 * @param data Source.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
-				bool Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, const StormByte::Safe::Binary& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref StormByte::BinaryData (copy).
+				 * @brief Append an entire owned buffer (copy).
 				 * @param data Source.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
-				inline bool Write(const BinaryData& data) noexcept {
+				inline bool Write(const StormByte::Safe::Binary& data) noexcept {
 					return Write(data.size(), data);
 				}
 
 				/**
-				 * @brief Append bytes from a @ref StormByte::BinaryData (move).
+				 * @brief Append bytes from owned storage (move).
 				 * @param count Bytes to write.
 				 * @param data Source.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
-				bool Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept override;
+				bool Write(const StormByte::ByteSize& count, StormByte::Safe::Binary&& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref StormByte::BinaryData (move).
+				 * @brief Append an entire owned buffer (move).
 				 * @param data Source.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
-				inline bool Write(BinaryData&& data) noexcept {
+				inline bool Write(StormByte::Safe::Binary&& data) noexcept {
 					return Write(data.size(), std::move(data));
 				}
 
 				/**
-				 * @brief Append bytes from a @ref ReadOnly (copy).
+				 * @brief Append bytes from a readable buffer (copy).
 				 * @param count Bytes to write.
 				 * @param data Source buffer.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
 				bool Write(const StormByte::ByteSize& count, const ReadOnly& data) noexcept override;
 
 				/**
-				 * @brief Append bytes from a @ref ReadOnly (extract).
+				 * @brief Append bytes from a readable buffer (extract path).
 				 * @param count Bytes to write.
 				 * @param data Source buffer.
-				 * @return @c false if closed or in error.
+				 * @return False if closed or in error.
 				 */
 				bool Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept override;
 
 				/**
-				 * @brief Bring @ref WriteOnly convenience Write overloads into scope.
+				 * @brief Bring the WriteOnly convenience Write overloads into scope.
 				 */
 				using WriteOnly::Write;
 
@@ -245,16 +247,13 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Consumer that shares this Producer’s Ring.
+				 * @brief Consumer that shares this Producer's Ring.
 				 * @return Consumer bound to the same store.
 				 */
 				class Consumer Consumer();
 
 			private:
-				/**
-				 * @brief Opaque shared Ring ownership with Buffer-local retain and release callbacks.
-				 */
-				StormByte::Safe::Owner m_buffer;
+				StormByte::Safe::Owner m_buffer;	///< Shared Ring ownership.
 
 				/**
 				 * @brief Borrow the Ring held by this handle.
@@ -268,6 +267,6 @@ namespace StormByte {
 /**
  * @brief Producer ownership relies on Buffer's module-local Ring callbacks.
  * @note Buffer and Base must remain loaded with a compatible ABI until all handles are released.
- *       Copies share storage; they do not clone the Ring or transfer its private STL ownership.
+ *       Copies share storage. They do not clone the Ring or transfer its private ownership.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Producer);

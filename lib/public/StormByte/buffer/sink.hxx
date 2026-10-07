@@ -41,15 +41,17 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/hopper.hxx>
+#include <StormByte/safe/atomic.hxx>
+#include <StormByte/safe/condition_variable.hxx>
 #include <StormByte/safe/function.hxx>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/safe/vector.hxx>
 #include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
 
-#include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <functional>
 
@@ -89,7 +91,7 @@ namespace StormByte {
 		 * borrowed condition variable dies. Base and all template, element and callback
 		 * provider modules must remain loaded, with compatible C++/STL ABI. Template
 		 * callbacks are not certified provider-local merely because they are inline.
-		 * Allocation failure in nonthrowing operations terminates the process.
+		 * Allocation failure in the nonthrowing queue operations terminates the process.
 		 */
 		template<Detail::HopperValue T>
 		class Sink {
@@ -114,32 +116,21 @@ namespace StormByte {
 
 				/**
 				 * @brief Constructs an empty Sink with zero buckets.
+				 * @throws AllocationError The coordinator cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE Sink() noexcept;
+				Sink();
 
-				/**
-				 * @brief Copy constructor is deleted (Sink is non-copyable).
-				 */
 				Sink(const Sink&) = delete;
 
-				/**
-				 * @brief Move constructor is deleted (Sink is non-movable).
-				 */
 				Sink(Sink&&) noexcept = delete;
 
 				/**
 				 * @brief Removes borrowed observers, closes writer holds and releases the coordinator after all users are joined.
 				 */
-				STORMBYTE_FORCE_INLINE ~Sink() noexcept;
+				~Sink() noexcept;
 
-				/**
-				 * @brief Copy assignment operator is deleted (Sink is non-copyable).
-				 */
 				Sink& operator=(const Sink&) = delete;
 
-				/**
-				 * @brief Move assignment operator is deleted (Sink is non-movable).
-				 */
 				Sink& operator=(Sink&&) noexcept = delete;
 
 				/**
@@ -270,7 +261,7 @@ namespace StormByte {
 				 * Notification is not a stored event. Callers must coordinate predicate checks,
 				 * waits and producer operations with the consumer's wait mutex to avoid lost wakeups.
 				 */
-				void Notify(std::condition_variable& consumer) noexcept;
+				void Notify(Safe::ConditionVariable& consumer) noexcept;
 
 				/**
 				 * @brief Registers stored notifications on current and future hoppers and Sink closure.
@@ -282,7 +273,7 @@ namespace StormByte {
 				 * remain alive until Unnotify returns. Shared hoppers retain one observer;
 				 * the latest registration wins, including its counter and owner identity.
 				 */
-				void Notify(std::condition_variable& consumer, std::atomic<std::size_t>& generation) noexcept;
+				void Notify(Safe::ConditionVariable& consumer, Safe::Atomic<std::size_t>& generation) noexcept;
 
 				/**
 				 * @brief Removes only this Sink's matching borrowed registrations.
@@ -290,7 +281,7 @@ namespace StormByte {
 				 * Call after Eof when the consumer condition variable is about
 				 * to die. Waits for active notifications and wiring; a newer registration
 				 * made by another Sink is preserved. Destruction also removes this registration.
-				 * Registration must not race destruction of any borrowed CV or event counter.
+				 * Registration must not race destruction of any borrowed condition variable or event counter.
 				 */
 				void Unnotify() noexcept;
 
@@ -510,3 +501,4 @@ namespace StormByte {
 		struct IsMaybeSafe<Buffer::Sink<T>>: std::true_type {};
 	}
 }
+

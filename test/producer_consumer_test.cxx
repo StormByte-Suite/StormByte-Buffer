@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/safe/binary.hxx>
 #include <StormByte/safe/vector.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -55,9 +56,9 @@
 #include <vector>
 
 using StormByte::Buffer::Consumer;
-using StormByte::BinaryData;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
+using StormByte::Safe::Binary;
 
 static_assert(StormByte::Type::MaybeSafe<Consumer>);
 static_assert(StormByte::Type::MaybeSafe<Producer>);
@@ -79,7 +80,7 @@ namespace {
 	static_assert(!StormByte::Type::MaybeSafe<ForeignWriteOnly>);
 	static_assert(!StormByte::Type::MaybeSafe<ForeignReadWrite>);
 
-	std::string BytesToText(const BinaryData& data) {
+	std::string BytesToText(const Binary& data) {
 		if (data.empty())
 			return {};
 		return std::string(reinterpret_cast<const char*>(data.data()),
@@ -92,37 +93,152 @@ namespace {
 // -------------------
 
 int test_consumer_producer_shares_ring() {
-	const std::string fn = "test_consumer_producer_shares_ring";
 	Producer origin;
 	auto consumer = origin.Consumer();
 	Producer tip = consumer.Producer();
-	ASSERT_TRUE(fn, origin == tip);
-	ASSERT_TRUE(fn, tip.Write("RING"));
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(4, data));
-	ASSERT_EQUAL(fn, std::string("RING"), BytesToText(data));
+	ASSERT_TRUE(origin == tip);
+	ASSERT_TRUE(tip.Write("RING"));
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(4, data));
+	ASSERT_EQUAL(std::string("RING"), BytesToText(data));
 	tip.Close();
-	ASSERT_FALSE(fn, origin.IsWritable());
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
+	ASSERT_FALSE(origin.IsWritable());
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int test_consumer_retains_ring_after_producer_destruction() {
-	const std::string fn = "test_consumer_retains_ring_after_producer_destruction";
 	Consumer consumer;
 	{
 		Producer producer;
-		ASSERT_TRUE(fn, producer.Write("kept"));
+		ASSERT_TRUE(producer.Write("kept"));
 		consumer = producer.Consumer();
 	}
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, std::string("kept"), BytesToText(data));
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(std::string("kept"), BytesToText(data));
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_basic_write_read() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	const std::string message = "Hello, World!";
+	ASSERT_TRUE(producer.Write(message));
+	producer.Close();
+	ASSERT_EQUAL(StormByte::ByteSize{message.size()}, consumer.Size());
+	ASSERT_FALSE(consumer.Empty());
+	Binary data;
+	ASSERT_TRUE(consumer.Read(StormByte::ByteSize{message.size()}, data));
+	ASSERT_EQUAL(message, BytesToText(data));
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_byte_vector_write() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	const std::string bytes = "Binary data";
+	ASSERT_TRUE(producer.Write(bytes));
+	Binary read_data;
+	ASSERT_TRUE(consumer.Read(0, read_data));
+	ASSERT_EQUAL(StormByte::ByteSize{bytes.size()}, read_data.size());
+	ASSERT_EQUAL(std::string("Binary data"), BytesToText(read_data));
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_clear_operation() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	ASSERT_TRUE(producer.Write("Some data to clear"));
+	ASSERT_FALSE(consumer.Empty());
+	consumer.Clear();
+	ASSERT_TRUE(consumer.Empty());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	ASSERT_TRUE(producer.Write("New data"));
+	ASSERT_EQUAL(StormByte::ByteSize{8}, consumer.Size());
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_close_mechanism() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	ASSERT_TRUE(producer.Write("Data"));
+	producer.Close();
+	ASSERT_FALSE(producer.Write("MoreData"));
+	ASSERT_EQUAL(StormByte::ByteSize{4}, consumer.Size());
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_copy_semantics() {
+	Producer producer1;
+	ASSERT_TRUE(producer1.Write("Original"));
+	Producer producer2 = producer1;
+	ASSERT_TRUE(producer2.Write("Added"));
+	auto consumer = producer1.Consumer();
+	Binary all;
+	ASSERT_TRUE(consumer.Read(0, all));
+	ASSERT_EQUAL(std::string("OriginalAdded"), BytesToText(all));
+	auto consumer2 = consumer;
+	ASSERT_EQUAL(consumer.Size(), consumer2.Size());
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_extract() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	ASSERT_TRUE(producer.Write("ABCDEFGH"));
+	ASSERT_EQUAL(StormByte::ByteSize{8}, consumer.Size());
+	Binary first, rest;
+	ASSERT_TRUE(consumer.Extract(3, first));
+	ASSERT_EQUAL(std::string("ABC"), BytesToText(first));
+	ASSERT_EQUAL(StormByte::ByteSize{5}, consumer.Size());
+	ASSERT_TRUE(consumer.Extract(0, rest));
+	ASSERT_EQUAL(std::string("DEFGH"), BytesToText(rest));
+	ASSERT_TRUE(consumer.Empty());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_interleaved_operations() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	ASSERT_TRUE(producer.Write("Part1"));
+	producer.Close();
+	Binary r1, r2;
+	ASSERT_TRUE(consumer.Extract(3, r1));
+	ASSERT_EQUAL(std::string("Par"), BytesToText(r1));
+	ASSERT_TRUE(consumer.Read(0, r2));
+	ASSERT_EQUAL(std::string("t1"), BytesToText(r2));
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_move_semantics() {
+	Producer producer1;
+	ASSERT_TRUE(producer1.Write("Data"));
+	Producer producer2 = std::move(producer1);
+	ASSERT_TRUE(producer2.Write("More"));
+	auto consumer = producer2.Consumer();
+	ASSERT_EQUAL(StormByte::ByteSize{8}, consumer.Size());
+	auto consumer2 = std::move(consumer);
+	Binary data;
+	ASSERT_TRUE(consumer2.Read(0, data));
+	ASSERT_EQUAL(std::string("DataMore"), BytesToText(data));
+	RETURN_TEST(0);
+}
+
+int test_producer_consumer_multiple_writes() {
+	Producer producer;
+	auto consumer = producer.Consumer();
+	ASSERT_TRUE(producer.Write("First"));
+	ASSERT_TRUE(producer.Write("Second"));
+	ASSERT_TRUE(producer.Write("Third"));
+	Binary all;
+	ASSERT_TRUE(consumer.Read(0, all));
+	ASSERT_EQUAL(std::string("FirstSecondThird"), BytesToText(all));
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_safe_collection_lifecycle() {
-	const std::string fn = "test_producer_consumer_safe_collection_lifecycle";
 	StormByte::Safe::Vector<Producer> producers;
 	StormByte::Safe::Vector<Consumer> consumers;
 	{
@@ -136,308 +252,169 @@ int test_producer_consumer_safe_collection_lifecycle() {
 	consumers.clear();
 	auto producer = producer_copies[0];
 	auto consumer = consumer_copies[0];
-	ASSERT_TRUE(fn, producer.Write("retained"));
+	ASSERT_TRUE(producer.Write("retained"));
 	producer.Close();
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, std::string("retained"), BytesToText(data));
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_basic_write_read() {
-	const std::string fn = "test_producer_consumer_basic_write_read";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	const std::string message = "Hello, World!";
-	ASSERT_TRUE(fn, producer.Write(message));
-	producer.Close();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{message.size()}, consumer.Size());
-	ASSERT_FALSE(fn, consumer.Empty());
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Read(StormByte::ByteSize{message.size()}, data));
-	ASSERT_EQUAL(fn, message, BytesToText(data));
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_byte_vector_write() {
-	const std::string fn = "test_producer_consumer_byte_vector_write";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	const std::string bytes = "Binary data";
-	ASSERT_TRUE(fn, producer.Write(bytes));
-	BinaryData read_data;
-	ASSERT_TRUE(fn, consumer.Read(0, read_data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{bytes.size()}, read_data.size());
-	ASSERT_EQUAL(fn, std::string("Binary data"), BytesToText(read_data));
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_clear_operation() {
-	const std::string fn = "test_producer_consumer_clear_operation";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("Some data to clear"));
-	ASSERT_FALSE(fn, consumer.Empty());
-	consumer.Clear();
-	ASSERT_TRUE(fn, consumer.Empty());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	ASSERT_TRUE(fn, producer.Write("New data"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, consumer.Size());
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_close_mechanism() {
-	const std::string fn = "test_producer_consumer_close_mechanism";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("Data"));
-	producer.Close();
-	ASSERT_FALSE(fn, producer.Write("MoreData"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Size());
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_copy_semantics() {
-	const std::string fn = "test_producer_consumer_copy_semantics";
-	Producer producer1;
-	ASSERT_TRUE(fn, producer1.Write("Original"));
-	Producer producer2 = producer1;
-	ASSERT_TRUE(fn, producer2.Write("Added"));
-	auto consumer = producer1.Consumer();
-	BinaryData all;
-	ASSERT_TRUE(fn, consumer.Read(0, all));
-	ASSERT_EQUAL(fn, std::string("OriginalAdded"), BytesToText(all));
-	auto consumer2 = consumer;
-	ASSERT_EQUAL(fn, consumer.Size(), consumer2.Size());
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_extract() {
-	const std::string fn = "test_producer_consumer_extract";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, consumer.Size());
-	BinaryData first, rest;
-	ASSERT_TRUE(fn, consumer.Extract(3, first));
-	ASSERT_EQUAL(fn, std::string("ABC"), BytesToText(first));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, consumer.Size());
-	ASSERT_TRUE(fn, consumer.Extract(0, rest));
-	ASSERT_EQUAL(fn, std::string("DEFGH"), BytesToText(rest));
-	ASSERT_TRUE(fn, consumer.Empty());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_interleaved_operations() {
-	const std::string fn = "test_producer_consumer_interleaved_operations";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("Part1"));
-	producer.Close();
-	BinaryData r1, r2;
-	ASSERT_TRUE(fn, consumer.Extract(3, r1));
-	ASSERT_EQUAL(fn, std::string("Par"), BytesToText(r1));
-	ASSERT_TRUE(fn, consumer.Read(0, r2));
-	ASSERT_EQUAL(fn, std::string("t1"), BytesToText(r2));
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_move_semantics() {
-	const std::string fn = "test_producer_consumer_move_semantics";
-	Producer producer1;
-	ASSERT_TRUE(fn, producer1.Write("Data"));
-	Producer producer2 = std::move(producer1);
-	ASSERT_TRUE(fn, producer2.Write("More"));
-	auto consumer = producer2.Consumer();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, consumer.Size());
-	auto consumer2 = std::move(consumer);
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer2.Read(0, data));
-	ASSERT_EQUAL(fn, std::string("DataMore"), BytesToText(data));
-	RETURN_TEST(fn, 0);
-}
-
-int test_producer_consumer_multiple_writes() {
-	const std::string fn = "test_producer_consumer_multiple_writes";
-	Producer producer;
-	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("First"));
-	ASSERT_TRUE(fn, producer.Write("Second"));
-	ASSERT_TRUE(fn, producer.Write("Third"));
-	BinaryData all;
-	ASSERT_TRUE(fn, consumer.Read(0, all));
-	ASSERT_EQUAL(fn, std::string("FirstSecondThird"), BytesToText(all));
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(std::string("retained"), BytesToText(data));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_seek_operations() {
-	const std::string fn = "test_producer_consumer_seek_operations";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("0123456789"));
+	ASSERT_TRUE(producer.Write("0123456789"));
 	producer.Close();
-	BinaryData from5, fromStart, from7;
-	ASSERT_TRUE(fn, consumer.Read(5, from5));
-	ASSERT_EQUAL(fn, std::string("01234"), BytesToText(from5));
+	Binary from5, fromStart, from7;
+	ASSERT_TRUE(consumer.Read(5, from5));
+	ASSERT_EQUAL(std::string("01234"), BytesToText(from5));
 	consumer.Seek(-5, Position::Relative);
-	ASSERT_TRUE(fn, consumer.Read(0, fromStart));
-	ASSERT_EQUAL(fn, std::string("0123456789"), BytesToText(fromStart));
+	ASSERT_TRUE(consumer.Read(0, fromStart));
+	ASSERT_EQUAL(std::string("0123456789"), BytesToText(fromStart));
 	consumer.Seek(7, Position::Absolute);
-	ASSERT_TRUE(fn, consumer.Read(3, from7));
-	ASSERT_EQUAL(fn, std::string("789"), BytesToText(from7));
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(consumer.Read(3, from7));
+	ASSERT_EQUAL(std::string("789"), BytesToText(from7));
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_span_until_eof() {
-	const std::string fn = "test_producer_consumer_span_until_eof";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
-	BinaryData s1, s2, s3;
-	ASSERT_TRUE(fn, consumer.Read(3, s1));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, s1.size());
-	ASSERT_TRUE(fn, consumer.Read(3, s2));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, s2.size());
-	ASSERT_TRUE(fn, consumer.Read(2, s3));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, s3.size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Available());
-	ASSERT_FALSE(fn, consumer.EoF());
+	ASSERT_TRUE(producer.Write("ABCDEFGH"));
+	Binary s1, s2, s3;
+	ASSERT_TRUE(consumer.Read(3, s1));
+	ASSERT_EQUAL(StormByte::ByteSize{3}, s1.size());
+	ASSERT_TRUE(consumer.Read(3, s2));
+	ASSERT_EQUAL(StormByte::ByteSize{3}, s2.size());
+	ASSERT_TRUE(consumer.Read(2, s3));
+	ASSERT_EQUAL(StormByte::ByteSize{2}, s3.size());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Available());
+	ASSERT_FALSE(consumer.EoF());
 	producer.Close();
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_with_reserve() {
-	const std::string fn = "test_producer_consumer_with_reserve";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const std::string large_message(500, 'Z');
-	ASSERT_TRUE(fn, producer.Write(large_message));
-	ASSERT_TRUE(fn, producer.Write(large_message));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{1000}, consumer.Size());
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{1000}, data.size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.Write(large_message));
+	ASSERT_TRUE(producer.Write(large_message));
+	ASSERT_EQUAL(StormByte::ByteSize{1000}, consumer.Size());
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(StormByte::ByteSize{1000}, data.size());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 int test_producer_write_span_consumer_read() {
-	const std::string fn = "test_producer_write_span_consumer_read";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("PCSPAN"));
-	BinaryData r;
-	ASSERT_TRUE(fn, consumer.Read(6, r));
-	ASSERT_EQUAL(fn, std::string("PCSPAN"), BytesToText(r));
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.Write("PCSPAN"));
+	Binary r;
+	ASSERT_TRUE(consumer.Read(6, r));
+	ASSERT_EQUAL(std::string("PCSPAN"), BytesToText(r));
+	RETURN_TEST(0);
 }
 
 // -------------------
-// Blocking / reliability
+// Blocking
 // -------------------
 
 int test_alternating_small_large_writes() {
-	const std::string fn = "test_alternating_small_large_writes";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("A"));
-	ASSERT_TRUE(fn, producer.Write(std::string(100, 'B')));
-	ASSERT_TRUE(fn, producer.Write("C"));
+	ASSERT_TRUE(producer.Write("A"));
+	ASSERT_TRUE(producer.Write(std::string(100, 'B')));
+	ASSERT_TRUE(producer.Write("C"));
 	producer.Close();
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{102}, data.size());
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(StormByte::ByteSize{102}, data.size());
+	RETURN_TEST(0);
 }
 
 int test_burst_writes_with_reserve() {
-	const std::string fn = "test_burst_writes_with_reserve";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	for (int i = 0; i < 32; ++i)
-		ASSERT_TRUE(fn, producer.Write("Z"));
+		ASSERT_TRUE(producer.Write("Z"));
 	producer.Close();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{32}, consumer.Size());
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{32}, data.size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(StormByte::ByteSize{32}, consumer.Size());
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(StormByte::ByteSize{32}, data.size());
+	RETURN_TEST(0);
 }
 
 int test_consumer_clear_during_production() {
-	const std::string fn = "test_consumer_clear_during_production";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("XXXX"));
+	ASSERT_TRUE(producer.Write("XXXX"));
 	consumer.Clear();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	ASSERT_TRUE(fn, producer.Write("YY"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	ASSERT_TRUE(producer.Write("YY"));
+	ASSERT_EQUAL(StormByte::ByteSize{2}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 int test_consumer_extract_until_eof() {
-	const std::string fn = "test_consumer_extract_until_eof";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("GONE"));
+	ASSERT_TRUE(producer.Write("GONE"));
 	producer.Close();
-	BinaryData data;
+	Binary data;
 	consumer.ExtractUntilEoF(data);
-	ASSERT_EQUAL(fn, std::string("GONE"), BytesToText(data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(std::string("GONE"), BytesToText(data));
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 int test_consumer_peek_basic() {
-	const std::string fn = "test_consumer_peek_basic";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("PEEK"));
-	BinaryData peeked, read;
-	ASSERT_TRUE(fn, consumer.Peek(2, peeked));
-	ASSERT_EQUAL(fn, std::string("PE"), BytesToText(peeked));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Available());
-	ASSERT_TRUE(fn, consumer.Read(2, read));
-	ASSERT_EQUAL(fn, std::string("PE"), BytesToText(read));
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.Write("PEEK"));
+	Binary peeked, read;
+	ASSERT_TRUE(consumer.Peek(2, peeked));
+	ASSERT_EQUAL(std::string("PE"), BytesToText(peeked));
+	ASSERT_EQUAL(StormByte::ByteSize{4}, consumer.Available());
+	ASSERT_TRUE(consumer.Read(2, read));
+	ASSERT_EQUAL(std::string("PE"), BytesToText(read));
+	RETURN_TEST(0);
 }
 
 int test_consumer_peek_blocking() {
-	const std::string fn = "test_consumer_peek_blocking";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::string got;
 	std::thread waiter([&] {
-		BinaryData data;
+		Binary data;
 		if (consumer.Peek(4, data))
 			got = BytesToText(data);
 	});
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	ASSERT_TRUE(fn, producer.Write("ABCD"));
+	ASSERT_TRUE(producer.Write("ABCD"));
 	waiter.join();
-	ASSERT_EQUAL(fn, std::string("ABCD"), got);
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Available());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(std::string("ABCD"), got);
+	ASSERT_EQUAL(StormByte::ByteSize{4}, consumer.Available());
+	RETURN_TEST(0);
 }
 
 int test_consumer_read_until_eof() {
-	const std::string fn = "test_consumer_read_until_eof";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("UNTILEOF"));
+	ASSERT_TRUE(producer.Write("UNTILEOF"));
 	producer.Close();
-	BinaryData data;
+	Binary data;
 	consumer.ReadUntilEoF(data);
-	ASSERT_EQUAL(fn, std::string("UNTILEOF"), BytesToText(data));
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(std::string("UNTILEOF"), BytesToText(data));
+	RETURN_TEST(0);
 }
 
 int test_consumer_waits_for_insufficient_data() {
-	const std::string fn = "test_consumer_waits_for_insufficient_data";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<bool> read_started {false};
@@ -445,77 +422,73 @@ int test_consumer_waits_for_insufficient_data() {
 	std::string result;
 	std::thread consumer_thread([&] {
 		read_started.store(true);
-		BinaryData data;
+		Binary data;
 		if (consumer.Read(20, data))
 			result = BytesToText(data);
 		else if (consumer.Available() > 0) {
-			BinaryData rem;
+			Binary rem;
 			if (consumer.Read(0, rem))
 				result = BytesToText(rem);
 		}
 		read_completed.store(true);
 	});
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	ASSERT_TRUE(fn, read_started.load());
-	ASSERT_FALSE(fn, read_completed.load());
-	ASSERT_TRUE(fn, producer.Write("0123456789"));
+	ASSERT_TRUE(read_started.load());
+	ASSERT_FALSE(read_completed.load());
+	ASSERT_TRUE(producer.Write("0123456789"));
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	ASSERT_FALSE(fn, read_completed.load());
+	ASSERT_FALSE(read_completed.load());
 	producer.Close();
 	consumer_thread.join();
-	ASSERT_TRUE(fn, read_completed.load());
-	ASSERT_EQUAL(fn, std::string("0123456789"), result);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(10), result.size());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(read_completed.load());
+	ASSERT_EQUAL(std::string("0123456789"), result);
+	ASSERT_EQUAL(static_cast<std::size_t>(10), result.size());
+	RETURN_TEST(0);
 }
 
 int test_empty_read_failure() {
-	const std::string fn = "test_empty_read_failure";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	producer.Close();
-	BinaryData data;
-	ASSERT_FALSE(fn, consumer.Read(4, data));
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_FALSE(consumer.Read(4, data));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int test_extract_zero_bytes_behavior() {
-	const std::string fn = "test_extract_zero_bytes_behavior";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("TestData"));
+	ASSERT_TRUE(producer.Write("TestData"));
 	producer.Close();
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, std::string("TestData"), BytesToText(data));
-	ASSERT_TRUE(fn, consumer.Empty());
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(std::string("TestData"), BytesToText(data));
+	ASSERT_TRUE(consumer.Empty());
+	RETURN_TEST(0);
 }
 
 int test_interleaved_read_extract_with_blocking() {
-	const std::string fn = "test_interleaved_read_extract_with_blocking";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
+	ASSERT_TRUE(producer.Write("ABCDEFGH"));
 	producer.Close();
-	BinaryData r1, e1;
-	ASSERT_TRUE(fn, consumer.Read(5, r1));
-	ASSERT_TRUE(fn, consumer.Extract(3, e1));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, r1.size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, e1.size());
-	RETURN_TEST(fn, 0);
+	Binary r1, e1;
+	ASSERT_TRUE(consumer.Read(5, r1));
+	ASSERT_TRUE(consumer.Extract(3, e1));
+	ASSERT_EQUAL(StormByte::ByteSize{5}, r1.size());
+	ASSERT_EQUAL(StormByte::ByteSize{3}, e1.size());
+	RETURN_TEST(0);
 }
 
 int test_multiple_consumers_with_partial_data() {
-	const std::string fn = "test_multiple_consumers_with_partial_data";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<std::size_t> reads_completed {0};
 	std::vector<std::string> results(3);
 	auto consumer_func = [&](int id) {
 		Consumer cons = consumer;
-		BinaryData data;
+		Binary data;
 		if (cons.Read(5, data))
 			results[static_cast<std::size_t>(id)] = BytesToText(data);
 		reads_completed.fetch_add(1);
@@ -524,19 +497,19 @@ int test_multiple_consumers_with_partial_data() {
 	std::thread cons2(consumer_func, 1);
 	std::thread cons3(consumer_func, 2);
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), reads_completed.load());
-	ASSERT_TRUE(fn, producer.Write("ABCDE"));
+	ASSERT_EQUAL(static_cast<std::size_t>(0), reads_completed.load());
+	ASSERT_TRUE(producer.Write("ABCDE"));
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), reads_completed.load());
-	ASSERT_TRUE(fn, producer.Write("FGHIJ"));
+	ASSERT_EQUAL(static_cast<std::size_t>(1), reads_completed.load());
+	ASSERT_TRUE(producer.Write("FGHIJ"));
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), reads_completed.load());
-	ASSERT_TRUE(fn, producer.Write("KLM"));
+	ASSERT_EQUAL(static_cast<std::size_t>(2), reads_completed.load());
+	ASSERT_TRUE(producer.Write("KLM"));
 	producer.Close();
 	cons1.join();
 	cons2.join();
 	cons3.join();
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), reads_completed.load());
+	ASSERT_EQUAL(static_cast<std::size_t>(3), reads_completed.load());
 	std::size_t total_received = 0;
 	std::size_t with_data = 0;
 	for (const auto& res : results) {
@@ -544,33 +517,31 @@ int test_multiple_consumers_with_partial_data() {
 		if (!res.empty())
 			++with_data;
 	}
-	ASSERT_TRUE(fn, with_data >= 1);
-	ASSERT_TRUE(fn, total_received > 0 && total_received <= 13);
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(with_data >= 1);
+	ASSERT_TRUE(total_received > 0 && total_received <= 13);
+	RETURN_TEST(0);
 }
 
 int test_multiple_sequential_read_blocks() {
-	const std::string fn = "test_multiple_sequential_read_blocks";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEFGHIJ"));
+	ASSERT_TRUE(producer.Write("ABCDEFGHIJ"));
 	producer.Close();
-	BinaryData a, b;
-	ASSERT_TRUE(fn, consumer.Read(4, a));
-	ASSERT_TRUE(fn, consumer.Read(6, b));
-	ASSERT_EQUAL(fn, std::string("ABCD"), BytesToText(a));
-	ASSERT_EQUAL(fn, std::string("EFGHIJ"), BytesToText(b));
-	RETURN_TEST(fn, 0);
+	Binary a, b;
+	ASSERT_TRUE(consumer.Read(4, a));
+	ASSERT_TRUE(consumer.Read(6, b));
+	ASSERT_EQUAL(std::string("ABCD"), BytesToText(a));
+	ASSERT_EQUAL(std::string("EFGHIJ"), BytesToText(b));
+	RETURN_TEST(0);
 }
 
 int test_out_of_sync_partial_writes() {
-	const std::string fn = "test_out_of_sync_partial_writes";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<bool> consumer_done {false};
 	std::string result;
 	std::thread consumer_thread([&] {
-		BinaryData data;
+		Binary data;
 		if (consumer.Read(10, data))
 			result = BytesToText(data);
 		consumer_done.store(true);
@@ -585,53 +556,50 @@ int test_out_of_sync_partial_writes() {
 	});
 	producer_thread.join();
 	consumer_thread.join();
-	ASSERT_TRUE(fn, consumer_done.load());
-	ASSERT_EQUAL(fn, std::string("ABCDEFGHIJ"), result);
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(consumer_done.load());
+	ASSERT_EQUAL(std::string("ABCDEFGHIJ"), result);
+	RETURN_TEST(0);
 }
 
 int test_producer_close_during_consumer_wait() {
-	const std::string fn = "test_producer_close_during_consumer_wait";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<bool> completed {false};
 	std::string result;
 	std::thread consumer_thread([&] {
-		BinaryData data;
+		Binary data;
 		if (consumer.Read(100, data))
 			result = BytesToText(data);
 		else if (consumer.Available() > 0) {
-			BinaryData rem;
+			Binary rem;
 			if (consumer.Read(0, rem))
 				result = BytesToText(rem);
 		}
 		completed.store(true);
 	});
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	ASSERT_TRUE(fn, producer.Write("Short"));
+	ASSERT_TRUE(producer.Write("Short"));
 	producer.Close();
 	consumer_thread.join();
-	ASSERT_TRUE(fn, completed.load());
-	ASSERT_EQUAL(fn, std::string("Short"), result);
-	ASSERT_TRUE(fn, result.size() < 100);
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(completed.load());
+	ASSERT_EQUAL(std::string("Short"), result);
+	ASSERT_TRUE(result.size() < 100);
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_available_bytes() {
-	const std::string fn = "test_producer_consumer_available_bytes";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Available());
-	ASSERT_TRUE(fn, producer.Write("ABCD"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Available());
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Read(2, data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{2}, consumer.Available());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Available());
+	ASSERT_TRUE(producer.Write("ABCD"));
+	ASSERT_EQUAL(StormByte::ByteSize{4}, consumer.Available());
+	Binary data;
+	ASSERT_TRUE(consumer.Read(2, data));
+	ASSERT_EQUAL(StormByte::ByteSize{2}, consumer.Available());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_available_bytes_threaded() {
-	const std::string fn = "test_producer_consumer_available_bytes_threaded";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::thread writer([&] {
@@ -639,42 +607,39 @@ int test_producer_consumer_available_bytes_threaded() {
 		producer.Close();
 	});
 	writer.join();
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, consumer.Available());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(StormByte::ByteSize{5}, consumer.Available());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_partial_read_eof() {
-	const std::string fn = "test_producer_consumer_partial_read_eof";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("XY"));
+	ASSERT_TRUE(producer.Write("XY"));
 	producer.Close();
-	BinaryData data;
+	Binary data;
 	static_cast<void>(consumer.Read(8, data));
 	if (data.empty()) {
-		BinaryData rem;
+		Binary rem;
 		static_cast<void>(consumer.Read(0, rem));
 		data = std::move(rem);
 	}
-	ASSERT_EQUAL(fn, std::string("XY"), BytesToText(data));
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(std::string("XY"), BytesToText(data));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_polymorphic_interface_abi() {
-	const std::string fn = "test_producer_consumer_polymorphic_interface_abi";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.IsWritable());
-	ASSERT_TRUE(fn, consumer.IsReadable());
-	ASSERT_TRUE(fn, producer.Write("ABI"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, producer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{3}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.IsWritable());
+	ASSERT_TRUE(consumer.IsReadable());
+	ASSERT_TRUE(producer.Write("ABI"));
+	ASSERT_EQUAL(StormByte::ByteSize{3}, producer.Size());
+	ASSERT_EQUAL(StormByte::ByteSize{3}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 int test_rapid_write_close_with_slow_consumer() {
-	const std::string fn = "test_rapid_write_close_with_slow_consumer";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<bool> producer_done {false};
@@ -688,10 +653,10 @@ int test_rapid_write_close_with_slow_consumer() {
 	std::thread consumer_thread([&] {
 		for (;;) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			BinaryData part;
+			Binary part;
 			if (!consumer.Extract(5, part)) {
 				if (consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (consumer.Extract(0, rem))
 						total_consumed.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
@@ -704,74 +669,70 @@ int test_rapid_write_close_with_slow_consumer() {
 	});
 	producer_thread.join();
 	consumer_thread.join();
-	ASSERT_TRUE(fn, producer_done.load());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(100), total_consumed.load());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer_done.load());
+	ASSERT_EQUAL(static_cast<std::size_t>(100), total_consumed.load());
+	RETURN_TEST(0);
 }
 
 int test_seek_during_blocked_read() {
-	const std::string fn = "test_seek_during_blocked_read";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("0123456789"));
+	ASSERT_TRUE(producer.Write("0123456789"));
 	producer.Close();
 	consumer.Seek(4, Position::Absolute);
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Read(0, data));
-	ASSERT_EQUAL(fn, std::string("456789"), BytesToText(data));
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Read(0, data));
+	ASSERT_EQUAL(std::string("456789"), BytesToText(data));
+	RETURN_TEST(0);
 }
 
 int test_very_large_data_transfer() {
-	const std::string fn = "test_very_large_data_transfer";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const std::string payload(64 * 1024, 'A');
-	ASSERT_TRUE(fn, producer.Write(payload));
+	ASSERT_TRUE(producer.Write(payload));
 	producer.Close();
-	BinaryData data;
-	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{payload.size()}, data.size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	Binary data;
+	ASSERT_TRUE(consumer.Extract(0, data));
+	ASSERT_EQUAL(StormByte::ByteSize{payload.size()}, data.size());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 // -------------------
-// Occupied / live Size
+// Occupied
 // -------------------
 
 int test_occupied_drops_after_consumer_extract() {
-	const std::string fn = "test_occupied_drops_after_consumer_extract";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{8}, producer.Size());
-	ASSERT_EQUAL(fn, consumer.Size(), producer.Size());
-	BinaryData first;
-	ASSERT_TRUE(fn, consumer.Extract(3, first));
-	ASSERT_EQUAL(fn, std::string("ABC"), BytesToText(first));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, consumer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, producer.Size());
-	BinaryData rest;
-	ASSERT_TRUE(fn, consumer.Extract(0, rest));
-	ASSERT_EQUAL(fn, std::string("DEFGH"), BytesToText(rest));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
-	ASSERT_TRUE(fn, consumer.Empty());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.Write("ABCDEFGH"));
+	ASSERT_EQUAL(StormByte::ByteSize{8}, producer.Size());
+	ASSERT_EQUAL(consumer.Size(), producer.Size());
+	Binary first;
+	ASSERT_TRUE(consumer.Extract(3, first));
+	ASSERT_EQUAL(std::string("ABC"), BytesToText(first));
+	ASSERT_EQUAL(StormByte::ByteSize{5}, consumer.Size());
+	ASSERT_EQUAL(StormByte::ByteSize{5}, producer.Size());
+	Binary rest;
+	ASSERT_TRUE(consumer.Extract(0, rest));
+	ASSERT_EQUAL(std::string("DEFGH"), BytesToText(rest));
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, producer.Size());
+	ASSERT_TRUE(consumer.Empty());
+	RETURN_TEST(0);
 }
 
 int test_occupied_drops_under_concurrent_extract() {
-	const std::string fn = "test_occupied_drops_under_concurrent_extract";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const std::string payload(256, 'Z');
-	ASSERT_TRUE(fn, producer.Write(payload));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{payload.size()}, producer.Size());
+	ASSERT_TRUE(producer.Write(payload));
+	ASSERT_EQUAL(StormByte::ByteSize{payload.size()}, producer.Size());
 	std::atomic<std::size_t> taken {0};
 	std::thread cons([&] {
 		while (taken.load() < payload.size()) {
-			BinaryData chunk;
+			Binary chunk;
 			const std::size_t left = payload.size() - taken.load();
 			const std::size_t n = std::min<std::size_t>(16, left);
 			if (!consumer.Extract(n, chunk))
@@ -780,31 +741,29 @@ int test_occupied_drops_under_concurrent_extract() {
 		}
 	});
 	cons.join();
-	ASSERT_EQUAL(fn, payload.size(), taken.load());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, consumer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(payload.size(), taken.load());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, producer.Size());
+	ASSERT_EQUAL(StormByte::ByteSize{0}, consumer.Size());
+	RETURN_TEST(0);
 }
 
 int test_occupied_read_does_not_drop() {
-	const std::string fn = "test_occupied_read_does_not_drop";
 	Producer producer;
 	auto consumer = producer.Consumer();
-	ASSERT_TRUE(fn, producer.Write("ABCDEF"));
-	BinaryData peek;
-	ASSERT_TRUE(fn, consumer.Read(2, peek));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{6}, producer.Size());
-	ASSERT_EQUAL(fn, StormByte::ByteSize{4}, consumer.Available());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer.Write("ABCDEF"));
+	Binary peek;
+	ASSERT_TRUE(consumer.Read(2, peek));
+	ASSERT_EQUAL(StormByte::ByteSize{6}, producer.Size());
+	ASSERT_EQUAL(StormByte::ByteSize{4}, consumer.Available());
+	RETURN_TEST(0);
 }
 
 int test_occupied_tracks_producer_size() {
-	const std::string fn = "test_occupied_tracks_producer_size";
 	Producer producer;
-	ASSERT_EQUAL(fn, StormByte::ByteSize{0}, producer.Size());
-	ASSERT_TRUE(fn, producer.Write("HELLO"));
-	ASSERT_EQUAL(fn, StormByte::ByteSize{5}, producer.Size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(StormByte::ByteSize{0}, producer.Size());
+	ASSERT_TRUE(producer.Write("HELLO"));
+	ASSERT_EQUAL(StormByte::ByteSize{5}, producer.Size());
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -812,7 +771,6 @@ int test_occupied_tracks_producer_size() {
 // -------------------
 
 int test_multiple_producers_multiple_consumers() {
-	const std::string fn = "test_multiple_producers_multiple_consumers";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const int producers_count = 3;
@@ -835,10 +793,10 @@ int test_multiple_producers_multiple_consumers() {
 			Consumer cons_copy = consumer;
 			std::size_t local_consumed = 0;
 			for (;;) {
-				BinaryData part;
+				Binary part;
 				if (!cons_copy.Extract(10, part)) {
 					if (cons_copy.Available() > 0) {
-						BinaryData rem;
+						Binary rem;
 						if (cons_copy.Extract(0, rem))
 							local_consumed += static_cast<std::size_t>(rem.size());
 					}
@@ -856,13 +814,12 @@ int test_multiple_producers_multiple_consumers() {
 	producer.Close();
 	for (auto& t : consumers)
 		t.join();
-	ASSERT_EQUAL(fn, producers_count, completed_producers.load());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(producers_count * messages_per_producer), total_consumed.load());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(producers_count, completed_producers.load());
+	ASSERT_EQUAL(static_cast<std::size_t>(producers_count * messages_per_producer), total_consumed.load());
+	RETURN_TEST(0);
 }
 
 int test_multiple_producers_single_consumer() {
-	const std::string fn = "test_multiple_producers_single_consumer";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const int chunks_per_producer = 50;
@@ -880,10 +837,10 @@ int test_multiple_producers_single_consumer() {
 	std::thread cons_thread([&] {
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		while (completed_producers.load() < 3) {
-			BinaryData part;
+			Binary part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (consumer.Extract(0, rem) && !rem.empty())
 						collected.append(BytesToText(rem));
 				}
@@ -894,7 +851,7 @@ int test_multiple_producers_single_consumer() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		while (!consumer.Empty()) {
-			BinaryData data;
+			Binary data;
 			if (consumer.Extract(0, data) && !data.empty())
 				collected.append(BytesToText(data));
 		}
@@ -903,19 +860,18 @@ int test_multiple_producers_single_consumer() {
 	prod2.join();
 	prod3.join();
 	cons_thread.join();
-	ASSERT_EQUAL(fn, 3, completed_producers.load());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(chunks_per_producer),
+	ASSERT_EQUAL(3, completed_producers.load());
+	ASSERT_EQUAL(static_cast<std::size_t>(chunks_per_producer),
 		static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'A')));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(chunks_per_producer),
+	ASSERT_EQUAL(static_cast<std::size_t>(chunks_per_producer),
 		static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'B')));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(chunks_per_producer),
+	ASSERT_EQUAL(static_cast<std::size_t>(chunks_per_producer),
 		static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'C')));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(chunks_per_producer * 3), collected.size());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(static_cast<std::size_t>(chunks_per_producer * 3), collected.size());
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_pipeline_pattern() {
-	const std::string fn = "test_producer_consumer_pipeline_pattern";
 	Producer stage1_producer;
 	auto stage1_consumer = stage1_producer.Consumer();
 	Producer stage2_producer;
@@ -928,10 +884,10 @@ int test_producer_consumer_pipeline_pattern() {
 	});
 	std::thread stage2([&] {
 		for (;;) {
-			BinaryData part;
+			Binary part;
 			if (!stage1_consumer.Extract(10, part)) {
 				if (stage1_consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (stage1_consumer.Extract(0, rem) && !rem.empty()) {
 						std::string remstr = BytesToText(rem);
 						std::transform(remstr.begin(), remstr.end(), remstr.begin(),
@@ -953,10 +909,10 @@ int test_producer_consumer_pipeline_pattern() {
 	std::string final_result;
 	std::thread stage3([&] {
 		for (;;) {
-			BinaryData part;
+			Binary part;
 			if (!stage2_consumer.Extract(10, part)) {
 				if (stage2_consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (stage2_consumer.Extract(0, rem) && !rem.empty())
 						final_result.append(BytesToText(rem));
 				}
@@ -971,14 +927,13 @@ int test_producer_consumer_pipeline_pattern() {
 	stage1.join();
 	stage2.join();
 	stage3.join();
-	ASSERT_TRUE(fn, done.load());
-	ASSERT_FALSE(fn, final_result.empty());
-	ASSERT_TRUE(fn, final_result.find('0') != std::string::npos);
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(done.load());
+	ASSERT_FALSE(final_result.empty());
+	ASSERT_TRUE(final_result.find('0') != std::string::npos);
+	RETURN_TEST(0);
 }
 
 int test_producer_consumer_stress_rapid_operations() {
-	const std::string fn = "test_producer_consumer_stress_rapid_operations";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	std::atomic<std::size_t> write_count {0};
@@ -992,10 +947,10 @@ int test_producer_consumer_stress_rapid_operations() {
 	});
 	std::thread reader([&] {
 		for (;;) {
-			BinaryData part;
+			Binary part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (consumer.Extract(0, rem))
 						read_count.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
@@ -1008,14 +963,13 @@ int test_producer_consumer_stress_rapid_operations() {
 	});
 	writer.join();
 	reader.join();
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(500), write_count.load());
-	ASSERT_EQUAL(fn, write_count.load(), read_count.load());
-	ASSERT_TRUE(fn, consumer.Empty());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(static_cast<std::size_t>(500), write_count.load());
+	ASSERT_EQUAL(write_count.load(), read_count.load());
+	ASSERT_TRUE(consumer.Empty());
+	RETURN_TEST(0);
 }
 
 int test_single_producer_multiple_consumers() {
-	const std::string fn = "test_single_producer_multiple_consumers";
 	Producer producer;
 	auto consumer1 = producer.Consumer();
 	auto consumer2 = consumer1;
@@ -1029,10 +983,10 @@ int test_single_producer_multiple_consumers() {
 	});
 	auto consumer_func = [&](Consumer& cons, std::atomic<std::size_t>& counter) {
 		for (;;) {
-			BinaryData part;
+			Binary part;
 			if (!cons.Extract(5, part)) {
 				if (cons.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (cons.Extract(0, rem))
 						counter.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
@@ -1050,18 +1004,17 @@ int test_single_producer_multiple_consumers() {
 	cons1_thread.join();
 	cons2_thread.join();
 	cons3_thread.join();
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(total_bytes),
+	ASSERT_EQUAL(static_cast<std::size_t>(total_bytes),
 		consumed1.load() + consumed2.load() + consumed3.load());
 	const std::size_t with_data =
 		(consumed1.load() > 0 ? 1u : 0u) +
 		(consumed2.load() > 0 ? 1u : 0u) +
 		(consumed3.load() > 0 ? 1u : 0u);
-	ASSERT_TRUE(fn, with_data >= 1);
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(with_data >= 1);
+	RETURN_TEST(0);
 }
 
 int test_single_producer_single_consumer_threaded() {
-	const std::string fn = "test_single_producer_single_consumer_threaded";
 	Producer producer;
 	auto consumer = producer.Consumer();
 	const int messages = 100;
@@ -1075,10 +1028,10 @@ int test_single_producer_single_consumer_threaded() {
 	});
 	std::thread cons_thread([&] {
 		for (;;) {
-			BinaryData part;
+			Binary part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.Available() > 0) {
-					BinaryData rem;
+					Binary rem;
 					if (consumer.Extract(0, rem) && !rem.empty())
 						collected.append(BytesToText(rem));
 				}
@@ -1091,10 +1044,10 @@ int test_single_producer_single_consumer_threaded() {
 	});
 	prod_thread.join();
 	cons_thread.join();
-	ASSERT_TRUE(fn, producer_done.load());
-	ASSERT_FALSE(fn, collected.empty());
-	ASSERT_TRUE(fn, consumer.EoF());
-	RETURN_TEST(fn, 0);
+	ASSERT_TRUE(producer_done.load());
+	ASSERT_FALSE(collected.empty());
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
 int main() {
@@ -1105,7 +1058,6 @@ int main() {
 	// -------------------
 	result += test_consumer_producer_shares_ring();
 	result += test_consumer_retains_ring_after_producer_destruction();
-	result += test_producer_consumer_safe_collection_lifecycle();
 	result += test_producer_consumer_basic_write_read();
 	result += test_producer_consumer_byte_vector_write();
 	result += test_producer_consumer_clear_operation();
@@ -1115,13 +1067,14 @@ int main() {
 	result += test_producer_consumer_interleaved_operations();
 	result += test_producer_consumer_move_semantics();
 	result += test_producer_consumer_multiple_writes();
+	result += test_producer_consumer_safe_collection_lifecycle();
 	result += test_producer_consumer_seek_operations();
 	result += test_producer_consumer_span_until_eof();
 	result += test_producer_consumer_with_reserve();
 	result += test_producer_write_span_consumer_read();
 
 	// -------------------
-	// Blocking / reliability
+	// Blocking
 	// -------------------
 	result += test_alternating_small_large_writes();
 	result += test_burst_writes_with_reserve();
@@ -1147,7 +1100,7 @@ int main() {
 	result += test_very_large_data_transfer();
 
 	// -------------------
-	// Occupied / live Size
+	// Occupied
 	// -------------------
 	result += test_occupied_drops_after_consumer_extract();
 	result += test_occupied_drops_under_concurrent_extract();

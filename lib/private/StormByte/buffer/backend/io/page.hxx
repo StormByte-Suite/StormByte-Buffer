@@ -41,9 +41,9 @@
 
 #pragma once
 
+#include <StormByte/byte_size.hxx>
+#include <StormByte/safe/binary.hxx>
 #include <StormByte/type_traits/safe.hxx>
-
-#include <StormByte/buffer/visibility.h>
 
 /**
  * @namespace StormByte
@@ -66,59 +66,17 @@ namespace StormByte {
 			 */
 			namespace IO {
 				/**
-				 * @class BufferedLocationWriter
-				 * @brief Private state of @ref StormByte::Buffer::IO::BufferedLocationWriter.
+				 * @brief Dirty page: absolute start and payload.
 				 *
-				 * Owns the probe flag. The locator lives on @ref StormByte::Buffer::IO::BufferedWriter.
+				 * Namespace scope so Safe::Map can store it. Registered before any map instantiates it.
 				 */
-				class STORMBYTE_BUFFER_PRIVATE BufferedLocationWriter {
-					public:
-						/**
-						 * @brief Store whether @ref Setup probes the device.
-						 * @param probe True when windows were not passed to the constructor.
-						 */
-						explicit BufferedLocationWriter(bool probe);
-
-						/**
-						 * @brief Copy constructor is deleted.
-						 */
-						BufferedLocationWriter(const BufferedLocationWriter&) = delete;
-
-						/**
-						 * @brief Move constructor is deleted. The public class moves the pointer.
-						 */
-						BufferedLocationWriter(BufferedLocationWriter&&) = delete;
-
-						/**
-						 * @brief Release the location string in this module.
-						 */
-						~BufferedLocationWriter();
-
-						/**
-						 * @brief Copy assignment is deleted.
-						 */
-						BufferedLocationWriter& operator=(const BufferedLocationWriter&) = delete;
-
-						/**
-						 * @brief Move assignment is deleted.
-						 */
-						BufferedLocationWriter& operator=(BufferedLocationWriter&&) = delete;
-
-						/**
-						 * @brief Whether @ref Setup should apply @ref Device::Window.
-						 * @return True for the locator-only constructor.
-						 */
-						bool Probe() const noexcept;
-
-					private:
-						/**
-						 * @brief True when Setup reads the device window.
-						 */
-						bool m_probe;
+				struct Page {
+					StormByte::ByteSize offset {0};	///< First byte of this span.
+					StormByte::Safe::Binary bytes;	///< Octets not yet on the origin.
 				};
 			}
 		}
 	}
 }
 
-STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Backend::IO::BufferedLocationWriter);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Backend::IO::Page);

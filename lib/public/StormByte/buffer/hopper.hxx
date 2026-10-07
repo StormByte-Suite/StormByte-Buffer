@@ -41,14 +41,16 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
+#include <StormByte/safe/atomic.hxx>
+#include <StormByte/safe/condition_variable.hxx>
+#include <StormByte/safe/owner.hxx>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/size.hxx>
-#include <StormByte/safe/owner.hxx>
 #include <StormByte/type_traits.hxx>
 
-#include <atomic>
 #include <concepts>
-#include <condition_variable>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -115,7 +117,7 @@ namespace StormByte {
 		 * released through its creator callback; shared handle control-block providers
 		 * must remain loaded. Ordinary inline is not a provider-locality guarantee.
 		 * @note Stop and join all users before destruction. Destruction is not cancellation
-		 * of concurrent member calls. Unnotify must complete before a borrowed CV dies.
+		 * of concurrent member calls. Unnotify must complete before a borrowed condition variable dies.
 		 * Allocation failure in the nonthrowing queue operations terminates the process.
 		 */
 		template<Detail::HopperValue T>
@@ -128,38 +130,28 @@ namespace StormByte {
 
 				/**
 				 * @brief Constructs an empty unbounded Hopper.
+				 * @throws AllocationError The coordinator, the gate or the signal cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE Hopper() noexcept;
+				Hopper() noexcept(false);
 
 				/**
 				 * @brief Constructs an empty Hopper with a capacity ceiling.
 				 * @param capacity Maximum number of items allowed (0 = unbounded).
+				 * @throws AllocationError The coordinator, the gate or the signal cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE explicit Hopper(StormByte::Size capacity) noexcept;
+				explicit Hopper(StormByte::Size capacity);
 
-				/**
-				 * @brief Copy constructor is deleted (Hopper is non-copyable).
-				 */
 				Hopper(const Hopper&) = delete;
 
-				/**
-				 * @brief Move constructor is deleted (Hopper is non-movable).
-				 */
 				Hopper(Hopper&&) noexcept = delete;
 
 				/**
 				 * @brief Destructor. Requires all users, including blocked producers, to be joined.
 				 */
-				STORMBYTE_FORCE_INLINE ~Hopper() noexcept;
+				~Hopper() noexcept;
 
-				/**
-				 * @brief Copy assignment operator is deleted (Hopper is non-copyable).
-				 */
 				Hopper& operator=(const Hopper&) = delete;
 
-				/**
-				 * @brief Move assignment operator is deleted (Hopper is non-movable).
-				 */
 				Hopper& operator=(Hopper&&) noexcept = delete;
 
 				/**
@@ -310,10 +302,10 @@ namespace StormByte {
 				 * Notification is not a stored event. Callers must coordinate predicate checks,
 				 * waits and producer operations with the consumer's wait mutex to avoid lost wakeups.
 				 */
-				void Notify(std::condition_variable& wake) noexcept;
+				void Notify(Safe::ConditionVariable& wake) noexcept;
 
 				/**
-				 * @brief Registers stored Push and Eof notifications alongside the legacy CV.
+				 * @brief Registers stored Push and Eof notifications alongside the condition variable.
 				 * @param wake Borrowed consumer condition variable.
 				 * @param generation Borrowed event counter, incremented with release ordering.
 				 * @note Load generation with acquire ordering before checking readiness, then
@@ -321,14 +313,14 @@ namespace StormByte {
 				 * increment and notify the same counter. Both referents must remain alive
 				 * until Unnotify returns; replacement synchronizes with active notifications.
 				 */
-				void Notify(std::condition_variable& wake, std::atomic<std::size_t>& generation) noexcept;
+				void Notify(Safe::ConditionVariable& wake, Safe::Atomic<std::size_t>& generation) noexcept;
 
 				/**
 				 * @brief Drops both borrowed pointers set by @ref Notify.
 				 *
 				 * Safe to call more than once or when nothing was registered.
-				 * After this, Push and Eof do not signal a consumer CV; producers
-				 * blocked on a full bucket still wake on @c m_space.
+				 * After this, Push and Eof do not signal a consumer condition variable; producers
+				 * blocked on a full bucket still wake on the space signal.
 				 * Waits for in-flight notifications. Do not concurrently register the
 				 * condition variable or counter again while destroying either referent.
 				 */
@@ -385,7 +377,7 @@ namespace StormByte {
 				 * @param owner Registration owner identity; never dereferenced.
 				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& wake, const void* owner, std::atomic<std::size_t>* generation) noexcept;
+				void Notify(Safe::ConditionVariable& wake, const void* owner, Safe::Atomic<std::size_t>* generation) noexcept;
 
 				/**
 				 * @brief Removes an observer only if its Sink owner still matches.
@@ -433,3 +425,4 @@ namespace StormByte {
 		struct IsMaybeSafe<Buffer::Hopper<T>>: std::true_type {};
 	}
 }
+

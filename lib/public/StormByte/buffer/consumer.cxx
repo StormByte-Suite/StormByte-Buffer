@@ -84,7 +84,7 @@ StormByte::ByteSize Consumer::Available() const noexcept {
 	return Storage().Available();
 }
 
-const StormByte::BinaryData& Consumer::Data() const noexcept {
+const StormByte::Safe::Binary& Consumer::Data() const noexcept {
 	return Storage().Data();
 }
 
@@ -120,7 +120,7 @@ void Consumer::Seek(const std::ptrdiff_t& offset, const Position& mode) const no
 	Storage().Seek(offset, mode);
 }
 
-bool Consumer::Extract(const StormByte::ByteSize& count, StormByte::BinaryData& out) noexcept {
+bool Consumer::Extract(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) noexcept {
 	return Storage().Extract(count, out);
 }
 
@@ -128,7 +128,7 @@ bool Consumer::Extract(const StormByte::ByteSize& count, WriteOnly& out) noexcep
 	return Storage().Extract(count, out);
 }
 
-void Consumer::ExtractUntilEoF(StormByte::BinaryData& out) noexcept {
+void Consumer::ExtractUntilEoF(StormByte::Safe::Binary& out) noexcept {
 	Storage().ExtractUntilEoF(out);
 }
 
@@ -136,7 +136,7 @@ void Consumer::ExtractUntilEoF(WriteOnly& out) noexcept {
 	Storage().ExtractUntilEoF(out);
 }
 
-bool Consumer::Read(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
+bool Consumer::Read(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) const noexcept {
 	return Storage().Read(count, out);
 }
 
@@ -144,7 +144,7 @@ bool Consumer::Read(const StormByte::ByteSize& count, WriteOnly& out) const noex
 	return Storage().Read(count, out);
 }
 
-void Consumer::ReadUntilEoF(StormByte::BinaryData& out) const noexcept {
+void Consumer::ReadUntilEoF(StormByte::Safe::Binary& out) const noexcept {
 	Storage().ReadUntilEoF(out);
 }
 
@@ -152,7 +152,7 @@ void Consumer::ReadUntilEoF(WriteOnly& out) const noexcept {
 	Storage().ReadUntilEoF(out);
 }
 
-bool Consumer::Peek(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept {
+bool Consumer::Peek(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) const noexcept {
 	return Storage().Peek(count, out);
 }
 

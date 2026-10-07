@@ -41,15 +41,16 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/safe/condition_variable.hxx>
+#include <StormByte/safe/mutex.hxx>
 #include <StormByte/safe/optional.hxx>
 #include <StormByte/safe/pointers.hxx>
-
-#include <condition_variable>
-#include <mutex>
-#include <thread>
+#include <StormByte/safe/thread.hxx>
 
 /**
  * @namespace StormByte
@@ -179,10 +180,12 @@ namespace StormByte {
 					bool m_io_in_blocking {false};					///< Bridge::InputPullBlocking at take-over.
 					bool m_canceled {false};						///< Cancel ran.
 					bool m_paused {false};							///< Toggle park.
-					mutable std::mutex m_mutex;						///< Session.
-					std::condition_variable m_cv;					///< Pause / cancel.
-					std::thread m_worker;							///< Pump thread.
+					mutable StormByte::Safe::Mutex m_mutex;			///< Session.
+					StormByte::Safe::ConditionVariable m_cv;		///< Pause / cancel.
+					StormByte::Safe::Thread m_worker;				///< Pump thread. Not a std::thread.
 			};
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Backend::Pumper);

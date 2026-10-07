@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/visibility.h>
 
 /**
@@ -118,3 +120,5 @@ namespace StormByte {
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Backend::IO::BufferedLocationReader);

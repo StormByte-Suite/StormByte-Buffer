@@ -39,7 +39,6 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/binary_data.hxx>
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/fifo.hxx>
@@ -48,6 +47,7 @@
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/pumper.hxx>
 #include <StormByte/byte_size.hxx>
+#include <StormByte/safe/binary.hxx>
 #include <StormByte/safe/string.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -60,7 +60,6 @@
 #include <string_view>
 #include <thread>
 
-using StormByte::BinaryData;
 using StormByte::ByteSize;
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::Chunk;
@@ -74,6 +73,7 @@ using StormByte::Buffer::IO::BufferedFileWriter;
 using StormByte::Buffer::IO::MaxMemory;
 using StormByte::Buffer::IO::ReadAhead;
 using StormByte::Buffer::IO::WriteChunk;
+using StormByte::Safe::Binary;
 
 namespace {
 	StormByte::Safe::String Loc(const std::filesystem::path& path) {
@@ -92,6 +92,12 @@ namespace {
 	std::string Slurp(const std::filesystem::path& path) {
 		std::ifstream in(path, std::ios::binary);
 		return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	}
+
+	std::string BytesToText(const Binary& data) {
+		if (data.empty())
+			return {};
+		return std::string(reinterpret_cast<const char*>(data.data()), static_cast<std::size_t>(data.size()));
 	}
 
 	bool WaitFinish(Pumper& pump, const std::chrono::milliseconds budget) {
@@ -123,66 +129,60 @@ namespace {
 // -------------------
 
 int test_pumper_cancel_before_close_does_not_drain() {
-	constexpr auto fn = "test_pumper_cancel_before_close_does_not_drain";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
 	src.Write("ABCDEFGH");
 	Pumper pump(Bridge(in, out), { Chunk{2} });
-	ASSERT_TRUE(fn, WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
+	ASSERT_TRUE(WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
 	pump.Cancel();
 	src.Write("XXXXXXXX");
 	src.Close();
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_TRUE(fn, pump.Canceled());
-	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
 	const auto tel = pump.ReadTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(tel));
-	ASSERT_TRUE(fn, tel->Delivered() < ByteSize{16});
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(static_cast<bool>(tel));
+	ASSERT_TRUE(tel->Delivered() < ByteSize{16});
+	RETURN_TEST(0);
 }
 
 int test_pumper_cancel_is_terminal() {
-	constexpr auto fn = "test_pumper_cancel_is_terminal";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
 	Pumper pump(Bridge(in, out), { Chunk{64} });
-	ASSERT_TRUE(fn, !pump.Failed());
-	ASSERT_TRUE(fn, !pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
+	ASSERT_FALSE(pump.Canceled());
 	pump.Cancel();
-	ASSERT_TRUE(fn, pump.Canceled());
-	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
 	pump.Toggle();
-	ASSERT_TRUE(fn, pump.Canceled());
-	ASSERT_TRUE(fn, !pump.Failed());
+	ASSERT_TRUE(pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
 	src.Write("late");
 	src.Close();
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_TRUE(fn, pump.Canceled());
-	ASSERT_TRUE(fn, !pump.Failed());
-	ASSERT_TRUE(fn, !WaitFinish(pump, std::chrono::milliseconds(100)));
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
+	ASSERT_FALSE(WaitFinish(pump, std::chrono::milliseconds(100)));
+	RETURN_TEST(0);
 }
 
 int test_pumper_cancel_telemetry_survives() {
-	constexpr auto fn = "test_pumper_cancel_telemetry_survives";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
 	src.Write("abc");
 	Pumper pump(Bridge(in, out), { Chunk{1} });
-	ASSERT_TRUE(fn, WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
+	ASSERT_TRUE(WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
 	const auto kept = pump.ReadTelemetry();
 	pump.Cancel();
-	ASSERT_TRUE(fn, static_cast<bool>(kept));
-	ASSERT_TRUE(fn, kept == pump.ReadTelemetry());
-	ASSERT_TRUE(fn, kept->Delivered() >= ByteSize{1});
+	ASSERT_TRUE(static_cast<bool>(kept));
+	ASSERT_TRUE(kept == pump.ReadTelemetry());
+	ASSERT_TRUE(kept->Delivered() >= ByteSize{1});
 	src.Close();
-	RETURN_TEST(fn, result);
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -190,8 +190,6 @@ int test_pumper_cancel_telemetry_survives() {
 // -------------------
 
 int test_pumper_failed_is_not_canceled() {
-	constexpr auto fn = "test_pumper_failed_is_not_canceled";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
@@ -203,9 +201,9 @@ int test_pumper_failed_is_not_canceled() {
 			break;
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
-	ASSERT_TRUE(fn, pump.Failed());
-	ASSERT_TRUE(fn, !pump.Canceled());
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(pump.Failed());
+	ASSERT_FALSE(pump.Canceled());
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -213,46 +211,40 @@ int test_pumper_failed_is_not_canceled() {
 // -------------------
 
 int test_pumper_auto_chunk_copies_all() {
-	constexpr auto fn = "test_pumper_auto_chunk_copies_all";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	const std::string payload(64 * 1024, 'A');
 	in.Write(payload);
 	in.Close();
 	Pumper pump(Bridge(in, out));
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(5)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, payload.size(), got.size());
-	ASSERT_TRUE(fn, std::string(reinterpret_cast<const char*>(got.data()), got.size()) == payload);
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(5)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(ByteSize{payload.size()}, got.size());
+	ASSERT_EQUAL(payload, BytesToText(got));
+	RETURN_TEST(0);
 }
 
 int test_pumper_chunked_copies_all() {
-	constexpr auto fn = "test_pumper_chunked_copies_all";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Write("0123456789abcdef");
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{3} });
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, ByteSize{16}, ByteSize{got.size()});
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(ByteSize{16}, got.size());
 	const auto read = pump.ReadTelemetry();
 	const auto write = pump.WriteTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(read));
-	ASSERT_TRUE(fn, static_cast<bool>(write));
-	ASSERT_EQUAL(fn, ByteSize{16}, read->Delivered());
-	ASSERT_EQUAL(fn, ByteSize{16}, write->Accepted());
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(static_cast<bool>(read));
+	ASSERT_TRUE(static_cast<bool>(write));
+	ASSERT_EQUAL(ByteSize{16}, read->Delivered());
+	ASSERT_EQUAL(ByteSize{16}, write->Accepted());
+	RETURN_TEST(0);
 }
 
 int test_pumper_dtor_finishes_closed_source() {
-	constexpr auto fn = "test_pumper_dtor_finishes_closed_source";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Write("done-by-dtor");
@@ -261,47 +253,41 @@ int test_pumper_dtor_finishes_closed_source() {
 		Pumper pump(Bridge(in, out), { Chunk{4} });
 		(void)pump;
 	}
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, std::string("done-by-dtor"),
-		std::string(reinterpret_cast<const char*>(got.data()), got.size()));
-	RETURN_TEST(fn, result);
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(std::string("done-by-dtor"), BytesToText(got));
+	RETURN_TEST(0);
 }
 
 int test_pumper_empty_closed_source_is_eof() {
-	constexpr auto fn = "test_pumper_empty_closed_source_is_eof";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{32} });
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	ASSERT_TRUE(fn, pump.EoF());
-	ASSERT_TRUE(fn, !pump.Failed());
-	ASSERT_TRUE(fn, !pump.Canceled());
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	ASSERT_TRUE(pump.EoF());
+	ASSERT_FALSE(pump.Failed());
+	ASSERT_FALSE(pump.Canceled());
 	const auto read = pump.ReadTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(read));
-	ASSERT_EQUAL(fn, ByteSize{0}, read->Delivered());
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(static_cast<bool>(read));
+	ASSERT_EQUAL(ByteSize{0}, read->Delivered());
+	RETURN_TEST(0);
 }
 
 int test_pumper_live_producer_then_close() {
-	constexpr auto fn = "test_pumper_live_producer_then_close";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
 	Pumper pump(Bridge(in, out), { Chunk{5} });
 	src.Write("hello");
-	ASSERT_TRUE(fn, WaitDelivered(pump, ByteSize{5}, std::chrono::seconds(2)));
+	ASSERT_TRUE(WaitDelivered(pump, ByteSize{5}, std::chrono::seconds(2)));
 	src.Write(" world");
 	src.Close();
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, std::string("hello world"),
-		std::string(reinterpret_cast<const char*>(got.data()), got.size()));
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(std::string("hello world"), BytesToText(got));
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -309,33 +295,29 @@ int test_pumper_live_producer_then_close() {
 // -------------------
 
 int test_pumper_highwater_small_still_copies() {
-	constexpr auto fn = "test_pumper_highwater_small_still_copies";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Write("0123456789");
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{8}, HighWater{ByteSize{2}} });
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, ByteSize{10}, ByteSize{got.size()});
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(ByteSize{10}, got.size());
+	RETURN_TEST(0);
 }
 
 int test_pumper_highwater_zero_still_copies() {
-	constexpr auto fn = "test_pumper_highwater_zero_still_copies";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Write("0123456789");
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{3}, HighWater{ByteSize{0}} });
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, ByteSize{10}, ByteSize{got.size()});
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(ByteSize{10}, got.size());
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -343,8 +325,6 @@ int test_pumper_highwater_zero_still_copies() {
 // -------------------
 
 int test_pumper_io_to_io_then_remove() {
-	constexpr auto fn = "test_pumper_io_to_io_then_remove";
-	int result = 0;
 	const auto in_path = std::filesystem::temp_directory_path() / "sbb_pump_in.tmp";
 	const auto out_path = std::filesystem::temp_directory_path() / "sbb_pump_out.tmp";
 	std::filesystem::remove(in_path);
@@ -353,16 +333,16 @@ int test_pumper_io_to_io_then_remove() {
 	{
 		BufferedFileReader in(Loc(in_path), { ReadAhead{ByteSize{0}}, MaxMemory{ByteSize{0}} });
 		BufferedFileWriter out(Loc(out_path), { WriteChunk{ByteSize{0}}, MaxMemory{ByteSize{0}} });
-		ASSERT_TRUE(fn, in.Open());
-		ASSERT_TRUE(fn, out.Open());
+		ASSERT_TRUE(in.Open());
+		ASSERT_TRUE(out.Open());
 		Pumper pump(Bridge(std::move(in), std::move(out)), { Chunk{4} });
-		ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
+		ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
 		pump.Cancel();
 	}
-	ASSERT_EQUAL(fn, std::string("FILEPUMP"), Slurp(out_path));
-	ASSERT_TRUE(fn, std::filesystem::remove(in_path));
-	ASSERT_TRUE(fn, std::filesystem::remove(out_path));
-	RETURN_TEST(fn, result);
+	ASSERT_EQUAL(std::string("FILEPUMP"), Slurp(out_path));
+	ASSERT_TRUE(std::filesystem::remove(in_path));
+	ASSERT_TRUE(std::filesystem::remove(out_path));
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -370,22 +350,20 @@ int test_pumper_io_to_io_then_remove() {
 // -------------------
 
 int test_pumper_move_leaves_source_failed() {
-	constexpr auto fn = "test_pumper_move_leaves_source_failed";
-	int result = 0;
 	FIFO in;
 	FIFO out;
 	in.Write("xyz");
 	in.Close();
 	Pumper pump(Bridge(in, out), { Chunk{1} });
 	Pumper taken(std::move(pump));
-	ASSERT_TRUE(fn, !pump.Failed());
-	ASSERT_TRUE(fn, !pump.Canceled());
-	ASSERT_TRUE(fn, pump.EoF());
-	ASSERT_TRUE(fn, WaitFinish(taken, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, ByteSize{3}, ByteSize{got.size()});
-	RETURN_TEST(fn, result);
+	ASSERT_FALSE(pump.Failed());
+	ASSERT_FALSE(pump.Canceled());
+	ASSERT_TRUE(pump.EoF());
+	ASSERT_TRUE(WaitFinish(taken, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(ByteSize{3}, got.size());
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -393,31 +371,28 @@ int test_pumper_move_leaves_source_failed() {
 // -------------------
 
 int test_pumper_toggle_pauses_and_resumes() {
-	constexpr auto fn = "test_pumper_toggle_pauses_and_resumes";
-	int result = 0;
 	Producer src;
 	FIFO out;
 	Consumer in = src.Consumer();
 	Pumper pump(Bridge(in, out), { Chunk{1} });
 	src.Write("ABCD");
-	ASSERT_TRUE(fn, WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
+	ASSERT_TRUE(WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
 	pump.Toggle();
 	const auto paused = pump.ReadTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(paused));
+	ASSERT_TRUE(static_cast<bool>(paused));
 	const ByteSize at_pause = paused->Delivered();
 	src.Write("EFGH");
 	std::this_thread::sleep_for(std::chrono::milliseconds(80));
 	const auto still = pump.ReadTelemetry();
-	ASSERT_TRUE(fn, static_cast<bool>(still));
-	ASSERT_EQUAL(fn, at_pause, still->Delivered());
+	ASSERT_TRUE(static_cast<bool>(still));
+	ASSERT_EQUAL(at_pause, still->Delivered());
 	pump.Toggle();
 	src.Close();
-	ASSERT_TRUE(fn, WaitFinish(pump, std::chrono::seconds(2)));
-	BinaryData got;
-	ASSERT_TRUE(fn, out.Extract(0, got));
-	ASSERT_EQUAL(fn, std::string("ABCDEFGH"),
-		std::string(reinterpret_cast<const char*>(got.data()), got.size()));
-	RETURN_TEST(fn, result);
+	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	Binary got;
+	ASSERT_TRUE(out.Extract(0, got));
+	ASSERT_EQUAL(std::string("ABCDEFGH"), BytesToText(got));
+	RETURN_TEST(0);
 }
 
 int main() {

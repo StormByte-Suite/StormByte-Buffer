@@ -70,7 +70,7 @@ FIFO::FIFO(FIFO&& other) noexcept
 {
 	other.m_position_offset = StormByte::ByteSize{0};
 	other.m_closed = false;
-	other.m_error  = false;
+	other.m_error = false;
 }
 
 FIFO::~FIFO() noexcept = default;
@@ -78,10 +78,10 @@ FIFO::~FIFO() noexcept = default;
 FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
 		Generic::operator=(other);
-		m_buffer          = other.m_buffer;
+		m_buffer = other.m_buffer;
 		m_position_offset = other.m_position_offset;
-		m_closed          = other.m_closed;
-		m_error           = other.m_error;
+		m_closed = other.m_closed;
+		m_error = other.m_error;
 	}
 
 	return *this;
@@ -90,13 +90,13 @@ FIFO& FIFO::operator=(const FIFO& other) {
 FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	if (this != &other) {
 		Generic::operator=(std::move(other));
-		m_buffer          = std::move(other.m_buffer);
+		m_buffer = std::move(other.m_buffer);
 		m_position_offset = other.m_position_offset;
-		m_closed          = other.m_closed;
-		m_error           = other.m_error;
+		m_closed = other.m_closed;
+		m_error = other.m_error;
 		other.m_position_offset = StormByte::ByteSize{0};
 		other.m_closed = false;
-		other.m_error  = false;
+		other.m_error = false;
 	}
 
 	return *this;
@@ -106,7 +106,7 @@ StormByte::ByteSize FIFO::Available() const noexcept {
 	return AvailableInternal();
 }
 
-const StormByte::BinaryData& FIFO::Data() const noexcept {
+const StormByte::Safe::Binary& FIFO::Data() const noexcept {
 	return m_buffer;
 }
 
@@ -148,9 +148,8 @@ void FIFO::Clean() noexcept {
 				m_buffer.shrink_to_fit();
 		}
 	}
-	else {
+	else
 		m_buffer.clear();
-	}
 
 	m_position_offset = StormByte::ByteSize{0};
 }
@@ -232,9 +231,8 @@ StormByte::Safe::String FIFO::FormatHexLines(std::span<const std::byte>& data, S
 				const unsigned int val = static_cast<unsigned int>(std::to_integer<unsigned char>(data[j]));
 				line << std::hex << std::setw(2) << std::setfill('0') << std::uppercase << val << ' ' << std::dec;
 			}
-			else {
+			else
 				line << "   ";
-			}
 		}
 
 		line << "  ";
@@ -273,7 +271,7 @@ StormByte::ByteSize FIFO::AvailableInternal() const noexcept {
 	return (m_position_offset <= stored) ? (stored - m_position_offset) : StormByte::ByteSize{0};
 }
 
-bool FIFO::Extract(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) noexcept {
+bool FIFO::Extract(const StormByte::ByteSize& count, StormByte::Safe::Binary& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
@@ -281,7 +279,7 @@ bool FIFO::Extract(const StormByte::ByteSize& count, WriteOnly& outBuffer) noexc
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
-void FIFO::ExtractUntilEoF(StormByte::BinaryData& outBuffer) noexcept {
+void FIFO::ExtractUntilEoF(StormByte::Safe::Binary& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
@@ -289,7 +287,7 @@ void FIFO::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
-bool FIFO::Read(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) const noexcept {
+bool FIFO::Read(const StormByte::ByteSize& count, StormByte::Safe::Binary& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
@@ -297,7 +295,7 @@ bool FIFO::Read(const StormByte::ByteSize& count, WriteOnly& outBuffer) const no
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
-void FIFO::ReadUntilEoF(StormByte::BinaryData& outBuffer) const noexcept {
+void FIFO::ReadUntilEoF(StormByte::Safe::Binary& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
@@ -305,7 +303,7 @@ void FIFO::ReadUntilEoF(WriteOnly& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
-bool FIFO::Peek(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer) const noexcept {
+bool FIFO::Peek(const StormByte::ByteSize& count, StormByte::Safe::Binary& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
@@ -313,11 +311,11 @@ bool FIFO::Peek(const StormByte::ByteSize& count, WriteOnly& outBuffer) const no
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
-bool FIFO::Write(const StormByte::ByteSize& count, const StormByte::BinaryData& data) noexcept {
+bool FIFO::Write(const StormByte::ByteSize& count, const StormByte::Safe::Binary& data) noexcept {
 	return WriteInternal(count, data);
 }
 
-bool FIFO::Write(const StormByte::ByteSize& count, StormByte::BinaryData&& data) noexcept {
+bool FIFO::Write(const StormByte::ByteSize& count, StormByte::Safe::Binary&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
 
@@ -329,7 +327,7 @@ bool FIFO::Write(const StormByte::ByteSize& count, ReadOnly&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
 
-bool FIFO::ReadInternal(const StormByte::ByteSize& count, StormByte::BinaryData& outBuffer, const Operation& flag) noexcept {
+bool FIFO::ReadInternal(const StormByte::ByteSize& count, StormByte::Safe::Binary& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
 	const StormByte::ByteSize available_bytes = AvailableInternal();
@@ -373,14 +371,14 @@ bool FIFO::ReadInternal(const StormByte::ByteSize& count, WriteOnly& outBuffer, 
 	const StormByte::ByteSize real_count = (count == StormByte::ByteSize{0}) ? available_bytes : count;
 	if ((count == StormByte::ByteSize{0} && available_bytes == StormByte::ByteSize{0}) || real_count > available_bytes)
 		return false;
-	StormByte::BinaryData temp;
+	StormByte::Safe::Binary temp;
 	temp.reserve(real_count);
 	if (!FIFO::ReadInternal(count, temp, flag))
 		return false;
 	return outBuffer.Write(std::move(temp));
 }
 
-void FIFO::ReadUntilEoFInternal(StormByte::BinaryData& outBuffer, const Operation& flag) noexcept {
+void FIFO::ReadUntilEoFInternal(StormByte::Safe::Binary& outBuffer, const Operation& flag) noexcept {
 	while (true) {
 		switch (flag) {
 			case Operation::Read:
@@ -393,7 +391,7 @@ void FIFO::ReadUntilEoFInternal(StormByte::BinaryData& outBuffer, const Operatio
 				return;
 		}
 
-		StormByte::BinaryData unused;
+		StormByte::Safe::Binary unused;
 		if (!Peek(StormByte::ByteSize{1}, unused))
 			return;
 	}
@@ -412,13 +410,13 @@ void FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noe
 				return;
 		}
 
-		StormByte::BinaryData unused;
+		StormByte::Safe::Binary unused;
 		if (!Peek(StormByte::ByteSize{1}, unused))
 			return;
 	}
 }
 
-bool FIFO::WriteInternal(const StormByte::ByteSize& count, const StormByte::BinaryData& src) noexcept {
+bool FIFO::WriteInternal(const StormByte::ByteSize& count, const StormByte::Safe::Binary& src) noexcept {
 	if (m_closed || m_error)
 		return false;
 	const StormByte::ByteSize src_size = src.size();
@@ -432,7 +430,7 @@ bool FIFO::WriteInternal(const StormByte::ByteSize& count, const StormByte::Bina
 	return true;
 }
 
-bool FIFO::WriteInternal(const StormByte::ByteSize& count, StormByte::BinaryData&& src) noexcept {
+bool FIFO::WriteInternal(const StormByte::ByteSize& count, StormByte::Safe::Binary&& src) noexcept {
 	if (m_closed || m_error)
 		return false;
 	const StormByte::ByteSize src_size = src.size();

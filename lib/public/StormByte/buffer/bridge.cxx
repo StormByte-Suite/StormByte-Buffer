@@ -207,7 +207,7 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 		if (want == StormByte::ByteSize{0})
 			return { IO::Status::Ok, 0 };
 
-		BinaryData chunk;
+		StormByte::Safe::Binary chunk;
 		if (!m_ext_in->Extract(want, chunk)) {
 			const StormByte::ByteSize left = m_ext_in->Available();
 			if (left > StormByte::ByteSize{0} && left < want
@@ -259,7 +259,7 @@ IO::Result Bridge::Push(FIFO& src) {
 	if (m_ext_out) {
 		if (!m_ext_out->IsWritable())
 			return { IO::Status::Failed, 0 };
-		BinaryData chunk;
+		StormByte::Safe::Binary chunk;
 		if (!src.Extract(n, chunk))
 			return { IO::Status::Failed, 0 };
 		if (!m_ext_out->Write(StormByte::ByteSize{0}, std::move(chunk)))

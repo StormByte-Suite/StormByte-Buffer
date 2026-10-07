@@ -7,21 +7,19 @@
 [![CI](https://github.com/StormByte-Suite/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormByte-Suite/StormByte-Buffer/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-StormBytePP-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/StormBytePP)
 
-This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pumper, pipelines and buffered I/O for the StormByte C++ suite.
+This repository is **StormByte Buffer**: byte streams, buffered I/O and typed item queues for the StormByte C++ suite. Those are three different things. A byte buffer does not carry a C++ object, and a Hopper does not carry octets.
 
-It uses [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer through [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and uses [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Base provides the owned UTF-8 and wide text types. Public headers live under `StormByte/buffer/`.
+It uses [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer through [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and uses [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Base provides the owned UTF-8 and wide text types, the octet payload, and the wait primitives. Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network and System are **other repositories**. This one does not implement them.
 
 ## Designed to interconnect
 
-Pieces plug into each other through `ReadOnly` / `WriteOnly` and through IO leaves.
+Pieces plug into each other only inside their own group.
 
-- `Producer` yields a `Consumer` over the same `Ring`.
-- `Pipeline` transforms stream buffers only (`ReadOnly` / `WriteOnly`). Pipes do not take IO leaves.
-- `Bridge` moves bytes from a `ReadOnly` or an IO reader into a `WriteOnly` or an IO writer. IO tips are taken by move; in-memory tips stay referenced.
-- `Pumper` owns a `Bridge` and runs `Passthrough` until EoF or failure.
-- `BufferedFileReader` *is* a `BufferedReader`. `BufferedFileWriter` *is* a `BufferedWriter`. Leaves implement `Origin*`. Cache, prefetch, backpressure, delayed seek and telemetry live in the bases.
+- Byte tips share `ReadOnly` / `WriteOnly`. `Producer` yields a `Consumer` over the same `Ring`. `Pipeline` transforms those stream buffers only. `Bridge` moves octets from a `ReadOnly` or an IO reader into a `WriteOnly` or an IO writer. `Pumper` owns a `Bridge` and runs `Passthrough` until EoF or failure.
+- IO leaves are also byte tips. `BufferedFileReader` *is* a `BufferedReader`. `BufferedFileWriter` *is* a `BufferedWriter`. A Bridge can steal a leaf by move. A Pipeline cannot take a leaf.
+- `Hopper` and `Sink` take C++ items. They do not read or write `Safe::Binary`, and a byte buffer is not a Hopper.
 
 Typical wires:
 
@@ -29,29 +27,23 @@ Typical wires:
 - `Producer` → `Pipeline::Process` → `Consumer`.
 - That `Consumer` → `Bridge::Passthrough` → file (or wrap the Bridge in a `Pumper`).
 - `BufferedFileReader` / `BufferedFileWriter` for seekable files with a page map.
+- `Sink::To(key) >> other` for a typed item, never for a byte chunk.
 
-See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#telemetry), [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
+See [Bytes](#bytes), [IO](#io) and [Items](#items).
 
 ## What this module does
 
-- **BinaryData** — octet payloads are `StormByte::BinaryData` (Base). Lengths of byte buffers are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
-- **FIFO** — grow-on-demand byte buffer. Not thread-safe. `Read` / `Peek` keep data; `Extract` consumes it.
-- **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
-- **Ring** — concurrent ring (many-to-many).
-- **Producer / Consumer** — write-only / read-only handles over a shared `Ring`. `StormByte::Safe::Owner` keeps ownership callbacks inside Buffer; these handles are conditional (`MaybeSafe`), not universally `IsSafe`.
-- **Hopper / Sink** — SPSC typed items and a keyed map of hoppers.
-- **Pipeline** — copyable callable `Pipe` stages. Stream buffers only. `Add` copies or moves.
-- **Bridge** — manual transfer. `Passthrough(n, Operation)` only. No worker.
-- **Pumper** — owns a Bridge and pumps until EoF or `Cancel`.
-- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Safe::Shared<…>`, derived from Base `StormByte::Telemetry`. Independent samples aggregate under a stable Base clock name and can overlap or move between threads. `MeanRate` is caller rate, not disk rate.
-- **IO** — `BufferedReader` / `BufferedWriter` bases and file leaves. Nested `Parameters` and knobs.
+- **Bytes** — octet payloads are `StormByte::Safe::Binary`. Lengths are `StormByte::ByteSize`. FIFO, SharedFIFO, Ring, Producer/Consumer, Pipeline, Bridge and Pumper live here.
+- **IO** — the buffered origin and sink hierarchy. `BufferedReader` / `BufferedWriter` own the cache. `BufferedLocationReader` / `BufferedLocationWriter` add a named, seekable, sized location. `BufferedFileReader` / `BufferedFileWriter` are the final file leaves.
+- **Items** — `Hopper<T>` and `Sink<T>`. They count objects with `StormByte::Size`. `T` is a `SafeValue`, not an octet buffer.
+- **Telemetry** — `ReadTelemetry` / `WriteTelemetry` as `const StormByte::Safe::Shared<…>`, derived from Base `StormByte::Telemetry`. Used by IO offices and by Bridge. `MeanRate` is caller rate, not disk rate. Writer `Cap` is the ring cap (`WriteChunk * BackPressure`, or 0 if the ring is off). It is not `MaxMemory`.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
 ## The rest of the suite
 
 | Module | Role | API |
 | --- | --- | --- |
-| [Base](https://github.com/StormByte-Suite/StormByte) | Exceptions, Expected, serialization, UUID, concepts | [/StormByte](http://suite.stormbyte.org/StormByte) |
+| [Base](https://github.com/StormByte-Suite/StormByte) | Exceptions, Expected, serialization, UUID, Safe | [/StormByte](http://suite.stormbyte.org/StormByte) |
 | **Buffer** | This repository | [/StormByte-Buffer](http://suite.stormbyte.org/StormByte-Buffer) |
 | [Config](https://github.com/StormByte-Suite/StormByte-Config) | Human-readable text and versioned binary documents | [/StormByte-Config](http://suite.stormbyte.org/StormByte-Config) |
 | [Crypto](https://github.com/StormByte-Suite/StormByte-Crypto) | Hash, compress, encrypt, sign — Crypto++ stays private | [/StormByte-Crypto](http://suite.stormbyte.org/StormByte-Crypto) |
@@ -68,19 +60,24 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 - [The rest of the suite](#the-rest-of-the-suite)
 - [Documentation](#documentation)
 - [Installation](#installation)
-- [Usage](#usage)
+- [Bytes](#bytes)
   - [FIFO](#fifo)
   - [Producer and Consumer](#producer-and-consumer)
-  - [Hopper](#hopper)
-  - [Sink](#sink)
-  - [Parameters](#parameters)
-  - [Telemetry](#telemetry)
   - [Pipeline](#pipeline)
   - [Bridge](#bridge)
   - [Pumper](#pumper)
-  - [IO::BufferedReader](#iobufferedreader)
-  - [IO::BufferedWriter](#iobufferedwriter)
-  - [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter)
+- [IO](#io)
+  - [Parameters](#parameters)
+  - [Telemetry](#telemetry)
+  - [BufferedReader](#bufferedreader)
+  - [BufferedLocationReader](#bufferedlocationreader)
+  - [BufferedFileReader](#bufferedfilereader)
+  - [BufferedWriter](#bufferedwriter)
+  - [BufferedLocationWriter](#bufferedlocationwriter)
+  - [BufferedFileWriter](#bufferedfilewriter)
+- [Items](#items)
+  - [Hopper](#hopper)
+  - [Sink](#sink)
 - [Support](#support)
 - [Contributing](#contributing)
 - [License](#license)
@@ -92,13 +89,15 @@ See [Pipeline](#pipeline), [Bridge](#bridge), [Pumper](#pumper), [Telemetry](#te
 
 ### DLL Boundary Contract (2.0.0)
 
-DLL safety is conditional, not a promise of compatibility between different compilers or STL ABIs. `MaybeSafe` registrations apply to exact types only: the `Generic` / `ReadOnly` / `WriteOnly` / `ReadWrite` interfaces, `Producer`, `Consumer`, `Bridge`, `Pumper`, `Pipe`, `Pipeline`, buffered IO bases and file leaves, telemetry types and operation samples, IO `Result` and knobs, and `Pumper::Parameters`. `Hopper<T>` and `Sink<T>` have constrained exact-type family specializations. Derived types do not inherit certification; each concrete provider and its owned state need their own audit and declaration.
+DLL safety is conditional, not a promise of compatibility between different compilers or STL ABIs. `MaybeSafe` registrations apply to exact types only: the `Generic` / `ReadOnly` / `WriteOnly` / `ReadWrite` interfaces, `Producer`, `Consumer`, `Bridge`, `Pumper`, `Pipe`, `Pipeline`, buffered IO bases and file leaves, telemetry types and operation samples, IO `Result` and knobs, and `Pumper::Parameters`. `Hopper<T>` and `Sink<T>` are partial specializations of `IsMaybeSafe`. The exact-type macro does not accept a class template. Derived types do not inherit certification; each concrete provider and its owned state need their own audit and declaration.
 
 Keep Buffer, Base and every participating concrete, template, element and callback provider loaded until their objects, owners and callbacks are released. Logger must also remain loaded while pipeline logger handles are used. Inline template callbacks are not automatically provider-local. Stop and join all users before destroying queues or their borrowed state; allocation failure in nonthrowing operations terminates the process.
 
-`Ring` constructs, moves and destroys its private deque and synchronization state in Buffer; `SharedFIFO` constructs and destroys its mutex / condition variable out of line. Range constructors convert to Base-owned `BinaryData` in the caller and delegate to the provider constructor. This keeps private storage lifecycle in its provider, without transferring STL container ownership or certifying derived buffers. Private `std::unique_ptr` backends remain private and are released out of line; they are not public boundary payloads.
+`Ring` constructs, moves and destroys its private deque and synchronization state in Buffer; `SharedFIFO` constructs and destroys its mutex / condition variable out of line. Range constructors convert to Base-owned `Safe::Binary` in the caller and delegate to the provider constructor. This keeps private storage lifecycle in its provider, without transferring STL container ownership or certifying derived buffers. Pipe callable state is allocated with `Safe::Heap::Allocate` and released by the creator callback. It is not a `std::unique_ptr`.
 
 Protected `FIFO::HexDumpHeader()` and `Ring::HexDumpHeader()` return `StormByte::Safe::String`, not `std::ostringstream`. Custom overrides must use the new return type; stream formatting stays local to the implementation.
+
+Public headers do not export `std::mutex`, `std::condition_variable`, `std::atomic` or `std::thread`. Hopper, Sink, SharedFIFO, Ring and the IO engines wait on `Safe::Mutex`, `Safe::ConditionVariable` and `Safe::Atomic`. `Notify` borrows the caller's `Safe::ConditionVariable` and, in the stored-event overload, a `Safe::Atomic<std::size_t>`. A worker created by this module is a `Safe::Thread`, created and joined here. A thread you start in your own `.cxx` is yours. Do not pass a `std` wait object into `Notify`.
 
 ## Installation
 
@@ -117,46 +116,50 @@ A shared build keeps this library as its own `.so` / `.dll`. Under the LGPL that
 
 Link `StormByte-Buffer`. Headers: `#include <StormByte/buffer/….hxx>`.
 
-## Usage
+## Bytes
 
-Namespace root is `StormByte::Buffer`. I/O types live in `StormByte::Buffer::IO`. Octet payloads use `StormByte::BinaryData`. Byte lengths use `StormByte::ByteSize`.
+These types move octets. The payload is `StormByte::Safe::Binary`. A length is `StormByte::ByteSize`. `FIFO` is the plain buffer. `SharedFIFO` and `Ring` add concurrency. `Producer` and `Consumer` are the write and read tips of one ring. `Pipeline` transforms those tips. `Bridge` copies octets from a read tip to a write tip, and can steal an IO leaf. `Pumper` owns that Bridge and runs it. None of them stores a `T`.
+
+Namespace root is `StormByte::Buffer`.
 
 ### FIFO
 
 ```cpp
 #include <StormByte/buffer/fifo.hxx>
 
-using StormByte::BinaryData;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
+using StormByte::Safe::Binary;
 
 int main() {
 	FIFO fifo;
 	fifo.Write("Hello World");
 
-	BinaryData data;
+	Binary data;
 	fifo.Read(5, data); // "Hello", still in the buffer
 	fifo.Seek(6, Position::Absolute);
 
-	BinaryData extracted;
+	Binary extracted;
 	fifo.Extract(5, extracted); // "World"
 }
 ```
 
-`FIFO` is not thread-safe. Concurrent ends use `SharedFIFO` or `Ring`.
+`FIFO` is not thread-safe. Concurrent ends use `SharedFIFO` or `Ring`. `Read` / `Peek` keep data; `Extract` consumes it.
 
 ### Producer and Consumer
 
 A `Producer` yields a `Consumer` over the same ring. The `Consumer` is a `ReadOnly`; the `Producer` is a `WriteOnly`. Either tip can be passed to a [Bridge](#bridge). Ring ownership uses opaque `StormByte::Safe::Owner` callbacks implemented in Buffer, not `std::shared_ptr<Ring>` in the public ABI. The owner and any `Producer`/`Consumer` copy can outlive its handle, but the Buffer and Base modules must stay loaded until all handles are destroyed. This conditional contract does not certify arbitrary cross-module payloads or compiler/STL ABI compatibility.
+
+The threads in this example are the caller's. They are not part of the Buffer ABI.
 
 ```cpp
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/producer.hxx>
 #include <thread>
 
-using StormByte::BinaryData;
 using StormByte::Buffer::Consumer;
 using StormByte::Buffer::Producer;
+using StormByte::Safe::Binary;
 
 int main() {
 	Producer producer;
@@ -170,7 +173,7 @@ int main() {
 
 	std::thread reader([consumer]() mutable {
 		while (!consumer.EoF()) {
-			BinaryData data;
+			Binary data;
 			if (consumer.Extract(0, data) && !data.empty()) {
 				// process
 			}
@@ -180,145 +183,6 @@ int main() {
 	writer.join();
 	reader.join();
 }
-```
-
-### Hopper
-
-`Hopper<T>` is an SPSC queue for unqualified `StormByte::Type::SafeValue` items that are default-constructible and movable, with nonthrowing default construction, move construction, move assignment and destruction. `alignof(T)` must not exceed `alignof(std::max_align_t)`. Queue storage uses Base's heap; extended alignment is rejected at compile time, with no standard-allocator fallback. Standard strings, containers, smart pointers and raw pointers are not accepted merely because they are movable. Use supported values such as `int`, `Safe::String` or `Safe::Shared<int>`; provider-declared values must independently satisfy the full contract. `Front` additionally requires nonthrowing copying.
-
-Capacity `0` is unbounded. `Push` blocks when a bounded hopper is full. `Eof()` ends production; queued items can still be drained. Nullable pointer items discard nulls.
-
-`Notify(cv)` borrows the condition variable. Replacing or unregistering an observer synchronizes with in-flight notifications; `Unnotify()` must return before that CV dies. This does not make concurrent destruction of the Hopper safe: stop and join its users first.
-
-The legacy `Notify(cv)` does not store events: the caller must coordinate predicate checks, waits and producer operations through the consumer's wait mutex. For consumers with an independent mutex, use `Notify(cv, generation)`, where `generation` is a borrowed `std::atomic<std::size_t>`. Push and EOF increment it with release ordering and call `notify_all()` after publishing queue state. Load the counter with acquire ordering **before** checking readiness; if false, call `generation.wait(captured, std::memory_order_acquire)` and repeat. Both the CV and counter must remain alive until `Unnotify()` returns. Explicit stop/failure events must publish their state and increment/notify this same counter; do not reset it while consumers can wait on it.
-
-```cpp
-#include <StormByte/buffer/hopper.hxx>
-#include <StormByte/safe/pointers.hxx>
-#include <thread>
-
-using StormByte::Buffer::Hopper;
-
-int main() {
-	Hopper<StormByte::Safe::Shared<int>> hopper(5);
-
-	std::thread producer([&hopper]() {
-		for (int i = 0; i < 10; ++i)
-			hopper << StormByte::Safe::Shared<int>::MakePointer<int>(i);
-		hopper.Eof();
-	});
-
-	std::thread consumer([&hopper]() {
-		while (!hopper.Empty() || !hopper.EoF()) {
-			auto item = hopper.Pop();
-			(void)item;
-		}
-	});
-
-	producer.join();
-	consumer.join();
-}
-```
-
-### Sink
-
-`Sink<T>` maps integer keys to `Hopper<T>` buckets. Wire with `To(key)` / `>>` / `<<`.
-
-`Keys()` returns an independent, ascending `StormByte::Safe::Vector<int>` snapshot that remains valid after the Sink is destroyed. Copies are independent; keep Base and the snapshot's creator module loaded until all copies are released.
-
-`Sink<T>` has the same `SafeValue`, nonthrowing movement and alignment constraints as Hopper. Coordinators use `Safe::Unique`, wired hoppers use `Safe::Shared`, and private maps, writer sets, order vectors and queue storage use Base's heap. Over-aligned payloads are rejected, not routed to a standard allocator. These allocations do not remove the compatible C++/STL ABI and provider-lifetime requirements.
-
-`Select` is `StormByte::Safe::Function<StormByte::Size(StormByte::Size)>`. `Pop(const Select&)` borrows it synchronously and never retains it. The provider callback has the form `Safe::Status(void* context, Size* output, Size count)`: write the index through `output` and report `Success`. `Missing`, `Failure` or an exception returns default `T` without consuming queued items. The callback provider owns and releases its context and must remain loaded through callback destruction. The caller-side callable overload borrows the original callable, including mutable or move-only captures, only for that `Pop` call.
-
-Conditions passed to `Notify` are borrowed. `Unnotify` unregisters this Sink's matching hopper registrations and waits for in-flight notifications before returning; finish it before destroying the condition variable. Stop and join all queue users before destroying the Sink.
-
-`Sink::Notify(cv, generation)` uses the same stored-event protocol as Hopper on current and future buckets, including keyed wiring, all-bucket wiring and fan-in. Wiring publishes an event after updating the consumer, so already queued data or EOF also wakes it. Sink closure publishes an event even with no buckets. Shared hoppers have one observer: the latest registration replaces its CV, counter and owner identity. An older Sink's `Unnotify()` cannot remove that newer registration.
-
-```cpp
-std::condition_variable wake;
-std::atomic<std::size_t> generation{0};
-consumer_sink.Notify(wake, generation);
-for (;;) {
-	const auto captured = generation.load(std::memory_order_acquire);
-	if (!consumer_sink.Ready()) {
-		generation.wait(captured, std::memory_order_acquire);
-		continue;
-	}
-	if (consumer_sink.EoF())
-		break;
-	(void)consumer_sink.Pop();
-}
-consumer_sink.Unnotify();
-```
-
-Stored notifications change the private Hopper/Sink template implementation layouts in 2.0.0. Rebuild all providers and consumers that instantiate them before replacing the library; do not mix older and newer instantiations across DLLs. Borrowed atomics/CVs require a compatible C++/STL ABI, and their providers must remain loaded until notification removal completes. The counters add no ownership callbacks or changes to queue limits, blocking or element release.
-
-```cpp
-#include <StormByte/buffer/sink.hxx>
-#include <StormByte/safe/pointers.hxx>
-#include <StormByte/safe/string.hxx>
-#include <thread>
-
-using StormByte::Buffer::Sink;
-
-int main() {
-	Sink<StormByte::Safe::String> producer_sink;
-	Sink<StormByte::Safe::String> consumer_sink;
-
-	producer_sink.To(1, consumer_sink);
-	producer_sink.To(2, consumer_sink);
-
-	std::thread writer([&producer_sink]() {
-		producer_sink.Push(1, StormByte::Safe::String("ch1"));
-		producer_sink.Push(2, StormByte::Safe::String("ch2"));
-		producer_sink.Eof();
-	});
-
-	std::thread reader([&consumer_sink]() {
-		while (!consumer_sink.EoF())
-			(void)consumer_sink.Pop();
-	});
-
-	writer.join();
-	reader.join();
-}
-```
-
-### Parameters
-
-IO leaves and `Pumper` take a nested `Parameters` object. Omitted knobs keep the office default. Brace-init and a named bag are both valid. Bags are header-only and store `StormByte::Safe::Optional` values; ownership and release use the storage provider's callbacks, not an exposed STL optional. IO constructors resolve the knobs into numbers, durations and probe flags. Pure knob and bag functions use ordinary inline definitions.
-
-IO byte-count getters return `const Safe::Optional<ByteSize>&`; `BackPressure()` returns `const Safe::Optional<std::size_t>&`. The bag's `MaxWait()` returns `const Safe::Optional<std::chrono::milliseconds::rep>&`, a signed millisecond count. Resolve it with `std::chrono::milliseconds{p.MaxWait().value_or(0)}`. `MaxWait{std::chrono::milliseconds{...}}` still accepts durations, and live reader/writer `MaxWait()` getters still return durations. Negative counts are preserved; an absent knob remains distinct from an engaged zero (unlimited wait).
-
-Bag construction, copying and knob assignment may allocate and throw. Copy operations are not `noexcept`; moves and destruction remain nonthrowing and transfer or release Safe-owned state. Keep the storage provider loaded until all bags and copies are released. Private STL backend lifecycle remains in its provider.
-
-```cpp
-using StormByte::Buffer::IO::MaxMemory;
-using StormByte::Buffer::IO::ReadAhead;
-using StormByte::Buffer::IO::BufferedFileReader;
-
-BufferedFileReader in("in.bin");                          // probe at Open
-BufferedFileReader in2("in.bin", { ReadAhead{1 << 20} }); // one knob
-BufferedFileReader::Parameters p{ ReadAhead{1 << 20}, MaxMemory{8 << 20} };
-BufferedFileReader in3("in.bin", p);
-```
-
-Explicit `0` is `0`. It does not probe.
-
-### Telemetry
-
-Every IO office and every Bridge exposes `const StormByte::Safe::Shared<ReadTelemetry>` / `WriteTelemetry`. The handle is the same object for the life of the office. IO types add cache / origin / seek / wait counters. Non-IO Bridge tips use the basic type.
-
-`MeanRate` is octets per second of **requested user operations**, including cache hits. It is not a disk benchmark. A cached write can look like GiB/s. Worker, GC and internal flushes enter the rate only when they delay the caller. Explicit `Flush` / `Close` Flush pull it back.
-
-Each measured operation owns an independent Base clock sample, so concurrent and nested operations do not share a start/stop state. A sample borrows its `Telemetry` owner and must not outlive it.
-
-Flatten with `operator StormByte::Safe::String` or `operator std::string()` (the latter is `FORCE_INLINE` so the `std::string` lives in your TU):
-
-```cpp
-auto tel = reader.Telemetry();
-if (tel)
-	log << Level::Info << *tel << std::endl;
 ```
 
 ### Pipeline
@@ -331,7 +195,7 @@ A `Pipe` is a nonpolymorphic value owning a copyable `Safe::Function`. Construct
 
 The endpoint facades, all their copies, and the logger reference are synchronous borrows valid only until invocation returns. Never retain them in captures, background work or handles. Their exact-type `MaybeSafe` declarations admit the explicit facade contract; they do not automatically certify the lifetime of an arbitrary raw pointer or underlying endpoint. Const forwarding is not a thread-safety guarantee. Pipeline keeps its endpoints alive for invocation, including on background workers. The callback provider, Buffer, Base and Logger must remain loaded with compatible C++/STL ABI until all callbacks and workers are released.
 
-The callable factory constructs captures in the creator module, using Base's heap helpers and matching creator-side invoke, clone and release callbacks. For explicitly controlled DLL providers, construct `Pipe::Callback(context, invoke, clone, release)` and move it into `Pipe`. Clone must independently copy context in that provider and return null on failure; release must destroy captures there and free storage with the matching Base heap helper. Template instantiations and externally defined callable types still require a provider-locality audit; this is not compatibility across arbitrary runtimes. `Run` returns `Safe::Status`: `Failure`, moved-from `Missing`, Safe exceptions and foreign exceptions cause Pipeline to mark every output errored and wake waiters. Nothing escapes `Process`'s `noexcept` boundary.
+The callable factory constructs captures with `Safe::Heap::Allocate` in the creator module and attaches matching creator-side invoke, clone and release callbacks. For explicitly controlled DLL providers, construct `Pipe::Callback(context, invoke, clone, release)` and move it into `Pipe`. Clone must independently copy context in that provider and return null on failure; release must destroy captures there and free storage with `Safe::Heap::Free`. Template instantiations and externally defined callable types still require a provider-locality audit; this is not compatibility across arbitrary runtimes. `Run` returns `Safe::Status`: `Failure`, moved-from `Missing`, Safe exceptions and foreign exceptions cause Pipeline to mark every output errored and wake waiters. Nothing escapes `Process`'s `noexcept` boundary.
 
 To migrate an old derived stage, replace its `Run` implementation with a callable using the facades, remove inheritance and virtual `Clone`/`Move`, and construct a `Pipe` from that callable. Replace endpoint `Extract` calls with a `Read` loop and `Write(count, bytes)` with `Write(bytes)` when writing the whole chunk. Move-only captures are intentionally rejected to preserve Pipeline copy semantics.
 
@@ -339,6 +203,7 @@ To migrate an old derived stage, replace its `Run` implementation with a callabl
 #include <StormByte/buffer/pipe.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/safe/binary.hxx>
 #include <StormByte/safe/pointers.hxx>
 
 using StormByte::Buffer::Consumer;
@@ -348,15 +213,16 @@ using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::PipeInput;
 using StormByte::Buffer::PipeOutput;
+using StormByte::Safe::Binary;
 
 Pipe MakeStripCrPipe() {
 	return Pipe([](const PipeInput& in, const PipeOutput& out,
 		const StormByte::Safe::Shared<StormByte::Logger::Log>&) {
 		while (!in.EoF()) {
-			StormByte::BinaryData raw;
+			Binary raw;
 			if (!in.Read(0, raw))
 				break;
-			StormByte::BinaryData unix_newlines;
+			Binary unix_newlines;
 			unix_newlines.reserve(raw.size());
 			for (const std::byte octet : raw) {
 				if (octet != std::byte{'\r'})
@@ -382,7 +248,7 @@ int main() {
 }
 ```
 
-`Sync` runs on the caller thread. `Async` returns at once. `Parallel` is one thread per pipe. Combine with `|`.
+`Sync` runs on the caller thread. `Async` returns at once. `Parallel` is one thread per pipe. Combine with `|`. The pipeline worker is a `Safe::Thread` created and joined in this module.
 
 ### Bridge
 
@@ -472,7 +338,7 @@ int main() {
 
 ### Pumper
 
-`Pumper` takes a `Bridge` by move and starts a worker immediately. The destructor **joins** and may block until the current cycle ends. It does **not** `Cancel`: it lets the worker finish.
+`Pumper` takes a `Bridge` by move and starts a worker immediately. The destructor **joins** and may block until the current cycle ends. It does **not** `Cancel`: it lets the worker finish. That worker is a `Safe::Thread`.
 
 - `Chunk` — bytes asked of `Passthrough` each cycle. `0` is automatic chunking, **not** Bridge “current contents”.
 - `HighWater` — input cap only. Omitted: `0` if the source is IO, otherwise a backend default (constexpr in the PIMPL). Explicit `0`: no Pumper cap. Use `0` when the IO source already limits itself. Non-IO sources are unbounded by design.
@@ -514,10 +380,62 @@ int main() {
 }
 ```
 
-`finish = !pump.Failed() && !pump.Canceled() && pump.EoF()`.  
+`finish = !pump.Failed() && !pump.Canceled() && pump.EoF()`.
 `active = !pump.Failed() && !pump.Canceled() && !pump.EoF()`.
 
-### IO::BufferedReader
+## IO
+
+IO is the buffered file-like hierarchy. It still moves octets, but the public type is not a FIFO. A leaf is a reader or a writer with a page cache, a logical cursor and an origin hook.
+
+The chain is fixed:
+
+- `BufferedReader` is the read engine. Cache, prefetch, logical `Seek`, `Tell` and telemetry live here. A custom origin implements the `Origin*` hooks.
+- `BufferedLocationReader` sits on that engine. A location is named, always seekable and sized. `Device()` returns a `Safe::Shared<System::Device>` so a subclass is not sliced.
+- `BufferedFileReader` is the final file leaf. It opens a path, probes the device and uses the location layer.
+- `BufferedWriter`, `BufferedLocationWriter` and `BufferedFileWriter` are the write side of the same three levels.
+
+A Pipeline cannot take one of these. A Bridge can, by move.
+
+### Parameters
+
+IO leaves and `Pumper` take a nested `Parameters` object. Omitted knobs keep the office default. Brace-init and a named bag are both valid. Bags are header-only and store `StormByte::Safe::Optional` values; ownership and release use the storage provider's callbacks, not an exposed STL optional. IO constructors resolve the knobs into numbers, durations and probe flags. Pure knob and bag functions use ordinary inline definitions.
+
+IO byte-count getters return `const Safe::Optional<ByteSize>&`; `BackPressure()` returns `const Safe::Optional<std::size_t>&`. The bag's `MaxWait()` returns `const Safe::Optional<std::chrono::milliseconds::rep>&`, a signed millisecond count. Resolve it with `std::chrono::milliseconds{p.MaxWait().value_or(0)}`. `MaxWait{std::chrono::milliseconds{...}}` still accepts durations, and live reader/writer `MaxWait()` getters still return durations. Negative counts are preserved; an absent knob remains distinct from an engaged zero (unlimited wait).
+
+Bag construction, copying and knob assignment may allocate and throw. The empty file-leaf `Parameters` constructor is not `noexcept`. Copy operations are not `noexcept`; moves and destruction remain nonthrowing and transfer or release Safe-owned state. Keep the storage provider loaded until all bags and copies are released.
+
+```cpp
+using StormByte::Buffer::IO::MaxMemory;
+using StormByte::Buffer::IO::ReadAhead;
+using StormByte::Buffer::IO::BufferedFileReader;
+
+BufferedFileReader in("in.bin");                          // probe at Open
+BufferedFileReader in2("in.bin", { ReadAhead{1 << 20} }); // one knob
+BufferedFileReader::Parameters p{ ReadAhead{1 << 20}, MaxMemory{8 << 20} };
+BufferedFileReader in3("in.bin", p);
+```
+
+Explicit `0` is `0`. It does not probe.
+
+### Telemetry
+
+Every IO office and every Bridge exposes `const StormByte::Safe::Shared<ReadTelemetry>` / `WriteTelemetry`. The handle is the same object for the life of the office. IO types add cache / origin / seek / wait counters. Non-IO Bridge tips use the basic type.
+
+`MeanRate` is octets per second of **requested user operations**, including cache hits. It is not a disk benchmark. A cached write can look like GiB/s. Worker, GC and internal flushes enter the rate only when they delay the caller. Explicit `Flush` / `Close` Flush pull it back.
+
+Each measured operation owns an independent Base clock sample, so concurrent and nested operations do not share a start/stop state. A sample borrows its `Telemetry` owner and must not outlive it.
+
+Reader `Cap` is the `MaxMemory` snapshot. Writer `Cap` is the ring cap at that snapshot: `WriteChunk * BackPressure`, or 0 when the ring is off. It is not the page-map budget.
+
+Flatten with `operator StormByte::Safe::String` or `operator std::string()` (the latter is `FORCE_INLINE` so the `std::string` lives in your TU):
+
+```cpp
+auto tel = reader.Telemetry();
+if (tel)
+	log << Level::Info << *tel << std::endl;
+```
+
+### BufferedReader
 
 Public base for a binary origin. Leaves implement `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize`, `OriginSize`. Construction is `Unavailable`; a successful `Open` is `Idle`.
 
@@ -527,17 +445,19 @@ Exceptions from `OriginOpen`, `OriginClose`, `OriginPull` and `OriginSeek` are c
 
 `Available()` is cached bytes at `Tell`. It does not call the origin.
 
-`Seek` is logical. A cache hit does not move the device. `Tell` never lies.
+`Seek` is logical. A cache hit does not move the device. `Tell` never lies. Consumed bytes remain in RAM up to `MaxMemory`. Garbage collection evicts farthest from `Tell`.
 
-### IO::BufferedWriter
+### BufferedLocationReader
 
-Public base for a binary sink. Leaves implement `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush`, `OriginTruncate`. Writes are lazy up to `MaxMemory`. Public `Flush` and the Flush inside `Close` count toward `MeanRate`. Internal drains do not.
+Sits between the engine and a file leaf. A location is file-like: named by `Location()` (`StormByte::Safe::String`, owned by Base), always seekable and sized. Path-only `Setup()` lives here.
 
-Exceptions from origin hooks are converted to `Status::Error`; `Open` returns `false` when setup or telemetry creation throws, and `Close` returns `false` when closing the origin fails.
+`Device()` and the pure `OriginDevice()` return `StormByte::Safe::Shared<StormByte::System::Device>`, not `System::Device` by value. A leaf may hand out a subclass and the dynamic type survives, so overridden `Throughput()` / `Window()` are honoured. Build the owner with `StormByte::Safe::Shared<StormByte::System::Device>::MakePointer<Leaf>(…)`.
 
-### BufferedFileReader / BufferedFileWriter
+`OriginDeviceUsable(const Safe::Shared<System::Device>&) const noexcept` defaults to a non-empty owner whose `operator bool()` is true. A leaf whose identifier is not a filesystem path overrides it. An empty owner is always unusable. `Setup()` is `final`: it calls `OriginDevice()` once, asks `OriginDeviceUsable()` and only then applies `Window()`.
 
-Final file leaves. Path-only constructors probe the device at `Setup`. Explicit knobs stay explicit.
+### BufferedFileReader
+
+Final file leaf. It passes `Location::Local`, keeps the plain `System::Device` and the real path probe. `CreateDevice()` is gone. Path-only construction probes at `Setup`. Explicit knobs stay explicit. The message constructor of `Buffer::Exception` takes `string_view`. A null `const char*` is not a message.
 
 ```cpp
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
@@ -556,6 +476,129 @@ int main() {
 	(void)in.Read(64 * 1024, dest);
 	auto tel = in.Telemetry();
 	in.Close();
+}
+```
+
+### BufferedWriter
+
+Public base for a binary sink. Leaves implement `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush`, `OriginTruncate`. Writes are lazy up to `MaxMemory`. Public `Flush` and the Flush inside `Close` count toward `MeanRate`. Internal drains do not.
+
+`Seek` is logical. Materializing a page (eviction, flush or close) moves the origin. Nearby corrections and far-future islands are supported while memory allows. Eviction prefers the oldest dirty page behind the origin cursor.
+
+Exceptions from origin hooks are converted to `Status::Error`; `Open` returns `false` when setup or telemetry creation throws, and `Close` returns `false` when closing the origin fails.
+
+### BufferedLocationWriter
+
+The write-side location layer. Same contract as the reader: a named, seekable, sized location, `Device()` as `Safe::Shared<System::Device>`, and `OriginDeviceUsable` before the window is applied. Path-only `Setup()` lives here. A socket on a lower layer can pass `Location::Remote`. This repository's file leaf does not.
+
+### BufferedFileWriter
+
+Final file leaf. It passes `Location::Local` and probes the device at `Setup` when no knobs are set. Explicit `WriteChunk`, `BackPressure` and `MaxMemory` stay explicit. `Truncate` overwrites. The path stays locked on Windows until the leaf is destroyed.
+
+## Items
+
+Items are not byte buffers and not IO. `Hopper<T>` and `Sink<T>` carry C++ objects. `T` must be an unqualified `StormByte::Type::SafeValue`, default-constructible and movable, with nonthrowing default construction, move construction, move assignment and destruction. `alignof(T)` must not exceed `alignof(std::max_align_t)`. Counts are `StormByte::Size`. A `Safe::Binary`, a `std::string` or a raw pointer is not admitted just because it can be moved. Use `int`, `Safe::String`, `Safe::Shared<int>` or another value that already meets the contract.
+
+The wait path is `Safe::Mutex`, `Safe::ConditionVariable` and `Safe::Atomic<std::size_t>`. It is not a public `std::mutex`, `std::condition_variable` or `std::atomic`.
+
+### Hopper
+
+`Hopper<T>` is an SPSC queue. Queue storage uses Base's heap. Extended alignment is rejected at compile time, with no standard-allocator fallback. `Front` additionally requires nonthrowing copying.
+
+Capacity `0` is unbounded. `Push` blocks when a bounded hopper is full. `Eof()` ends production; queued items can still be drained. Nullable pointer items discard nulls.
+
+`Notify(cv)` borrows a `Safe::ConditionVariable`. Replacing or unregistering an observer synchronizes with in-flight notifications; `Unnotify()` must return before that condition variable dies. This does not make concurrent destruction of the Hopper safe: stop and join its users first.
+
+`Notify(cv)` does not store events: the caller must coordinate predicate checks, waits and producer operations through the consumer's wait mutex. For consumers with an independent mutex, use `Notify(cv, generation)`, where `generation` is a borrowed `Safe::Atomic<std::size_t>`. Push and EOF increment it with release ordering and call `notify_all()` after publishing queue state. Load the counter with acquire ordering **before** checking readiness; if false, call `generation.wait(captured)` and repeat. Both the condition variable and the counter must remain alive until `Unnotify()` returns. Explicit stop/failure events must publish their state and increment/notify this same counter; do not reset it while consumers can wait on it.
+
+```cpp
+#include <StormByte/buffer/hopper.hxx>
+#include <StormByte/safe/pointers.hxx>
+#include <thread>
+
+using StormByte::Buffer::Hopper;
+
+int main() {
+	Hopper<StormByte::Safe::Shared<int>> hopper(5);
+
+	std::thread producer([&hopper]() {
+		for (int i = 0; i < 10; ++i)
+			hopper << StormByte::Safe::Shared<int>::MakePointer<int>(i);
+		hopper.Eof();
+	});
+
+	std::thread consumer([&hopper]() {
+		while (!hopper.Empty() || !hopper.EoF()) {
+			auto item = hopper.Pop();
+			(void)item;
+		}
+	});
+
+	producer.join();
+	consumer.join();
+}
+```
+
+### Sink
+
+`Sink<T>` maps integer keys to `Hopper<T>` buckets. It takes the same items as Hopper. It does not take octets. Wire with `To(key) >> dest`, `dest << producer` or `dest << producer.To(key)`. `To` returns a lane. It does not take the destination.
+
+`Keys()` returns an independent, ascending `StormByte::Safe::Vector<int>` snapshot that remains valid after the Sink is destroyed. Copies are independent; keep Base and the snapshot's creator module loaded until all copies are released.
+
+The coordinator is `Safe::Owner`. Wired hoppers are `Safe::Shared`. Buckets are `Safe::Map<int, Safe::Shared<Hopper<T>>>`, writers are `Safe::Set` of that same shared hopper, and the round-robin order is `Safe::Vector`. Over-aligned payloads are rejected, not routed to a standard allocator. The wait path is the Safe mutex, condition variable and atomic named above.
+
+`Select` is `StormByte::Safe::Function<StormByte::Size(StormByte::Size)>`. `Pop(const Select&)` borrows it synchronously and never retains it. The provider callback has the form `Safe::Status(void* context, Size* output, Size count)`: write the index through `output` and report `Success`. `Missing`, `Failure` or an exception returns default `T` without consuming queued items. The callback provider owns and releases its context and must remain loaded through callback destruction. The caller-side callable overload borrows the original callable, including mutable or move-only captures, only for that `Pop` call.
+
+Conditions passed to `Notify` are borrowed `Safe::ConditionVariable` objects. `Unnotify` unregisters this Sink's matching hopper registrations and waits for in-flight notifications before returning; finish it before destroying the condition variable. Stop and join all queue users before destroying the Sink.
+
+`Sink::Notify(cv, generation)` uses the same stored-event protocol as Hopper on current and future buckets, including keyed wiring, all-bucket wiring and fan-in. Wiring publishes an event after updating the consumer, so already queued data or EOF also wakes it. Sink closure publishes an event even with no buckets. Shared hoppers have one observer: the latest registration replaces its condition variable, counter and owner identity. An older Sink's `Unnotify()` cannot remove that newer registration.
+
+```cpp
+StormByte::Safe::ConditionVariable wake;
+StormByte::Safe::Atomic<std::size_t> generation{0};
+consumer_sink.Notify(wake, generation);
+for (;;) {
+	const auto captured = generation.load(StormByte::Safe::MemoryOrder::Acquire);
+	if (!consumer_sink.Ready()) {
+		generation.wait(captured);
+		continue;
+	}
+	if (consumer_sink.EoF())
+		break;
+	(void)consumer_sink.Pop();
+}
+consumer_sink.Unnotify();
+```
+
+Stored notifications change the private Hopper/Sink template implementation layouts in 2.0.0. Rebuild all providers and consumers that instantiate them before replacing the library; do not mix older and newer instantiations across DLLs. The borrowed condition variable and counter are Safe types. Their providers must remain loaded until notification removal completes. The counters add no ownership callbacks or changes to queue limits, blocking or element release.
+
+```cpp
+#include <StormByte/buffer/sink.hxx>
+#include <StormByte/safe/string.hxx>
+#include <thread>
+
+using StormByte::Buffer::Sink;
+
+int main() {
+	Sink<StormByte::Safe::String> producer_sink;
+	Sink<StormByte::Safe::String> consumer_sink;
+
+	producer_sink.To(1) >> consumer_sink;
+	producer_sink.To(2) >> consumer_sink;
+
+	std::thread writer([&producer_sink]() {
+		producer_sink.Push(1, StormByte::Safe::String("ch1"));
+		producer_sink.Push(2, StormByte::Safe::String("ch2"));
+		producer_sink.Eof();
+	});
+
+	std::thread reader([&consumer_sink]() {
+		while (!consumer_sink.EoF())
+			(void)consumer_sink.Pop();
+	});
+
+	writer.join();
+	reader.join();
 }
 ```
 

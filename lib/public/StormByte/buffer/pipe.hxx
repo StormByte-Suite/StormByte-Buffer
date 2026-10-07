@@ -41,12 +41,16 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/visibility.h>
-#include <StormByte/safe/function.hxx>
 #include <StormByte/logger/log.hxx>
+#include <StormByte/safe/function.hxx>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/type_traits.hxx>
+
+#include <string_view>
 
 /**
  * @namespace StormByte
@@ -71,33 +75,35 @@ namespace StormByte {
 				 * @param input Buffer kept alive by the caller for the whole invocation.
 				 */
 				explicit PipeInput(ReadOnly& input) noexcept;
+
 				/**
 				 * @brief Read bytes and advance the borrowed cursor.
-				 * @param count Bytes to read; zero reads all available bytes.
+				 * @param count Bytes to read. Zero reads all available bytes.
 				 * @param data Destination bytes.
 				 * @return Whether the read succeeded.
 				 */
-				bool Read(const StormByte::ByteSize& count, BinaryData& data) const noexcept;
+				bool Read(const StormByte::ByteSize& count, StormByte::Safe::Binary& data) const noexcept;
+
 				/**
 				 * @brief Query the end of the borrowed stream.
 				 * @return Whether no more bytes can be read.
 				 */
 				bool EoF() const noexcept;
+
 				/**
 				 * @brief Query readable bytes.
 				 * @return Available byte count.
 				 */
 				StormByte::ByteSize Available() const noexcept;
+
 				/**
 				 * @brief Query the borrowed stream error state.
 				 * @return Whether the stream can still be read.
 				 */
 				bool IsReadable() const noexcept;
+
 			private:
-				/**
-				 * @brief Borrowed input; never owned or lifetime-extended.
-				 */
-				ReadOnly* m_input;
+				ReadOnly* m_input;	///< Borrowed input. Never owned or lifetime-extended.
 		};
 
 		/**
@@ -113,54 +119,59 @@ namespace StormByte {
 				 * @param output Buffer kept alive by the caller for the whole invocation.
 				 */
 				explicit PipeOutput(WriteOnly& output) noexcept;
+
 				/**
 				 * @brief Copy bytes to the borrowed writer.
 				 * @param data Bytes to append.
 				 * @return Whether the write succeeded.
 				 */
-				bool Write(const BinaryData& data) const noexcept;
+				bool Write(const StormByte::Safe::Binary& data) const noexcept;
+
 				/**
 				 * @brief Move bytes to the borrowed writer.
 				 * @param data Bytes to append.
 				 * @return Whether the write succeeded.
 				 */
-				bool Write(BinaryData&& data) const noexcept;
+				bool Write(StormByte::Safe::Binary&& data) const noexcept;
+
 				/**
 				 * @brief Copy length-aware text without a trailing NUL.
-				 * @param text Text to append, including embedded NULs; borrowed only for this write.
+				 * @param text Text to append, including embedded NULs. Borrowed only for this write.
 				 * @return Whether the write succeeded.
 				 */
 				bool Write(std::string_view text) const noexcept;
+
 				/**
 				 * @brief Query whether the writer accepts more data.
 				 * @return Whether the stream is writable.
 				 */
 				bool IsWritable() const noexcept;
+
 				/**
 				 * @brief Close the borrowed output and wake readers.
 				 */
 				void Close() const noexcept;
+
 				/**
 				 * @brief Fail the borrowed output and wake waiters.
 				 */
 				void SetError() const noexcept;
+
 			private:
-				/**
-				 * @brief Borrowed output; never owned or lifetime-extended.
-				 */
-				WriteOnly* m_output;
+				WriteOnly* m_output;	///< Borrowed output. Never owned or lifetime-extended.
 		};
 	}
 }
 
 /**
  * @brief Admit the exact input facade as a conditional synchronous callback borrow.
- * @note This does not certify pointer lifetime; callers must keep the endpoint and provider alive.
+ * @note This does not certify pointer lifetime. Callers must keep the endpoint and provider alive.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::PipeInput);
+
 /**
  * @brief Admit the exact output facade as a conditional synchronous callback borrow.
- * @note Copies are still borrows; they must not be retained after invocation.
+ * @note Copies are still borrows. They must not be retained after invocation.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::PipeOutput);
 
@@ -179,7 +190,7 @@ namespace StormByte {
 		 * @brief One transformation in a @ref Pipeline.
 		 *
 		 * Owns a copyable creator-context callback, not a polymorphic stage.
-		 * Copies clone the callable and its value captures independently; references
+		 * Copies clone the callable and its value captures independently. References
 		 * and shared handles inside captures retain their normal sharing semantics.
 		 * Endpoint facades and the logger reference are synchronous borrows only.
 		 * Close or fail the output before returning. The callable provider, Buffer,
@@ -204,7 +215,7 @@ namespace StormByte {
 				 * @tparam Callable Copyable stage callable type.
 				 * @param callable Invoked with input, output and a borrowed scoped logger.
 				 * @throws StormByte::Exception Context allocation or construction failed.
-				 * @note Force-inlining constructs state in the caller's CRT; clone and
+				 * @note Force-inlining constructs state in the caller's CRT. Clone and
 				 *       release use matching creator callbacks and Base's heap.
 				 */
 				template<typename Callable>
@@ -218,13 +229,13 @@ namespace StormByte {
 					Pipe(MakeCallback(std::forward<Callable>(callable))) {}
 
 				/**
-				 * @brief Copy constructor. Defined in this module.
+				 * @brief Copy a Pipe. Defined in this module.
 				 * @param other Instance to copy.
 				 */
 				Pipe(const Pipe& other);
 
 				/**
-				 * @brief Move constructor. Defined in this module.
+				 * @brief Take a Pipe. Defined in this module.
 				 * @param other Instance to take from.
 				 */
 				Pipe(Pipe&& other) noexcept;
@@ -235,16 +246,16 @@ namespace StormByte {
 				~Pipe() noexcept;
 
 				/**
-				 * @brief Copy assignment. Defined in this module.
+				 * @brief Copy-assign a Pipe. Defined in this module.
 				 * @param other Instance to copy.
-				 * @return *this.
+				 * @return This Pipe.
 				 */
 				Pipe& operator=(const Pipe& other);
 
 				/**
-				 * @brief Move assignment. Defined in this module.
+				 * @brief Move-assign a Pipe. Defined in this module.
 				 * @param other Instance to take from.
-				 * @return *this.
+				 * @return This Pipe.
 				 */
 				Pipe& operator=(Pipe&& other) noexcept;
 
@@ -271,34 +282,41 @@ namespace StormByte {
 				template<typename Callable>
 				static STORMBYTE_FORCE_INLINE Callback MakeCallback(Callable&& callable) {
 					using Context = std::remove_cvref_t<Callable>;
-					std::unique_ptr<Context, StormByte::Safe::Heap::ObjectDeleter> context =
-						StormByte::Safe::Heap::MakeUnique<Context>(std::forward<Callable>(callable));
-					Callback callback(context.get(),
-						[](void* state, const PipeInput& input, const PipeOutput& output,
+					void* block = StormByte::Safe::Heap::Allocate(sizeof(Context));
+					Context* state = nullptr;
+					try {
+						state = new (block) Context(std::forward<Callable>(callable));
+					}
+					catch (...) {
+						StormByte::Safe::Heap::Free(block);
+						throw;
+					}
+					return Callback(state,
+						[](void* current, const PipeInput& input, const PipeOutput& output,
 							const StormByte::Safe::Shared<StormByte::Logger::Log>& log) {
-							(*static_cast<Context*>(state))(input, output, log);
+							(*static_cast<Context*>(current))(input, output, log);
 							return StormByte::Safe::Status::Success;
 						},
-						[](const void* state) noexcept -> void* {
+						[](const void* current) noexcept -> void* {
+							void* cloned = nullptr;
 							try {
-								std::unique_ptr<Context, StormByte::Safe::Heap::ObjectDeleter> copy =
-									StormByte::Safe::Heap::MakeUnique<Context>(*static_cast<const Context*>(state));
-								return copy.release();
-							} catch (...) {
+								cloned = StormByte::Safe::Heap::Allocate(sizeof(Context));
+								new (cloned) Context(*static_cast<const Context*>(current));
+								return cloned;
+							}
+							catch (...) {
+								if (cloned != nullptr)
+									StormByte::Safe::Heap::Free(cloned);
 								return nullptr;
 							}
 						},
-						[](void* state) noexcept {
-							StormByte::Safe::Heap::ObjectDeleter{}(static_cast<Context*>(state));
+						[](void* current) noexcept {
+							static_cast<Context*>(current)->~Context();
+							StormByte::Safe::Heap::Free(current);
 						});
-					(void)context.release();
-					return callback;
 				}
 
-				/**
-				 * @brief Provider-owned callable and its clone, invoke and release callbacks.
-				 */
-				Callback m_callback;
+				Callback m_callback;	///< Provider-owned callable and its clone, invoke and release callbacks.
 		};
 	}
 }

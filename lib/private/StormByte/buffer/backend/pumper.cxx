@@ -40,6 +40,10 @@
  */
 
 #include <StormByte/buffer/backend/pumper.hxx>
+#include <StormByte/safe/unique_lock.hxx>
+
+#include <chrono>
+#include <utility>
 
 using namespace StormByte::Buffer::Backend;
 
@@ -59,7 +63,7 @@ Pumper::Pumper(StormByte::Buffer::Bridge&& bridge, const StormByte::ByteSize chu
 		m_high_water = *high_water;
 	else
 		m_high_water = m_bridge.InputIsIO() ? StormByte::ByteSize{0} : kDefaultNonIoHighWater;
-	m_worker = std::thread(&Pumper::Worker, this);
+	m_worker = StormByte::Safe::Thread([this] { Worker(); });
 }
 
 Pumper::~Pumper() {
@@ -69,7 +73,7 @@ Pumper::~Pumper() {
 }
 
 void Pumper::Cancel() noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (m_canceled)
 		return;
 	m_canceled = true;
@@ -78,22 +82,22 @@ void Pumper::Cancel() noexcept {
 }
 
 bool Pumper::Canceled() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_canceled;
 }
 
 bool Pumper::EoF() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_bridge.EoF();
 }
 
 bool Pumper::Failed() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_bridge.Failed();
 }
 
 void Pumper::Toggle() noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (m_canceled || m_bridge.Failed())
 		return;
 	m_paused = !m_paused;
@@ -120,7 +124,7 @@ StormByte::ByteSize Pumper::CycleRequest() const noexcept {
 void Pumper::Worker() {
 	for (;;) {
 		{
-			std::unique_lock lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			m_cv.wait(lock, [this] {
 				return m_canceled || !m_paused || m_bridge.Failed();
 			});
@@ -143,7 +147,7 @@ void Pumper::Worker() {
 		if (m_bridge.EoF())
 			return;
 		if (got == StormByte::ByteSize{0}) {
-			std::unique_lock lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			if (m_canceled || m_paused || m_bridge.Failed())
 				continue;
 			m_cv.wait_for(lock, std::chrono::milliseconds(1), [this] {

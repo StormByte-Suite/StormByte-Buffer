@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/pipe.hxx>

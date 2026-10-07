@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/buffer/visibility.h>

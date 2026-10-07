@@ -41,16 +41,15 @@
 
 #pragma once
 
+#include <StormByte/safe/heap.hxx>
+#include <StormByte/safe/mutex.hxx>
+#include <StormByte/safe/queue.hxx>
+#include <StormByte/safe/unique_lock.hxx>
 #include <StormByte/type_traits.hxx>
 
-#include <atomic>
 #include <concepts>
-#include <condition_variable>
 #include <cstddef>
-#include <deque>
-#include <memory>
-#include <mutex>
-#include <queue>
+#include <exception>
 #include <type_traits>
 #include <utility>
 
@@ -69,34 +68,32 @@ namespace StormByte {
 		 * @brief Internal implementation of Hopper queue details.
 		 *
 		 * Handles mutex-protected queue operations, atomic capacity settings,
-		 * condition variable notifications, and EoF flags.
+		 * condition variable notifications, and EoF flags. The gate, the signal
+		 * and the words live on Base's heap.
 		 */
 		template<Detail::HopperValue T>
 		class Hopper<T>::Implementation {
-			/**
-			 * @brief Queue storage allocated and freed exclusively on Base's heap.
-			 */
-			using ItemAllocator = StormByte::Safe::Heap::Allocator<T>;
-
 			public:
 				/**
 				 * @brief Constructs an unbounded Implementation instance.
+				 * @throws AllocationError The gate, the signal or a word cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE Implementation() noexcept
-					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(0), m_writers(1) {}
+				Implementation()
+					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(std::size_t{0}), m_writers(1u) {}
 
 				/**
 				 * @brief Constructs a bounded Implementation instance.
 				 * @param capacity Maximum items allowed.
+				 * @throws AllocationError The gate, the signal or a word cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE explicit Implementation(StormByte::Size capacity) noexcept
-					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(static_cast<std::size_t>(capacity)), m_writers(1) {}
+				explicit Implementation(StormByte::Size capacity)
+					: m_eof(false), m_wake(nullptr), m_generation(nullptr), m_observer(nullptr), m_cap(static_cast<std::size_t>(capacity)), m_writers(1u) {}
 
 				/**
 				 * @brief Destructor. Marks EoF and wakes waiting producers.
 				 */
-				STORMBYTE_FORCE_INLINE ~Implementation() noexcept {
-					m_eof.store(true, std::memory_order_release);
+				~Implementation() noexcept {
+					m_eof.store(true, Safe::MemoryOrder::Release);
 					m_space.notify_all();
 				}
 
@@ -105,7 +102,7 @@ namespace StormByte {
 				 * @return Capacity value.
 				 */
 				StormByte::Size Capacity() const noexcept {
-					return StormByte::Size{m_cap.load(std::memory_order_acquire)};
+					return StormByte::Size{m_cap.load(Safe::MemoryOrder::Acquire)};
 				}
 
 				/**
@@ -114,8 +111,8 @@ namespace StormByte {
 				 */
 				void Capacity(StormByte::Size capacity) noexcept {
 					{
-						std::lock_guard<std::mutex> lock(m_mutex);
-						m_cap.store(static_cast<std::size_t>(capacity), std::memory_order_release);
+						Safe::UniqueLock lock(m_mutex);
+						m_cap.store(static_cast<std::size_t>(capacity), Safe::MemoryOrder::Release);
 					}
 					m_space.notify_all();
 				}
@@ -125,8 +122,8 @@ namespace StormByte {
 				 * @return Count of items.
 				 */
 				StormByte::Size Size() const noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
-					return StormByte::Size{m_items.size()};
+					Safe::UniqueLock lock(m_mutex);
+					return StormByte::Size{static_cast<std::size_t>(m_items.size())};
 				}
 
 				/**
@@ -134,7 +131,7 @@ namespace StormByte {
 				 * @return true if capacity > 0 and size >= capacity.
 				 */
 				bool Full() const noexcept {
-					const std::size_t cap = m_cap.load(std::memory_order_acquire);
+					const std::size_t cap = m_cap.load(Safe::MemoryOrder::Acquire);
 					if (cap == 0)
 						return false;
 					return Size() >= cap;
@@ -145,7 +142,7 @@ namespace StormByte {
 				 * @return Writers still open.
 				 */
 				unsigned Writers() const noexcept {
-					return m_writers.load(std::memory_order_acquire);
+					return m_writers.load(Safe::MemoryOrder::Acquire);
 				}
 
 				/**
@@ -158,16 +155,21 @@ namespace StormByte {
 							return;
 					}
 					{
-						std::unique_lock<std::mutex> lock(m_mutex);
-						m_space.wait(lock, [this]() {
-							const std::size_t cap = m_cap.load(std::memory_order_acquire);
+						Safe::UniqueLock lock(m_mutex);
+						m_space.wait(lock, [this]() -> bool {
+							const std::size_t cap = m_cap.load(Safe::MemoryOrder::Acquire);
 							return cap == 0
-								|| m_items.size() < cap
-								|| m_eof.load(std::memory_order_acquire);
+								|| static_cast<std::size_t>(m_items.size()) < cap
+								|| m_eof.load(Safe::MemoryOrder::Acquire);
 						});
-						if (m_eof.load(std::memory_order_acquire))
+						if (m_eof.load(Safe::MemoryOrder::Acquire))
 							return;
-						m_items.push(std::move(item));
+						try {
+							m_items.push(std::move(item));
+						}
+						catch (...) {
+							std::terminate();
+						}
 					}
 					SignalConsumer();
 				}
@@ -177,8 +179,8 @@ namespace StormByte {
 				 */
 				void Eof() noexcept {
 					{
-						std::lock_guard<std::mutex> lock(m_mutex);
-						m_eof.store(true, std::memory_order_release);
+						Safe::UniqueLock lock(m_mutex);
+						m_eof.store(true, Safe::MemoryOrder::Release);
 					}
 					SignalConsumer();
 					m_space.notify_all();
@@ -188,17 +190,17 @@ namespace StormByte {
 				 * @brief Registers an extra writer.
 				 */
 				void AddWriter() noexcept {
-					m_writers.fetch_add(1, std::memory_order_acq_rel);
+					m_writers.fetch_add(1u, Safe::MemoryOrder::AcqRel);
 				}
 
 				/**
 				 * @brief Releases one writer. Last writer force-closes.
 				 */
 				void CloseWriter() noexcept {
-					unsigned prev = m_writers.load(std::memory_order_acquire);
+					unsigned prev = m_writers.load(Safe::MemoryOrder::Acquire);
 					while (prev > 0) {
-						if (m_writers.compare_exchange_weak(prev, prev - 1,
-								std::memory_order_acq_rel, std::memory_order_acquire)) {
+						if (m_writers.compare_exchange_weak(prev, static_cast<unsigned>(prev - 1),
+								Safe::MemoryOrder::AcqRel, Safe::MemoryOrder::Acquire)) {
 							if (prev == 1)
 								Eof();
 							return;
@@ -213,7 +215,7 @@ namespace StormByte {
 				T Pop() noexcept {
 					T item{};
 					{
-						std::lock_guard<std::mutex> lock(m_mutex);
+						Safe::UniqueLock lock(m_mutex);
 						if (m_items.empty())
 							return T{};
 						item = std::move(m_items.front());
@@ -228,7 +230,7 @@ namespace StormByte {
 				 * @return Front or default T.
 				 */
 				T Front() const noexcept requires Type::CopyConstructible<T> && std::is_nothrow_copy_constructible_v<T> {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					if (m_items.empty())
 						return T{};
 					return m_items.front();
@@ -239,7 +241,7 @@ namespace StormByte {
 				 * @return true if Eof set.
 				 */
 				bool EoF() const noexcept {
-					return m_eof.load(std::memory_order_acquire);
+					return m_eof.load(Safe::MemoryOrder::Acquire);
 				}
 
 				/**
@@ -247,7 +249,7 @@ namespace StormByte {
 				 * @return true if empty.
 				 */
 				bool Empty() const noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					return m_items.empty();
 				}
 
@@ -265,8 +267,8 @@ namespace StormByte {
 				 * @param owner Sink registration identity, or null for direct registration.
 				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& wake, const void* owner = nullptr, std::atomic<std::size_t>* generation = nullptr) noexcept {
-					std::lock_guard<std::mutex> lock(m_observer_mutex);
+				void Notify(Safe::ConditionVariable& wake, const void* owner = nullptr, Safe::Atomic<std::size_t>* generation = nullptr) noexcept {
+					Safe::UniqueLock lock(m_observer_mutex);
 					m_wake = &wake;
 					m_generation = generation;
 					m_observer = owner;
@@ -276,7 +278,7 @@ namespace StormByte {
 				 * @brief Removes the observer and waits for any active notification.
 				 */
 				void Unnotify() noexcept {
-					std::lock_guard<std::mutex> lock(m_observer_mutex);
+					Safe::UniqueLock lock(m_observer_mutex);
 					m_wake = nullptr;
 					m_generation = nullptr;
 					m_observer = nullptr;
@@ -287,7 +289,7 @@ namespace StormByte {
 				 * @param owner Sink registration identity; never dereferenced.
 				 */
 				void Unnotify(const void* owner) noexcept {
-					std::lock_guard<std::mutex> lock(m_observer_mutex);
+					Safe::UniqueLock lock(m_observer_mutex);
 					if (m_observer == owner) {
 						m_wake = nullptr;
 						m_generation = nullptr;
@@ -300,49 +302,49 @@ namespace StormByte {
 				 * @brief Notifies registered consumer condition variable if set.
 				 */
 				void SignalConsumer() noexcept {
-					std::lock_guard<std::mutex> lock(m_observer_mutex);
-					if (m_generation) {
-						m_generation->fetch_add(1, std::memory_order_release);
+					Safe::UniqueLock lock(m_observer_mutex);
+					if (m_generation != nullptr) {
+						m_generation->fetch_add(std::size_t{1}, Safe::MemoryOrder::Release);
 						m_generation->notify_all();
 					}
-					if (m_wake)
+					if (m_wake != nullptr)
 						m_wake->notify_one();
 				}
 
 				/**
 				 * @brief Guards queue access.
 				 */
-				mutable std::mutex m_mutex;
+				mutable Safe::Mutex m_mutex;
 
 				/**
 				 * @brief Producer wait condition when full.
 				 */
-				std::condition_variable m_space;
+				Safe::ConditionVariable m_space;
 
 				/**
-				 * @brief Fundamentally aligned queue storage on Base's heap.
+				 * @brief Item storage on Base's heap.
 				 */
-				std::queue<T, std::deque<T, ItemAllocator>> m_items;
+				StormByte::Safe::Queue<T> m_items;
 
 				/**
 				 * @brief End of production flag.
 				 */
-				std::atomic<bool> m_eof;
+				Safe::Atomic<bool> m_eof;
 
 				/**
 				 * @brief Serializes observer replacement, removal and use.
 				 */
-				std::mutex m_observer_mutex;
+				mutable Safe::Mutex m_observer_mutex;
 
 				/**
 				 * @brief Borrowed consumer condition variable, guarded by m_observer_mutex.
 				 */
-				std::condition_variable* m_wake;
+				Safe::ConditionVariable* m_wake;
 
 				/**
 				 * @brief Borrowed event counter guarded by m_observer_mutex.
 				 */
-				std::atomic<std::size_t>* m_generation;
+				Safe::Atomic<std::size_t>* m_generation;
 
 				/**
 				 * @brief Sink registration identity guarded by m_observer_mutex; never dereferenced.
@@ -352,20 +354,20 @@ namespace StormByte {
 				/**
 				 * @brief Capacity ceiling (0 = unbounded).
 				 */
-				std::atomic<std::size_t> m_cap;
+				Safe::Atomic<std::size_t> m_cap;
 
 				/**
 				 * @brief Live writers; last CloseWriter Eofs.
 				 */
-				std::atomic<unsigned> m_writers;
+				Safe::Atomic<unsigned> m_writers;
 		};
 
 		template<Detail::HopperValue T>
-		STORMBYTE_FORCE_INLINE Hopper<T>::Hopper() noexcept
+		Hopper<T>::Hopper()
 			: Hopper(0) {}
 
 		template<Detail::HopperValue T>
-		STORMBYTE_FORCE_INLINE Hopper<T>::Hopper(StormByte::Size capacity) noexcept
+		Hopper<T>::Hopper(StormByte::Size capacity)
 			: m_io(::new (StormByte::Safe::Heap::Allocate(sizeof(Implementation))) Implementation(capacity)),
 			m_owner(m_io, nullptr, [](void* context) noexcept {
 				static_cast<Implementation*>(context)->~Implementation();
@@ -375,7 +377,7 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		STORMBYTE_FORCE_INLINE Hopper<T>::~Hopper() noexcept = default;
+		Hopper<T>::~Hopper() noexcept = default;
 
 		template<Detail::HopperValue T>
 		StormByte::Size Hopper<T>::Capacity() const noexcept {
@@ -460,12 +462,12 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		void Hopper<T>::Notify(std::condition_variable& wake) noexcept {
+		void Hopper<T>::Notify(Safe::ConditionVariable& wake) noexcept {
 			m_io->Notify(wake);
 		}
 
 		template<Detail::HopperValue T>
-		void Hopper<T>::Notify(std::condition_variable& wake, std::atomic<std::size_t>& generation) noexcept {
+		void Hopper<T>::Notify(Safe::ConditionVariable& wake, Safe::Atomic<std::size_t>& generation) noexcept {
 			m_io->Notify(wake, nullptr, &generation);
 		}
 
@@ -475,7 +477,7 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		void Hopper<T>::Notify(std::condition_variable& wake, const void* owner, std::atomic<std::size_t>* generation) noexcept {
+		void Hopper<T>::Notify(Safe::ConditionVariable& wake, const void* owner, Safe::Atomic<std::size_t>* generation) noexcept {
 			m_io->Notify(wake, owner, generation);
 		}
 

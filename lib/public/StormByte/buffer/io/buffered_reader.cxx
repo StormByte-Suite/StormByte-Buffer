@@ -55,7 +55,7 @@ namespace {
 		if (got.count > StormByte::ByteSize{dest.size()})
 			return { StormByte::Buffer::IO::Status::Failed, 0 };
 
-		StormByte::BinaryData raw;
+		StormByte::Safe::Binary raw;
 		if (!src.Extract(got.count, raw))
 			return { StormByte::Buffer::IO::Status::Failed, 0 };
 		std::copy_n(raw.begin(), static_cast<std::size_t>(got.count), dest.begin());

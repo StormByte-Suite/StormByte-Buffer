@@ -41,18 +41,17 @@
 
 #pragma once
 
+#include <StormByte/safe/heap.hxx>
+#include <StormByte/safe/map.hxx>
+#include <StormByte/safe/mutex.hxx>
+#include <StormByte/safe/set.hxx>
+#include <StormByte/safe/unique_lock.hxx>
+#include <StormByte/safe/vector.hxx>
 #include <StormByte/type_traits.hxx>
 
-#include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <functional>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <set>
 #include <utility>
-#include <vector>
 
 /**
  * @namespace StormByte
@@ -69,7 +68,8 @@ namespace StormByte {
 		 * @brief Internal implementation class for Sink.
 		 *
 		 * Manages the map of key-to-Hopper buckets, thread synchronization,
-		 * wiring condition variables, and pop selection algorithms.
+		 * wiring condition variables, and pop selection algorithms. The gate,
+		 * the signal and the words live on Base's heap.
 		 */
 		template<Detail::HopperValue T>
 		class Sink<T>::Implementation {
@@ -78,31 +78,32 @@ namespace StormByte {
 			 */
 			using HopperOwner = StormByte::Safe::Shared<Hopper<T>>;
 			/**
-			 * @brief Hopper snapshots allocated on Base's heap.
+			 * @brief Hopper snapshots. Position is the round-robin order.
 			 */
-			using HopperOwners = std::vector<HopperOwner, StormByte::Safe::Heap::Allocator<HopperOwner>>;
+			using HopperOwners = StormByte::Safe::Vector<HopperOwner>;
 			/**
-			 * @brief Keyed hopper nodes allocated on Base's heap.
+			 * @brief Keyed hoppers. Iteration order is the ascending key order published by Keys.
 			 */
-			using HopperBuckets = std::map<int, HopperOwner, std::less<int>, StormByte::Safe::Heap::Allocator<std::pair<const int, HopperOwner>>>;
+			using HopperBuckets = StormByte::Safe::Map<int, HopperOwner>;
 			/**
-			 * @brief Writer ownership nodes allocated on Base's heap.
+			 * @brief Hoppers this Sink writes, ordered by hopper identity.
 			 */
-			using HopperWriters = std::set<HopperOwner, std::less<HopperOwner>, StormByte::Safe::Heap::Allocator<HopperOwner>>;
+			using HopperWriters = StormByte::Safe::Set<HopperOwner>;
 
 			public:
 				/**
 				 * @brief Constructs the Sink Implementation instance.
+				 * @throws AllocationError The gate, the signal or a word cannot be allocated.
 				 */
-				STORMBYTE_FORCE_INLINE Implementation() noexcept
-				: m_rr(0), m_consumer(nullptr), m_generation(nullptr), m_closed(false), m_drain(false) {}
+				Implementation()
+				: m_rr(std::size_t{0}), m_consumer(nullptr), m_generation(nullptr), m_closed(false), m_drain(false) {}
 
 				/**
 				 * @brief Removes borrowed observers, marks closed and wakes wiring waiters.
 				 */
-				STORMBYTE_FORCE_INLINE ~Implementation() noexcept {
+				~Implementation() noexcept {
 					Unnotify();
-					m_closed.store(true, std::memory_order_release);
+					m_closed.store(true, Safe::MemoryOrder::Release);
 					m_wired.notify_all();
 				}
 
@@ -116,17 +117,18 @@ namespace StormByte {
 						if (!item)
 							return;
 					}
-					StormByte::Safe::Shared<Hopper<T>> hopper;
+					HopperOwner hopper;
 					{
-						std::unique_lock<std::mutex> lock(m_mutex);
+						Safe::UniqueLock lock(m_mutex);
 						m_wired.wait(lock, [this, key] {
-							return m_closed.load(std::memory_order_acquire)
-								|| m_drain.load(std::memory_order_acquire)
+							return m_closed.load(Safe::MemoryOrder::Acquire)
+								|| m_drain.load(Safe::MemoryOrder::Acquire)
 								|| m_buckets.find(key) != m_buckets.end();
 						});
-						if (m_closed.load(std::memory_order_acquire) || m_buckets.find(key) == m_buckets.end())
+						auto found = m_buckets.find(key);
+						if (m_closed.load(Safe::MemoryOrder::Acquire) || found == m_buckets.end())
 							return;
-						hopper = m_buckets[key];
+						hopper = (*found).second;
 					}
 					if (!hopper)
 						return;
@@ -141,10 +143,11 @@ namespace StormByte {
 				HopperOwners Close() noexcept {
 					HopperOwners writers;
 					{
-						std::lock_guard<std::mutex> lock(m_mutex);
-						m_closed.store(true, std::memory_order_release);
-						for (const auto& hopper : m_writers)
-							writers.push_back(hopper);
+						Safe::UniqueLock lock(m_mutex);
+						m_closed.store(true, Safe::MemoryOrder::Release);
+						writers.reserve(m_writers.size());
+						for (auto it = m_writers.begin(); it != m_writers.end(); ++it)
+							writers.push_back(*it);
 						m_writers.clear();
 						m_wired.notify_all();
 						SignalConsumer();
@@ -159,20 +162,22 @@ namespace StormByte {
 				void Bind(Implementation& consumer) {
 					if (this == &consumer)
 						return;
-					std::scoped_lock lock(m_mutex, consumer.m_mutex);
-					const bool closed = m_closed.load(std::memory_order_acquire)
-						|| consumer.m_closed.load(std::memory_order_acquire);
-					std::condition_variable* cv = consumer.m_consumer;
-					for (const auto& [key, hopper] : m_buckets) {
-						consumer.RemoveObserver(key, hopper);
+					Safe::UniqueLock ours;
+					Safe::UniqueLock theirs;
+					LockPair(m_mutex, consumer.m_mutex, ours, theirs);
+					const bool closed = m_closed.load(Safe::MemoryOrder::Acquire)
+						|| consumer.m_closed.load(Safe::MemoryOrder::Acquire);
+					Safe::ConditionVariable* cv = consumer.m_consumer;
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it) {
+						consumer.RemoveObserver((*it).first, (*it).second);
 						if (closed)
-							hopper->Eof();
+							(*it).second->Eof();
 						if (cv != nullptr)
-							hopper->Notify(*cv, &consumer, consumer.m_generation);
-						consumer.m_buckets[key] = hopper;
+							(*it).second->Notify(*cv, &consumer, consumer.m_generation);
+						consumer.m_buckets[(*it).first] = (*it).second;
 					}
 					if (closed)
-						consumer.m_closed.store(true, std::memory_order_release);
+						consumer.m_closed.store(true, Safe::MemoryOrder::Release);
 					consumer.RebuildOrder();
 					consumer.m_wired.notify_all();
 					consumer.SignalConsumer();
@@ -188,10 +193,12 @@ namespace StormByte {
 				void Bind(int key, Implementation& consumer) {
 					if (this == &consumer)
 						return;
-					std::scoped_lock lock(m_mutex, consumer.m_mutex);
-					const bool closed = m_closed.load(std::memory_order_acquire)
-						|| consumer.m_closed.load(std::memory_order_acquire);
-					std::condition_variable* cv = consumer.m_consumer;
+					Safe::UniqueLock ours;
+					Safe::UniqueLock theirs;
+					LockPair(m_mutex, consumer.m_mutex, ours, theirs);
+					const bool closed = m_closed.load(Safe::MemoryOrder::Acquire)
+						|| consumer.m_closed.load(Safe::MemoryOrder::Acquire);
+					Safe::ConditionVariable* cv = consumer.m_consumer;
 					const bool existed = m_buckets.contains(key);
 					auto hopper = Ensure(key);
 					const bool already_writer = existed && consumer.m_writers.contains(hopper);
@@ -206,7 +213,7 @@ namespace StormByte {
 						hopper->Notify(*cv, &consumer, consumer.m_generation);
 					consumer.m_buckets[key] = hopper;
 					if (closed)
-						consumer.m_closed.store(true, std::memory_order_release);
+						consumer.m_closed.store(true, Safe::MemoryOrder::Release);
 					consumer.RebuildOrder();
 					consumer.m_wired.notify_all();
 					consumer.SignalConsumer();
@@ -218,8 +225,8 @@ namespace StormByte {
 				 */
 				void Drain() noexcept {
 					{
-						std::lock_guard<std::mutex> lock(m_mutex);
-						m_drain.store(true, std::memory_order_release);
+						Safe::UniqueLock lock(m_mutex);
+						m_drain.store(true, Safe::MemoryOrder::Release);
 					}
 					m_wired.notify_all();
 				}
@@ -229,7 +236,7 @@ namespace StormByte {
 				 * @return true if draining.
 				 */
 				bool Draining() const noexcept {
-					return m_drain.load(std::memory_order_acquire);
+					return m_drain.load(Safe::MemoryOrder::Acquire);
 				}
 
 				/**
@@ -237,24 +244,24 @@ namespace StormByte {
 				 * @param consumer Condition variable reference.
 				 * @param generation Optional borrowed stored-event counter.
 				 */
-				void Notify(std::condition_variable& consumer, std::atomic<std::size_t>* generation = nullptr) noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+				void Notify(Safe::ConditionVariable& consumer, Safe::Atomic<std::size_t>* generation = nullptr) noexcept {
+					Safe::UniqueLock lock(m_mutex);
 					m_consumer = &consumer;
 					m_generation = generation;
-					for (const auto& hopper : m_order)
-						hopper->Notify(consumer, this, generation);
+					for (auto it = m_order.begin(); it != m_order.end(); ++it)
+						(*it)->Notify(consumer, this, generation);
 				}
 
 				/**
 				 * @brief Drops the consumer condition variable on this Sink and its hoppers.
 				 */
 				void Unnotify() noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					m_consumer = nullptr;
 					m_generation = nullptr;
-					for (const auto& hopper : m_order) {
-						if (hopper)
-							hopper->Unnotify(this);
+					for (auto it = m_order.begin(); it != m_order.end(); ++it) {
+						if (*it)
+							(*it)->Unnotify(this);
 					}
 				}
 
@@ -263,11 +270,11 @@ namespace StormByte {
 				 * @return Keys, empty if none.
 				 */
 				StormByte::Safe::Vector<int> Keys() const noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					StormByte::Safe::Vector<int> keys;
 					keys.reserve(m_buckets.size());
-					for (const auto& [key, hopper] : m_buckets)
-						keys.push_back(key);
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it)
+						keys.push_back((*it).first);
 					return keys;
 				}
 
@@ -276,7 +283,7 @@ namespace StormByte {
 				 * @return Bucket count.
 				 */
 				StormByte::Size Buckets() const noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					return StormByte::Size{m_buckets.size()};
 				}
 
@@ -307,10 +314,10 @@ namespace StormByte {
 				 * @param capacity New capacity.
 				 */
 				void Capacity(int key, StormByte::Size capacity) noexcept {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					auto found = m_buckets.find(key);
-					if (found != m_buckets.end() && found->second)
-						found->second->Capacity(capacity);
+					if (found != m_buckets.end() && (*found).second)
+						(*found).second->Capacity(capacity);
 				}
 
 				/**
@@ -415,15 +422,15 @@ namespace StormByte {
 				T Pop(Selector&& select, bool round_robin) noexcept {
 					HopperOwners hoppers;
 					{
-						std::unique_lock<std::mutex> lock(m_mutex);
+						Safe::UniqueLock lock(m_mutex);
 						m_wired.wait(lock, [this] {
-							return m_closed.load(std::memory_order_acquire) || !m_order.empty();
+							return m_closed.load(Safe::MemoryOrder::Acquire) || !m_order.empty();
 						});
 						hoppers = m_order;
 					}
 					if (hoppers.empty())
 						return T{};
-					const std::size_t count = hoppers.size();
+					const std::size_t count = static_cast<std::size_t>(hoppers.size());
 					std::size_t start = 0;
 					if (!round_robin) {
 						try {
@@ -437,7 +444,7 @@ namespace StormByte {
 						}
 					}
 					else {
-						start = m_rr.fetch_add(1, std::memory_order_relaxed) % count;
+						start = m_rr.fetch_add(std::size_t{1}, Safe::MemoryOrder::Relaxed) % count;
 					}
 
 					for (std::size_t offset = 0; offset < count; ++offset) {
@@ -454,17 +461,17 @@ namespace StormByte {
 				 * @return Item or default T.
 				 */
 				T Pop(int key) noexcept {
-					StormByte::Safe::Shared<Hopper<T>> hopper;
+					HopperOwner hopper;
 					{
-						std::unique_lock<std::mutex> lock(m_mutex);
+						Safe::UniqueLock lock(m_mutex);
 						m_wired.wait(lock, [this, key] {
-							return m_closed.load(std::memory_order_acquire)
+							return m_closed.load(Safe::MemoryOrder::Acquire)
 								|| m_buckets.contains(key);
 						});
 						auto found = m_buckets.find(key);
-						if (found == m_buckets.end() || !found->second)
+						if (found == m_buckets.end() || !(*found).second)
 							return T{};
-						hopper = found->second;
+						hopper = (*found).second;
 					}
 					return hopper->Pop();
 				}
@@ -476,11 +483,11 @@ namespace StormByte {
 				bool EoF() const noexcept {
 					const auto hoppers = Order();
 					if (hoppers.empty())
-						return m_closed.load(std::memory_order_acquire);
-					for (const auto& hopper : hoppers) {
-						if (!hopper->EoF())
+						return m_closed.load(Safe::MemoryOrder::Acquire);
+					for (auto it = hoppers.begin(); it != hoppers.end(); ++it) {
+						if (!(*it)->EoF())
 							return false;
-						if (!hopper->Empty())
+						if (!(*it)->Empty())
 							return false;
 					}
 					return true;
@@ -493,12 +500,12 @@ namespace StormByte {
 				bool Ready() const noexcept {
 					const auto hoppers = Order();
 					if (hoppers.empty())
-						return m_closed.load(std::memory_order_acquire);
+						return m_closed.load(Safe::MemoryOrder::Acquire);
 					bool drained = true;
-					for (const auto& hopper : hoppers) {
-						if (!hopper->Empty())
+					for (auto it = hoppers.begin(); it != hoppers.end(); ++it) {
+						if (!(*it)->Empty())
 							return true;
-						if (!hopper->EoF())
+						if (!(*it)->EoF())
 							drained = false;
 					}
 					return drained;
@@ -506,14 +513,31 @@ namespace StormByte {
 
 			private:
 				/**
+				 * @brief Locks two gates in address order.
+				 * @param left First gate.
+				 * @param right Second gate.
+				 * @param first Lock that owns the lower address.
+				 * @param second Lock that owns the higher address.
+				 */
+				static void LockPair(Safe::Mutex& left, Safe::Mutex& right, Safe::UniqueLock& first, Safe::UniqueLock& second) {
+					if (&left < &right) {
+						first = Safe::UniqueLock(left);
+						second = Safe::UniqueLock(right);
+						return;
+					}
+					first = Safe::UniqueLock(right);
+					second = Safe::UniqueLock(left);
+				}
+
+				/**
 				 * @brief Publishes a consumer event after state changes. Caller holds m_mutex.
 				 */
 				void SignalConsumer() noexcept {
-					if (m_generation) {
-						m_generation->fetch_add(1, std::memory_order_release);
+					if (m_generation != nullptr) {
+						m_generation->fetch_add(std::size_t{1}, Safe::MemoryOrder::Release);
 						m_generation->notify_all();
 					}
-					if (m_consumer)
+					if (m_consumer != nullptr)
 						m_consumer->notify_all();
 				}
 
@@ -524,13 +548,13 @@ namespace StormByte {
 				 */
 				void RemoveObserver(int key, const HopperOwner& replacement) noexcept {
 					const auto found = m_buckets.find(key);
-					if (found == m_buckets.end() || found->second == replacement)
+					if (found == m_buckets.end() || (*found).second == replacement)
 						return;
-					for (const auto& [other_key, hopper] : m_buckets) {
-						if (other_key != key && hopper == found->second)
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it) {
+						if ((*it).first != key && (*it).second == (*found).second)
 							return;
 					}
-					found->second->Unnotify(this);
+					(*found).second->Unnotify(this);
 				}
 
 				/**
@@ -538,12 +562,12 @@ namespace StormByte {
 				 * @param key Bucket key.
 				 * @return Shared hopper instance.
 				 */
-				StormByte::Safe::Shared<Hopper<T>> Ensure(int key) {
+				HopperOwner Ensure(int key) {
 					auto found = m_buckets.find(key);
 					if (found != m_buckets.end())
-						return found->second;
-					auto hopper = StormByte::Safe::Shared<Hopper<T>>::template MakePointer<Hopper<T>>();
-					std::condition_variable* cv = m_consumer;
+						return (*found).second;
+					auto hopper = HopperOwner::template MakePointer<Hopper<T>>();
+					Safe::ConditionVariable* cv = m_consumer;
 					if (cv != nullptr)
 						hopper->Notify(*cv, this, m_generation);
 					m_buckets.emplace(key, hopper);
@@ -558,8 +582,8 @@ namespace StormByte {
 				void RebuildOrder() {
 					m_order.clear();
 					m_order.reserve(m_buckets.size());
-					for (const auto& [key, hopper] : m_buckets)
-						m_order.push_back(hopper);
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it)
+						m_order.push_back((*it).second);
 				}
 
 				/**
@@ -567,7 +591,7 @@ namespace StormByte {
 				 * @return Vector of hoppers.
 				 */
 				HopperOwners Order() const {
-					std::lock_guard<std::mutex> lock(m_mutex);
+					Safe::UniqueLock lock(m_mutex);
 					return m_order;
 				}
 
@@ -576,58 +600,67 @@ namespace StormByte {
 				 * @param key Bucket key.
 				 * @return Hopper pointer or nullptr.
 				 */
-				StormByte::Safe::Shared<Hopper<T>> Bucket(int key) const {
-					std::lock_guard<std::mutex> lock(m_mutex);
+				HopperOwner Bucket(int key) const {
+					Safe::UniqueLock lock(m_mutex);
 					auto found = m_buckets.find(key);
 					if (found == m_buckets.end())
 						return nullptr;
-					return found->second;
+					return (*found).second;
 				}
 
 				/**
 				 * @brief Guards buckets, order, observer registration and direct notification.
 				 */
-				mutable std::mutex m_mutex;
+				mutable Safe::Mutex m_mutex;
+
 				/**
 				 * @brief Waits for bucket binding or closure.
 				 */
-				std::condition_variable m_wired;
+				Safe::ConditionVariable m_wired;
+
 				/**
-				 * @brief Base-allocated map of keys to Base-owned hoppers.
+				 * @brief Base-owned map of keys to Base-owned hoppers.
 				 */
 				HopperBuckets m_buckets;
+
 				/**
-				 * @brief Base-allocated set of hoppers this Sink writes.
+				 * @brief Base-owned set of hoppers this Sink writes.
 				 */
 				HopperWriters m_writers;
+
 				/**
-				 * @brief Base-allocated hopper order for Pop.
+				 * @brief Base-owned hopper order for Pop.
 				 */
 				HopperOwners m_order;
+
 				/**
 				 * @brief Round-robin counter.
 				 */
-				std::atomic<std::size_t> m_rr;
+				Safe::Atomic<std::size_t> m_rr;
+
 				/**
 				 * @brief Borrowed consumer condition variable guarded by m_mutex.
 				 */
-				std::condition_variable* m_consumer;
+				Safe::ConditionVariable* m_consumer;
+
 				/**
 				 * @brief Borrowed event counter guarded by m_mutex.
 				 */
-				std::atomic<std::size_t>* m_generation;
+				Safe::Atomic<std::size_t>* m_generation;
+
 				/**
 				 * @brief Closed flag.
 				 */
-				std::atomic<bool> m_closed;
+				Safe::Atomic<bool> m_closed;
+
 				/**
 				 * @brief Drain mode flag.
 				 */
-				std::atomic<bool> m_drain;
+				Safe::Atomic<bool> m_drain;
 		};
 
 		template<Detail::HopperValue T>
-		STORMBYTE_FORCE_INLINE Sink<T>::Sink() noexcept
+		Sink<T>::Sink()
 		: m_io(::new (StormByte::Safe::Heap::Allocate(sizeof(Implementation))) Implementation()),
 		m_owner(m_io, nullptr, [](void* context) noexcept {
 			static_cast<Implementation*>(context)->~Implementation();
@@ -637,7 +670,7 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		STORMBYTE_FORCE_INLINE Sink<T>::~Sink() noexcept {
+		Sink<T>::~Sink() noexcept {
 			Unnotify();
 			Eof();
 		}
@@ -650,8 +683,8 @@ namespace StormByte {
 		template<Detail::HopperValue T>
 		void Sink<T>::Eof() noexcept {
 			const auto writers = m_io->Close();
-			for (const auto& hopper : writers)
-				hopper->CloseWriter();
+			for (auto it = writers.begin(); it != writers.end(); ++it)
+				(*it)->CloseWriter();
 		}
 
 		template<Detail::HopperValue T>
@@ -698,12 +731,12 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
+		void Sink<T>::Notify(Safe::ConditionVariable& consumer) noexcept {
 			m_io->Notify(consumer);
 		}
 
 		template<Detail::HopperValue T>
-		void Sink<T>::Notify(std::condition_variable& consumer, std::atomic<std::size_t>& generation) noexcept {
+		void Sink<T>::Notify(Safe::ConditionVariable& consumer, Safe::Atomic<std::size_t>& generation) noexcept {
 			m_io->Notify(consumer, &generation);
 		}
 

@@ -41,11 +41,12 @@
 
 #pragma once
 
-#include <StormByte/binary_data.hxx>
-#include <StormByte/byte_size.hxx>
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/exception.hxx>
-#include <StormByte/logger/log.hxx>
+#include <StormByte/byte_size.hxx>
 #include <StormByte/expected.hxx>
+#include <StormByte/logger/log.hxx>
 
 #include <cstddef>
 #include <functional>

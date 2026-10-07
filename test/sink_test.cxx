@@ -40,18 +40,23 @@
  */
 
 #include <StormByte/buffer/sink.hxx>
+#include <StormByte/exception.hxx>
+#include <StormByte/safe/atomic.hxx>
+#include <StormByte/safe/condition_variable.hxx>
+#include <StormByte/safe/mutex.hxx>
+#include <StormByte/safe/pointers.hxx>
 #include <StormByte/safe/string.hxx>
+#include <StormByte/safe/unique_lock.hxx>
+#include <StormByte/safe/vector.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <future>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <new>
 #include <string>
 #include <thread>
@@ -61,78 +66,89 @@ using StormByte::Buffer::Sink;
 
 /**
  * @brief Exact provider-declared pointer facade storing only an integer, with no external ownership.
- * @note Its provider remains loaded and all participants use a compatible ABI.
  */
 class NonNullableSmartPointer {
 	public:
 		/**
-		 * @brief Constructs a zero-valued facade.
+		 * @brief Construct a zero-valued facade.
 		 */
 		NonNullableSmartPointer() noexcept = default;
-		/**
-		 * @brief Constructs a facade with an embedded value.
-		 * @param value Initial embedded value.
-		 */
-		explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
-		/**
-		 * @brief Copies the embedded integer.
-		 */
-		NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
-		/**
-		 * @brief Moves the embedded integer.
-		 */
-		NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
-		/**
-		 * @brief Destroys the facade without releasing external resources.
-		 */
-		~NonNullableSmartPointer() noexcept = default;
-		/**
-		 * @brief Copies the embedded integer.
-		 * @return This facade.
-		 */
-		NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
-		/**
-		 * @brief Moves the embedded integer.
-		 * @return This facade.
-		 */
-		NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
 
 		/**
-		 * @brief Gets mutable embedded storage.
+		 * @brief Construct a facade with an embedded value.
+		 * @param value Initial embedded value.
+		 */
+		explicit NonNullableSmartPointer(int value) noexcept: m_value(value) {}
+
+		/**
+		 * @brief Copy the embedded integer.
+		 * @param other Source.
+		 */
+		NonNullableSmartPointer(const NonNullableSmartPointer& other) noexcept = default;
+
+		/**
+		 * @brief Move the embedded integer.
+		 * @param other Source.
+		 */
+		NonNullableSmartPointer(NonNullableSmartPointer&& other) noexcept = default;
+
+		/**
+		 * @brief Destroy the facade without releasing external resources.
+		 */
+		~NonNullableSmartPointer() noexcept = default;
+
+		/**
+		 * @brief Copy the embedded integer.
+		 * @param other Source.
+		 * @return This facade.
+		 */
+		NonNullableSmartPointer& operator=(const NonNullableSmartPointer& other) noexcept = default;
+
+		/**
+		 * @brief Move the embedded integer.
+		 * @param other Source.
+		 * @return This facade.
+		 */
+		NonNullableSmartPointer& operator=(NonNullableSmartPointer&& other) noexcept = default;
+
+		/**
+		 * @brief Get mutable embedded storage.
 		 * @return Address of the embedded integer.
 		 */
 		int* get() noexcept { return &m_value; }
+
 		/**
-		 * @brief Gets constant embedded storage.
+		 * @brief Get constant embedded storage.
 		 * @return Address of the embedded integer.
 		 */
 		const int* get() const noexcept { return &m_value; }
+
 		/**
-		 * @brief Dereferences mutable embedded storage.
+		 * @brief Dereference mutable embedded storage.
 		 * @return Embedded integer.
 		 */
 		int& operator*() noexcept { return m_value; }
+
 		/**
-		 * @brief Dereferences constant embedded storage.
+		 * @brief Dereference constant embedded storage.
 		 * @return Embedded integer.
 		 */
 		const int& operator*() const noexcept { return m_value; }
+
 		/**
-		 * @brief Gets mutable arrow access.
+		 * @brief Get mutable arrow access.
 		 * @return Address of the embedded integer.
 		 */
 		int* operator->() noexcept { return &m_value; }
+
 		/**
-		 * @brief Gets constant arrow access.
+		 * @brief Get constant arrow access.
 		 * @return Address of the embedded integer.
 		 */
 		const int* operator->() const noexcept { return &m_value; }
 
 	private:
-		/**
-		 * @brief Integer owned directly by the facade.
-		 */
-		int m_value = 0;
+		int m_value = 0;	///< Integer owned directly by the facade.
 };
 
 STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
@@ -141,11 +157,9 @@ STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
  * @brief Provider-declared element with unsupported extended alignment.
  */
 struct alignas(alignof(std::max_align_t) * 2) OveralignedValue {
-	/**
-	 * @brief Embedded integer with no allocator or external lifetime.
-	 */
-	int value = 0;
+	int value = 0;	///< Embedded integer with no allocator or external lifetime.
 };
+
 STORMBYTE_DECLARE_MAYBE_SAFE(OveralignedValue);
 
 /**
@@ -153,27 +167,25 @@ STORMBYTE_DECLARE_MAYBE_SAFE(OveralignedValue);
  */
 struct ThrowingDefaultValue {
 	/**
-	 * @brief Provides a potentially throwing default signature for admission testing.
+	 * @brief Provide a potentially throwing default signature for admission testing.
 	 */
 	ThrowingDefaultValue() noexcept(false) {}
 };
+
 STORMBYTE_DECLARE_MAYBE_SAFE(ThrowingDefaultValue);
 
 /**
- * @brief Tests whether Sink admits an element without instantiating its storage.
+ * @brief Test whether Sink admits an element without instantiating its storage.
  * @tparam Value Candidate element.
  */
 template<typename Value>
 concept SinkAdmits = requires { typename Sink<Value>; };
 
 /**
- * @brief Undeclared movable payloads do not acquire a SafeValue contract automatically.
+ * @brief Undeclared movable payload. It does not acquire a SafeValue contract automatically.
  */
 struct UndeclaredValue {
-	/**
-	 * @brief Embedded integer.
-	 */
-	int value = 0;
+	int value = 0;	///< Embedded integer.
 };
 
 /**
@@ -202,22 +214,16 @@ static_assert(!SinkAdmits<std::string>);
 static_assert(!SinkAdmits<std::shared_ptr<int>>);
 static_assert(!SinkAdmits<std::unique_ptr<int>>);
 static_assert(!SinkAdmits<StormByte::Safe::Unique<int>>);
-
 static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
 static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
 
-/* -------------------------------------------------------------------------- */
-/* Concurrency                                                                */
-/* -------------------------------------------------------------------------- */
+// -------------------
+// Concurrency
+// -------------------
 
-/**
- * @brief Concurrent To(key) >> consumer loop versus Eof.
- * @return 0 on success.
- */
 int test_sink_concurrent_wire_and_eof() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
 	std::atomic<bool> stop_binding{false};
 	std::atomic<int> max_key{100};
 	std::thread bind_thread([&]() {
@@ -229,36 +235,26 @@ int test_sink_concurrent_wire_and_eof() {
 			std::this_thread::yield();
 		}
 	});
-
 	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	producer.Eof();
 	stop_binding.store(true, std::memory_order_release);
 	bind_thread.join();
-
-	ASSERT_TRUE("test_sink_concurrent_wire_and_eof consumer eof", consumer.EoF());
-
+	ASSERT_TRUE(consumer.EoF());
 	const int last_key = max_key.load(std::memory_order_acquire);
 	for (int k = 100; k <= last_key + 10; ++k) {
 		producer.Push(k, 9999);
-		ASSERT_EQUAL("test_sink_concurrent_wire_and_eof size after push post eof", StormByte::Size{0}, consumer.Size(k));
+		ASSERT_EQUAL(StormByte::Size{0}, consumer.Size(k));
 	}
-
-	RETURN_TEST("test_sink_concurrent_wire_and_eof", 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Concurrent To(key) >> consumer versus Notify + Push.
- * @return 0 on success.
- */
 int test_sink_concurrent_wire_and_notify() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
-	std::condition_variable cv;
-	std::mutex m;
+	StormByte::Safe::ConditionVariable cv;
+	StormByte::Safe::Mutex m;
 	std::atomic<bool> stop_binding{false};
 	std::atomic<int> max_key{200};
-
 	std::thread bind_thread([&]() {
 		int key = 200;
 		while (!stop_binding.load(std::memory_order_acquire)) {
@@ -268,16 +264,14 @@ int test_sink_concurrent_wire_and_notify() {
 			std::this_thread::yield();
 		}
 	});
-
 	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	consumer.Notify(cv);
 	stop_binding.store(true, std::memory_order_release);
 	bind_thread.join();
-
 	std::atomic<int> received_val{0};
 	std::atomic<bool> woken{false};
 	std::thread wait_thread([&]() {
-		std::unique_lock<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
 		bool ok = cv.wait_until(lock, deadline, [&]() {
 			int val = consumer.Pop();
@@ -289,182 +283,148 @@ int test_sink_concurrent_wire_and_notify() {
 		});
 		woken.store(ok && std::chrono::steady_clock::now() < deadline, std::memory_order_release);
 	});
-
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	{
-		std::lock_guard<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		producer.Push(200, 7777);
 	}
-
 	wait_thread.join();
-	ASSERT_TRUE("test_sink_concurrent_wire_and_notify woken by push", woken.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_sink_concurrent_wire_and_notify received item", 7777, received_val.load(std::memory_order_acquire));
-
+	ASSERT_TRUE(woken.load(std::memory_order_acquire));
+	ASSERT_EQUAL(7777, received_val.load(std::memory_order_acquire));
 	producer.Eof();
-
-	RETURN_TEST("test_sink_concurrent_wire_and_notify", 0);
+	RETURN_TEST(0);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Construction                                                               */
-/* -------------------------------------------------------------------------- */
+// -------------------
+// Construct
+// -------------------
 
-/**
- * @brief Tests default construction of Sink (zero buckets, EoF false, Ready false).
- * @return 0 on success.
- */
 int test_sink_default_constructor() {
 	Sink<int> sink;
-	ASSERT_FALSE("test_sink_default_constructor eof", sink.EoF());
-	ASSERT_FALSE("test_sink_default_constructor ready", sink.Ready());
-	ASSERT_FALSE("test_sink_default_constructor draining", sink.Draining());
-	ASSERT_EQUAL("test_sink_default_constructor missing key capacity", StormByte::Size{0}, sink.Capacity(42));
-	ASSERT_EQUAL("test_sink_default_constructor missing key size", StormByte::Size{0}, sink.Size(42));
-	ASSERT_FALSE("test_sink_default_constructor missing key full", sink.Full(42));
-
-	RETURN_TEST("test_sink_default_constructor", 0);
+	ASSERT_FALSE(sink.EoF());
+	ASSERT_FALSE(sink.Ready());
+	ASSERT_FALSE(sink.Draining());
+	ASSERT_EQUAL(StormByte::Size{0}, sink.Capacity(42));
+	ASSERT_EQUAL(StormByte::Size{0}, sink.Size(42));
+	ASSERT_FALSE(sink.Full(42));
+	RETURN_TEST(0);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Item types / Drain / Pop                                                   */
-/* -------------------------------------------------------------------------- */
+// -------------------
+// Drain
+// -------------------
 
-/**
- * @brief Drain: Push to an un-wired key discards.
- * @return 0 on success.
- */
 int test_sink_drain_mode() {
 	Sink<int> producer;
 	producer.Drain();
-
-	ASSERT_TRUE("test_sink_drain_mode draining", producer.Draining());
-
+	ASSERT_TRUE(producer.Draining());
 	producer.Push(100, 9999);
-	ASSERT_EQUAL("test_sink_drain_mode size 0 for un-bound key", StormByte::Size{0}, producer.Size(100));
-
+	ASSERT_EQUAL(StormByte::Size{0}, producer.Size(100));
 	Sink<int> consumer;
 	producer.To(100) >> consumer;
-
 	producer.Push(100, 8888);
-	ASSERT_EQUAL("test_sink_drain_mode size 1 for bound key", StormByte::Size{1}, consumer.Size(100));
-	ASSERT_EQUAL("test_sink_drain_mode pop value", 8888, consumer.Pop());
-
-	RETURN_TEST("test_sink_drain_mode", 0);
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(100));
+	ASSERT_EQUAL(8888, consumer.Pop());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Eof unblocks threads waiting in Push and Pop.
- * @return 0 on success.
- */
 int test_sink_eof_unblocks_waiters() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
 	std::atomic<bool> push_done{false};
 	std::atomic<bool> pop_done{false};
-
 	std::thread push_thread([&]() {
 		producer.Push(10, 100);
 		push_done.store(true, std::memory_order_release);
 	});
-
 	std::thread pop_thread([&]() {
 		(void)consumer.Pop();
 		pop_done.store(true, std::memory_order_release);
 	});
-
 	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("test_sink_eof_unblocks_waiters push blocked", push_done.load(std::memory_order_acquire));
-	ASSERT_FALSE("test_sink_eof_unblocks_waiters pop blocked", pop_done.load(std::memory_order_acquire));
-
+	ASSERT_FALSE(push_done.load(std::memory_order_acquire));
+	ASSERT_FALSE(pop_done.load(std::memory_order_acquire));
 	producer.Eof();
 	consumer.Eof();
-
 	push_thread.join();
 	pop_thread.join();
-
-	ASSERT_TRUE("test_sink_eof_unblocks_waiters push completed on eof", push_done.load(std::memory_order_acquire));
-	ASSERT_TRUE("test_sink_eof_unblocks_waiters pop completed on eof", pop_done.load(std::memory_order_acquire));
-
-	RETURN_TEST("test_sink_eof_unblocks_waiters", 0);
+	ASSERT_TRUE(push_done.load(std::memory_order_acquire));
+	ASSERT_TRUE(pop_done.load(std::memory_order_acquire));
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Smart pointer-like values without nullability pass through Sink.
- * @return 0 on success.
- */
 int test_sink_non_nullable_smart_pointer() {
 	Sink<NonNullableSmartPointer> producer;
 	Sink<NonNullableSmartPointer> consumer;
-
 	producer.To(1) >> consumer;
 	producer.Push(1, NonNullableSmartPointer(789));
-
-	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer size", StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
 	auto popped = consumer.Pop();
-	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer value", 789, *popped);
-	ASSERT_FALSE("test_sink_non_nullable_smart_pointer ready", consumer.Ready());
-
-	RETURN_TEST("test_sink_non_nullable_smart_pointer", 0);
+	ASSERT_EQUAL(789, *popped);
+	ASSERT_FALSE(consumer.Ready());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Pop with custom Select chooser.
- * @return 0 on success.
- */
+int test_sink_overaligned_payload() {
+	static_assert(StormByte::Type::SafeValue<OveralignedValue>);
+	static_assert(!SinkAdmits<OveralignedValue>);
+	static_assert(alignof(OveralignedValue) > alignof(std::max_align_t));
+	RETURN_TEST(0);
+}
+
 int test_sink_pop_custom_select() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
 	producer.To(1) >> consumer;
 	producer.To(2) >> consumer;
-
 	producer.Push(1, 111);
 	producer.Push(2, 222);
-
 	auto select_second = [](StormByte::Size count) -> StormByte::Size {
 		return count > 1 ? StormByte::Size{1} : StormByte::Size{0};
 	};
-
 	int val = consumer.Pop(select_second);
-	ASSERT_EQUAL("test_sink_pop_custom_select selected bucket index 1", 222, val);
-
+	ASSERT_EQUAL(222, val);
 	int val_rem = consumer.Pop();
-	ASSERT_EQUAL("test_sink_pop_custom_select remaining bucket index 0", 111, val_rem);
-
-	RETURN_TEST("test_sink_pop_custom_select", 0);
+	ASSERT_EQUAL(111, val_rem);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Selector exceptions do not dequeue any bucket.
- * @return Zero on success.
- */
 int test_sink_pop_selector_exception_preserves_items() {
-	constexpr auto fn = "test_sink_pop_selector_exception_preserves_items";
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
 	producer.To(2) >> consumer;
 	producer.Push(1, 111);
 	producer.Push(2, 222);
-
 	const auto fail = [](StormByte::Size) -> StormByte::Size {
 		throw StormByte::Exception("selector failure");
 	};
-	ASSERT_EQUAL(fn, 0, consumer.Pop(fail));
-	ASSERT_EQUAL(fn, StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL(fn, StormByte::Size{1}, consumer.Size(2));
-	ASSERT_EQUAL(fn, 111, consumer.Pop());
-	ASSERT_EQUAL(fn, 222, consumer.Pop());
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(0, consumer.Pop(fail));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(2));
+	ASSERT_EQUAL(111, consumer.Pop());
+	ASSERT_EQUAL(222, consumer.Pop());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Borrowed mutable and move-only selectors preserve their original captures.
- * @return Zero on success.
- */
+int test_sink_push_waiting_for_wire() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	std::atomic<bool> push_done{false};
+	std::thread push_thread([&]() {
+		producer.Push(7, 777);
+		push_done.store(true, std::memory_order_release);
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	ASSERT_FALSE(push_done.load(std::memory_order_acquire));
+	producer.To(7) >> consumer;
+	push_thread.join();
+	ASSERT_TRUE(push_done.load(std::memory_order_acquire));
+	ASSERT_EQUAL(777, consumer.Pop());
+	RETURN_TEST(0);
+}
+
 int test_sink_selector_borrowed_state() {
-	constexpr auto name = "test_sink_selector_borrowed_state";
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
@@ -478,24 +438,19 @@ int test_sink_selector_borrowed_state() {
 		++calls;
 		return StormByte::Size{(*state)++ % static_cast<std::size_t>(count)};
 	};
-	ASSERT_EQUAL(name, 11, consumer.Pop(selector));
-	ASSERT_EQUAL(name, 22, consumer.Pop(selector));
-	ASSERT_EQUAL(name, 2, calls);
-	ASSERT_EQUAL(name, 33, consumer.Pop([&calls](StormByte::Size) {
+	ASSERT_EQUAL(11, consumer.Pop(selector));
+	ASSERT_EQUAL(22, consumer.Pop(selector));
+	ASSERT_EQUAL(2, calls);
+	ASSERT_EQUAL(33, consumer.Pop([&calls](StormByte::Size) {
 		++calls;
 		return StormByte::Size{20};
 	}));
-	ASSERT_EQUAL(name, 44, consumer.Pop());
-	ASSERT_EQUAL(name, 3, calls);
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(44, consumer.Pop());
+	ASSERT_EQUAL(3, calls);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Explicit Safe selectors report failure, missing context and successful output.
- * @return Zero on success.
- */
 int test_sink_safe_selector_status() {
-	constexpr auto name = "test_sink_safe_selector_status";
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
@@ -522,29 +477,24 @@ int test_sink_safe_selector_status() {
 			StormByte::Safe::Heap::ObjectDeleter{}(static_cast<StormByte::Safe::Status*>(context));
 		});
 	StormByte::Size output{7};
-	ASSERT_EQUAL(name, StormByte::Safe::Status::Failure, selector.Call(output, StormByte::Size{2}));
-	ASSERT_EQUAL(name, StormByte::Size{7}, output);
-	ASSERT_EQUAL(name, 0, consumer.Pop(selector));
-	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(2));
+	ASSERT_EQUAL(StormByte::Safe::Status::Failure, selector.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(StormByte::Size{7}, output);
+	ASSERT_EQUAL(0, consumer.Pop(selector));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(2));
 	Sink<int>::Select moved(std::move(selector));
-	ASSERT_EQUAL(name, StormByte::Safe::Status::Missing, selector.Call(output, StormByte::Size{2}));
-	ASSERT_EQUAL(name, StormByte::Size{7}, output);
-	ASSERT_EQUAL(name, 0, consumer.Pop(selector));
+	ASSERT_EQUAL(StormByte::Safe::Status::Missing, selector.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(StormByte::Size{7}, output);
+	ASSERT_EQUAL(0, consumer.Pop(selector));
 	*status = StormByte::Safe::Status::Success;
-	ASSERT_EQUAL(name, StormByte::Safe::Status::Success, moved.Call(output, StormByte::Size{2}));
-	ASSERT_EQUAL(name, StormByte::Size{1}, output);
-	ASSERT_EQUAL(name, 22, consumer.Pop(moved));
-	ASSERT_EQUAL(name, 11, consumer.Pop());
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(StormByte::Safe::Status::Success, moved.Call(output, StormByte::Size{2}));
+	ASSERT_EQUAL(StormByte::Size{1}, output);
+	ASSERT_EQUAL(22, consumer.Pop(moved));
+	ASSERT_EQUAL(11, consumer.Pop());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Safe selector copies own independent state and Pop neither clones nor releases the borrow.
- * @return Zero on success.
- */
 int test_sink_safe_selector_provider_release() {
-	constexpr auto name = "test_sink_safe_selector_provider_release";
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
@@ -555,18 +505,9 @@ int test_sink_safe_selector_provider_release() {
 	 * @brief Provider-owned selector state with borrowed lifetime counters.
 	 */
 	struct Context {
-		/**
-		 * @brief Independent selection counter owned by each callback.
-		 */
-		std::size_t next;
-		/**
-		 * @brief Borrowed release counter that outlives every callback.
-		 */
-		int* releases;
-		/**
-		 * @brief Borrowed clone counter that outlives every callback.
-		 */
-		int* clones;
+		std::size_t next;	///< Independent selection counter owned by each callback.
+		int* releases;		///< Borrowed release counter that outlives every callback.
+		int* clones;		///< Borrowed clone counter that outlives every callback.
 	};
 	{
 		auto* context = ::new (StormByte::Safe::Heap::Allocate(sizeof(Context))) Context{0, &releases, &clones};
@@ -592,41 +533,36 @@ int test_sink_safe_selector_provider_release() {
 				++*state->releases;
 				StormByte::Safe::Heap::ObjectDeleter{}(state);
 			});
-		ASSERT_EQUAL(name, 42, consumer.Pop(selector));
-		ASSERT_EQUAL(name, 0, releases);
-		ASSERT_EQUAL(name, 0, clones);
+		ASSERT_EQUAL(42, consumer.Pop(selector));
+		ASSERT_EQUAL(0, releases);
+		ASSERT_EQUAL(0, clones);
 		{
 			Sink<int>::Select copy(selector);
-			ASSERT_EQUAL(name, 1, clones);
+			ASSERT_EQUAL(1, clones);
 			StormByte::Size output{9};
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{1}, output);
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{2}, output);
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{1}, output);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{1}, output);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{2}, output);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{1}, output);
 			copy = selector;
-			ASSERT_EQUAL(name, 2, clones);
-			ASSERT_EQUAL(name, 1, releases);
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{2}, output);
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{0}, output);
-			ASSERT_EQUAL(name, StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
-			ASSERT_EQUAL(name, StormByte::Size{2}, output);
+			ASSERT_EQUAL(2, clones);
+			ASSERT_EQUAL(1, releases);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{2}, output);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, copy.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{0}, output);
+			ASSERT_EQUAL(StormByte::Safe::Status::Success, selector.Call(output, StormByte::Size{3}));
+			ASSERT_EQUAL(StormByte::Size{2}, output);
 		}
-		ASSERT_EQUAL(name, 2, releases);
+		ASSERT_EQUAL(2, releases);
 	}
-	ASSERT_EQUAL(name, 3, releases);
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(3, releases);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief A selector must run before dequeue even when only one bucket exists.
- * @return Zero on success.
- */
 int test_sink_single_bucket_selector_failure() {
-	constexpr auto name = "test_sink_single_bucket_selector_failure";
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
@@ -638,120 +574,101 @@ int test_sink_single_bucket_selector_failure() {
 			throw StormByte::Exception("selector failure");
 		return StormByte::Size{0};
 	};
-	ASSERT_EQUAL(name, 0, consumer.Pop(safe_failure));
+	ASSERT_EQUAL(0, consumer.Pop(safe_failure));
 	const auto foreign_failure = [](StormByte::Size) -> StormByte::Size {
 		throw 7;
 	};
-	ASSERT_EQUAL(name, 0, consumer.Pop(foreign_failure));
-	ASSERT_EQUAL(name, 1, calls);
-	ASSERT_EQUAL(name, StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL(name, 42, consumer.Pop());
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(0, consumer.Pop(foreign_failure));
+	ASSERT_EQUAL(1, calls);
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(42, consumer.Pop());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Push waits until the key is wired or Eof.
- * @return 0 on success.
- */
-int test_sink_push_waiting_for_wire() {
+// -------------------
+// Notify
+// -------------------
+
+int test_sink_closed_binding_writer_release() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
-	std::atomic<bool> push_done{false};
-
-	std::thread push_thread([&]() {
-		producer.Push(7, 777);
-		push_done.store(true, std::memory_order_release);
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("test_sink_push_waiting_for_wire push waiting", push_done.load(std::memory_order_acquire));
-
-	producer.To(7) >> consumer;
-	push_thread.join();
-
-	ASSERT_TRUE("test_sink_push_waiting_for_wire push resumed", push_done.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_sink_push_waiting_for_wire popped val", 777, consumer.Pop());
-
-	RETURN_TEST("test_sink_push_waiting_for_wire", 0);
+	Sink<int> closed;
+	producer.To(1) >> consumer;
+	closed.Eof();
+	closed.To(2) >> producer;
+	producer.Eof();
+	producer.Eof();
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Notify / Unnotify                                                          */
-/* -------------------------------------------------------------------------- */
+int test_sink_closed_cowriter_push() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> coworker;
+	producer.To(1) >> consumer;
+	producer.To(1) >> coworker;
+	producer.Eof();
+	producer.Push(1, 11);
+	ASSERT_TRUE(consumer.Empty(1));
+	ASSERT_FALSE(consumer.EoF(1));
+	coworker.Push(1, 22);
+	coworker.Eof();
+	ASSERT_EQUAL(22, consumer.Pop(1));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
+}
 
-/**
- * @brief Notify wakes the consumer CV on Push.
- * @return 0 on success.
- */
 int test_sink_notify_condition_variable() {
 	Sink<int> producer;
 	Sink<int> consumer;
 	producer.To(1) >> consumer;
-
-	std::condition_variable cv;
-	std::mutex m;
-
+	StormByte::Safe::ConditionVariable cv;
+	StormByte::Safe::Mutex m;
 	consumer.Notify(cv);
-
 	std::atomic<int> read_val{-1};
 	std::thread consumer_thread([&]() {
-		std::unique_lock<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		if (cv.wait_for(lock, std::chrono::seconds(1), [&]() { return consumer.Ready(); }))
 			read_val.store(consumer.Pop(), std::memory_order_release);
 	});
-
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	{
-		std::lock_guard<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		producer.Push(1, 555);
 	}
 	consumer_thread.join();
-
-	ASSERT_EQUAL("test_sink_notify_condition_variable read value", 555, read_val.load(std::memory_order_acquire));
-
-	RETURN_TEST("test_sink_notify_condition_variable", 0);
+	ASSERT_EQUAL(555, read_val.load(std::memory_order_acquire));
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Consumer Unnotify then destroy its CV; producer Eof must not signal it.
- * @return 0 on success.
- */
-int test_sink_unnotify_before_cv_dies() {
+int test_sink_observer_concurrent_unnotify() {
 	Sink<int> producer;
-	auto consumer = std::make_unique<Sink<int>>();
-	auto wake = std::make_unique<std::condition_variable>();
-
-	producer.To(0) >> *consumer;
-	consumer->Notify(*wake);
-	producer.Push(0, 42);
-	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies queued",
-		StormByte::Size{1}, consumer->Size(0));
-	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies pop", 42, consumer->Pop());
-
-	consumer->Eof();
-	consumer->Unnotify();
-	wake.reset();
-	consumer.reset();
-
+	Sink<int> consumer;
+	{
+		StormByte::Safe::ConditionVariable wake;
+		consumer.Notify(wake);
+		std::thread wiring([&] {
+			for (int key = 0; key < 100; ++key)
+				producer.To(key) >> consumer;
+		});
+		std::thread closing([&] { consumer.Eof(); });
+		consumer.Unnotify();
+		wiring.join();
+		closing.join();
+	}
 	producer.Eof();
-	ASSERT_TRUE("test_sink_unnotify_before_cv_dies producer eof", producer.EoF());
-
-	RETURN_TEST("test_sink_unnotify_before_cv_dies", 0);
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Destroying an older Sink registration must preserve a newer Sink observer.
- * @return Zero on success.
- */
 int test_sink_observer_identity() {
-	constexpr auto name = "test_sink_observer_identity";
 	Sink<int> producer;
 	Sink<int> newer;
-	std::condition_variable wake;
-	std::mutex mutex;
+	StormByte::Safe::ConditionVariable wake;
+	StormByte::Safe::Mutex mutex;
 	{
-		std::condition_variable old_wake;
+		StormByte::Safe::ConditionVariable old_wake;
 		Sink<int> older;
 		producer.To(1) >> older;
 		older >> newer;
@@ -765,7 +682,7 @@ int test_sink_observer_identity() {
 	std::atomic<bool> waiting{false};
 	bool notified = false;
 	std::thread waiter([&] {
-		std::unique_lock<std::mutex> lock(mutex);
+		StormByte::Safe::UniqueLock lock(mutex);
 		waiting.store(true, std::memory_order_release);
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
 		notified = wake.wait_until(lock, deadline, [&] { return newer.Ready(); })
@@ -774,26 +691,21 @@ int test_sink_observer_identity() {
 	while (!waiting.load(std::memory_order_acquire))
 		std::this_thread::yield();
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		StormByte::Safe::UniqueLock lock(mutex);
 		producer.Push(1, 42);
 	}
 	waiter.join();
-	ASSERT_TRUE(name, notified);
-	ASSERT_EQUAL(name, 42, newer.Pop(1));
+	ASSERT_TRUE(notified);
+	ASSERT_EQUAL(42, newer.Pop(1));
 	newer.Unnotify();
-	RETURN_TEST(name, 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Rebinding and destruction unregister observers from retained producer hoppers.
- * @return Zero on success.
- */
 int test_sink_observer_rebind_and_destruction() {
-	constexpr auto name = "test_sink_observer_rebind_and_destruction";
 	Sink<int> first;
 	Sink<int> second;
 	{
-		std::condition_variable wake;
+		StormByte::Safe::ConditionVariable wake;
 		Sink<int> consumer;
 		first.To(1) >> consumer;
 		consumer.Notify(wake);
@@ -805,18 +717,13 @@ int test_sink_observer_rebind_and_destruction() {
 	second.Push(2, 33);
 	first.Eof();
 	second.Eof();
-	ASSERT_EQUAL(name, StormByte::Size{1}, first.Size(1));
-	ASSERT_EQUAL(name, StormByte::Size{1}, second.Size(1));
-	ASSERT_EQUAL(name, StormByte::Size{1}, second.Size(2));
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(StormByte::Size{1}, first.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, second.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, second.Size(2));
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Closing a rebound Sink releases its writer hold on the replaced hopper.
- * @return Zero on success.
- */
 int test_sink_rebound_writer_eof() {
-	constexpr auto name = "test_sink_rebound_writer_eof";
 	Sink<int> original;
 	Sink<int> consumer;
 	Sink<int> replacement;
@@ -824,108 +731,49 @@ int test_sink_rebound_writer_eof() {
 	original.Push(1, 42);
 	replacement.To(1) >> original;
 	original.Eof();
-	ASSERT_EQUAL(name, 42, consumer.Pop(1));
-	ASSERT_TRUE(name, consumer.EoF());
+	ASSERT_EQUAL(42, consumer.Pop(1));
+	ASSERT_TRUE(consumer.EoF());
 	replacement.Eof();
-	RETURN_TEST(name, 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Destroying a joined writer removes its observer before closing a shared hopper.
- * @return Zero on success.
- */
-int test_sink_writer_destruction() {
-	constexpr auto name = "test_sink_writer_destruction";
-	Sink<int> consumer;
-	{
-		std::condition_variable wake;
+int test_sink_stored_concurrent_unnotify() {
+	for (int iteration = 0; iteration < 50; ++iteration) {
 		Sink<int> producer;
-		producer.To(1) >> consumer;
-		producer.Notify(wake);
-		producer.Push(1, 42);
-	}
-	ASSERT_EQUAL(name, 42, consumer.Pop(1));
-	ASSERT_TRUE(name, consumer.EoF());
-	RETURN_TEST(name, 0);
-}
-
-/**
- * @brief Closed wiring does not prevent release of existing writer holds.
- * @return Zero on success.
- */
-int test_sink_closed_binding_writer_release() {
-	constexpr auto name = "test_sink_closed_binding_writer_release";
-	Sink<int> producer;
-	Sink<int> consumer;
-	Sink<int> closed;
-	producer.To(1) >> consumer;
-	closed.Eof();
-	closed.To(2) >> producer;
-	producer.Eof();
-	producer.Eof();
-	ASSERT_TRUE(name, consumer.EoF());
-	RETURN_TEST(name, 0);
-}
-
-/**
- * @brief A closed co-writer cannot enqueue while another writer keeps the hopper open.
- * @return Zero on success.
- */
-int test_sink_closed_cowriter_push() {
-	constexpr auto name = "test_sink_closed_cowriter_push";
-	Sink<int> producer;
-	Sink<int> consumer;
-	Sink<int> coworker;
-	producer.To(1) >> consumer;
-	producer.To(1) >> coworker;
-	producer.Eof();
-	producer.Push(1, 11);
-	ASSERT_TRUE(name, consumer.Empty(1));
-	ASSERT_FALSE(name, consumer.EoF(1));
-	coworker.Push(1, 22);
-	coworker.Eof();
-	ASSERT_EQUAL(name, 22, consumer.Pop(1));
-	ASSERT_TRUE(name, consumer.EoF());
-	RETURN_TEST(name, 0);
-}
-
-/**
- * @brief Removal serializes concurrent wiring and Eof before the borrowed CV is destroyed.
- * @return Zero on success.
- */
-int test_sink_observer_concurrent_unnotify() {
-	constexpr auto name = "test_sink_observer_concurrent_unnotify";
-	Sink<int> producer;
-	Sink<int> consumer;
-	{
-		std::condition_variable wake;
-		consumer.Notify(wake);
-		std::thread wiring([&] {
-			for (int key = 0; key < 100; ++key)
-				producer.To(key) >> consumer;
-		});
-		std::thread closing([&] { consumer.Eof(); });
-		consumer.Unnotify();
+		Sink<int> consumer;
+		producer.To(0) >> consumer;
+		std::thread publishing;
+		std::thread wiring;
+		{
+			StormByte::Safe::ConditionVariable wake;
+			StormByte::Safe::Atomic<std::size_t> generation{0};
+			consumer.Notify(wake, generation);
+			publishing = std::thread([&] {
+				for (int item = 1; item <= 100; ++item)
+					producer.Push(0, item);
+				producer.Eof();
+			});
+			wiring = std::thread([&] {
+				for (int key = 1; key <= 10; ++key)
+					producer.To(key) >> consumer;
+			});
+			consumer.Unnotify();
+		}
+		publishing.join();
 		wiring.join();
-		closing.join();
+		ASSERT_TRUE(consumer.EoF(0));
+		ASSERT_EQUAL(StormByte::Size{100}, consumer.Size(0));
 	}
-	producer.Eof();
-	ASSERT_TRUE(name, consumer.EoF());
-	RETURN_TEST(name, 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Forces data, EOF, empty closure, wiring and control events before atomic wait.
- * @return Zero on success.
- */
 int test_sink_stored_handoff() {
-	constexpr auto name = "test_sink_stored_handoff";
 	for (int event = 0; event < 7; ++event) {
 		Sink<int> producer;
 		Sink<int> consumer;
 		Sink<int> staging;
-		std::condition_variable wake;
-		std::atomic<std::size_t> generation{0};
+		StormByte::Safe::ConditionVariable wake;
+		StormByte::Safe::Atomic<std::size_t> generation{0};
 		std::atomic<bool> stopped{false};
 		consumer.Notify(wake, generation);
 		if (event < 2)
@@ -944,7 +792,7 @@ int test_sink_stored_handoff() {
 		auto waiter = std::async(std::launch::async, [&] {
 			bool first = true;
 			for (;;) {
-				const auto before = generation.load(std::memory_order_acquire);
+				const auto before = generation.load();
 				const bool ready = consumer.Ready() || stopped.load(std::memory_order_acquire);
 				if (first) {
 					first = false;
@@ -953,7 +801,7 @@ int test_sink_stored_handoff() {
 				}
 				if (ready)
 					break;
-				generation.wait(before, std::memory_order_acquire);
+				generation.wait(before);
 			}
 		});
 		after_check.wait();
@@ -965,7 +813,7 @@ int test_sink_stored_handoff() {
 			consumer.Eof();
 		else if (event == 3) {
 			stopped.store(true, std::memory_order_release);
-			generation.fetch_add(1, std::memory_order_release);
+			generation.fetch_add(std::size_t{1});
 			generation.notify_all();
 		}
 		else if (event == 6)
@@ -976,86 +824,31 @@ int test_sink_stored_handoff() {
 		const bool woke = waiter.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
 		if (!woke) {
 			stopped.store(true, std::memory_order_release);
-			generation.fetch_add(1, std::memory_order_release);
+			generation.fetch_add(std::size_t{1});
 			generation.notify_all();
 		}
 		waiter.get();
 		consumer.Unnotify();
-		ASSERT_TRUE(name, woke);
+		ASSERT_TRUE(woke);
 		if (event == 0 || event == 4)
-			ASSERT_EQUAL(name, 42, consumer.Pop(0));
+			ASSERT_EQUAL(42, consumer.Pop(0));
 		else if (event != 3)
-			ASSERT_TRUE(name, consumer.EoF());
+			ASSERT_TRUE(consumer.EoF());
 	}
-	RETURN_TEST(name, 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Stored registrations follow Ensure, keyed/all wiring, fan-in and final-writer EOF.
- * @return Zero on success.
- */
-int test_sink_stored_wiring() {
-	constexpr auto name = "test_sink_stored_wiring";
-	Sink<int> first;
-	Sink<int> second;
-	Sink<int> consumer;
-	Sink<int> downstream;
-	std::condition_variable wake;
-	std::atomic<std::size_t> generation{0};
-	first.Notify(wake, generation);
-	first.To(0) >> consumer;
-	const auto ensured = generation.load();
-	first.Push(0, 11);
-	ASSERT_EQUAL(name, ensured + 1, generation.load());
-	ASSERT_EQUAL(name, 11, consumer.Pop(0));
-	consumer.Notify(wake, generation);
-	first.To(1) >> consumer;
-	consumer.Capacity(1, 512);
-	const auto created = generation.load();
-	first.Push(1, 22);
-	ASSERT_EQUAL(name, created + 1, generation.load());
-	ASSERT_EQUAL(name, 22, consumer.Pop(1));
-	downstream.Notify(wake, generation);
-	first >> downstream;
-	const auto bound = generation.load();
-	first.Push(0, 33);
-	ASSERT_EQUAL(name, bound + 1, generation.load());
-	ASSERT_EQUAL(name, 33, downstream.Pop(0));
-	first.To(0) >> second;
-	second >> downstream;
-	const auto shared = generation.load();
-	second.Push(0, 44);
-	ASSERT_EQUAL(name, shared + 1, generation.load());
-	ASSERT_EQUAL(name, 44, downstream.Pop(0));
-	first.Eof();
-	ASSERT_FALSE(name, downstream.EoF(0));
-	const auto before_final = generation.load();
-	second.Eof();
-	ASSERT_TRUE(name, generation.load() > before_final);
-	ASSERT_TRUE(name, downstream.EoF());
-	ASSERT_EQUAL(name, StormByte::Size{512}, downstream.Capacity(1));
-	first.Unnotify();
-	consumer.Unnotify();
-	downstream.Unnotify();
-	RETURN_TEST(name, 0);
-}
-
-/**
- * @brief Counter replacement, stale removal, rewiring and legacy replacement preserve ownership.
- * @return Zero on success.
- */
 int test_sink_stored_observer_identity() {
-	constexpr auto name = "test_sink_stored_observer_identity";
 	Sink<int> first;
 	Sink<int> second;
 	Sink<int> consumer;
-	std::condition_variable wake;
-	std::atomic<std::size_t> generation{0};
+	StormByte::Safe::ConditionVariable wake;
+	StormByte::Safe::Atomic<std::size_t> generation{0};
 	first.To(0) >> consumer;
 	{
 		Sink<int> older;
-		std::condition_variable old_wake;
-		std::atomic<std::size_t> old_generation{0};
+		StormByte::Safe::ConditionVariable old_wake;
+		StormByte::Safe::Atomic<std::size_t> old_generation{0};
 		first >> older;
 		older.Notify(old_wake, old_generation);
 		consumer.Notify(wake, generation);
@@ -1063,111 +856,129 @@ int test_sink_stored_observer_identity() {
 		older.Unnotify();
 		const auto before = generation.load();
 		first.Push(0, 11);
-		ASSERT_EQUAL(name, before + 1, generation.load());
-		ASSERT_EQUAL(name, std::size_t{0}, old_generation.load());
-		ASSERT_EQUAL(name, 11, consumer.Pop(0));
+		ASSERT_EQUAL(before + 1, generation.load());
+		ASSERT_EQUAL(std::size_t{0}, old_generation.load());
+		ASSERT_EQUAL(11, consumer.Pop(0));
 	}
 	second.To(0) >> consumer;
 	const auto rebound = generation.load();
 	first.Push(0, 22);
-	ASSERT_EQUAL(name, rebound, generation.load());
+	ASSERT_EQUAL(rebound, generation.load());
 	second.Push(0, 33);
-	ASSERT_EQUAL(name, rebound + 1, generation.load());
-	ASSERT_EQUAL(name, 33, consumer.Pop(0));
+	ASSERT_EQUAL(rebound + 1, generation.load());
+	ASSERT_EQUAL(33, consumer.Pop(0));
 	consumer.Notify(wake);
 	const auto legacy = generation.load();
 	second.Push(0, 44);
 	second.Eof();
-	ASSERT_EQUAL(name, legacy, generation.load());
+	ASSERT_EQUAL(legacy, generation.load());
 	consumer.Unnotify();
-	RETURN_TEST(name, 0);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Push, EOF and wiring cannot access borrowed counters after concurrent removal returns.
- * @return Zero on success.
- */
-int test_sink_stored_concurrent_unnotify() {
-	constexpr auto name = "test_sink_stored_concurrent_unnotify";
-	for (int iteration = 0; iteration < 50; ++iteration) {
+int test_sink_stored_wiring() {
+	Sink<int> first;
+	Sink<int> second;
+	Sink<int> consumer;
+	Sink<int> downstream;
+	StormByte::Safe::ConditionVariable wake;
+	StormByte::Safe::Atomic<std::size_t> generation{0};
+	first.Notify(wake, generation);
+	first.To(0) >> consumer;
+	const auto ensured = generation.load();
+	first.Push(0, 11);
+	ASSERT_EQUAL(ensured + 1, generation.load());
+	ASSERT_EQUAL(11, consumer.Pop(0));
+	consumer.Notify(wake, generation);
+	first.To(1) >> consumer;
+	consumer.Capacity(1, 512);
+	const auto created = generation.load();
+	first.Push(1, 22);
+	ASSERT_EQUAL(created + 1, generation.load());
+	ASSERT_EQUAL(22, consumer.Pop(1));
+	downstream.Notify(wake, generation);
+	first >> downstream;
+	const auto bound = generation.load();
+	first.Push(0, 33);
+	ASSERT_EQUAL(bound + 1, generation.load());
+	ASSERT_EQUAL(33, downstream.Pop(0));
+	first.To(0) >> second;
+	second >> downstream;
+	const auto shared = generation.load();
+	second.Push(0, 44);
+	ASSERT_EQUAL(shared + 1, generation.load());
+	ASSERT_EQUAL(44, downstream.Pop(0));
+	first.Eof();
+	ASSERT_FALSE(downstream.EoF(0));
+	const auto before_final = generation.load();
+	second.Eof();
+	ASSERT_TRUE(generation.load() > before_final);
+	ASSERT_TRUE(downstream.EoF());
+	ASSERT_EQUAL(StormByte::Size{512}, downstream.Capacity(1));
+	first.Unnotify();
+	consumer.Unnotify();
+	downstream.Unnotify();
+	RETURN_TEST(0);
+}
+
+int test_sink_unnotify_before_cv_dies() {
+	Sink<int> producer;
+	auto consumer = std::make_unique<Sink<int>>();
+	auto wake = std::make_unique<StormByte::Safe::ConditionVariable>();
+	producer.To(0) >> *consumer;
+	consumer->Notify(*wake);
+	producer.Push(0, 42);
+	ASSERT_EQUAL(StormByte::Size{1}, consumer->Size(0));
+	ASSERT_EQUAL(42, consumer->Pop());
+	consumer->Eof();
+	consumer->Unnotify();
+	wake.reset();
+	consumer.reset();
+	producer.Eof();
+	ASSERT_TRUE(producer.EoF());
+	RETURN_TEST(0);
+}
+
+int test_sink_writer_destruction() {
+	Sink<int> consumer;
+	{
+		StormByte::Safe::ConditionVariable wake;
 		Sink<int> producer;
-		Sink<int> consumer;
-		producer.To(0) >> consumer;
-		std::thread publishing;
-		std::thread wiring;
-		{
-			std::condition_variable wake;
-			std::atomic<std::size_t> generation{0};
-			consumer.Notify(wake, generation);
-			publishing = std::thread([&] {
-				for (int item = 1; item <= 100; ++item)
-					producer.Push(0, item);
-				producer.Eof();
-			});
-			wiring = std::thread([&] {
-				for (int key = 1; key <= 10; ++key)
-					producer.To(key) >> consumer;
-			});
-			consumer.Unnotify();
-		}
-		publishing.join();
-		wiring.join();
-		ASSERT_TRUE(name, consumer.EoF(0));
-		ASSERT_EQUAL(name, StormByte::Size{100}, consumer.Size(0));
+		producer.To(1) >> consumer;
+		producer.Notify(wake);
+		producer.Push(1, 42);
 	}
-	RETURN_TEST(name, 0);
+	ASSERT_EQUAL(42, consumer.Pop(1));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Query / keyed Pop                                                          */
-/* -------------------------------------------------------------------------- */
+// -------------------
+// Query
+// -------------------
 
-/**
- * @brief Pop(int) reads only that key and returns default T when dry.
- * @return 0 on success.
- */
 int test_sink_pop_key() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
 	producer.To(1) >> consumer;
 	producer.To(2) >> consumer;
-
 	producer.Push(1, 111);
 	producer.Push(1, 112);
 	producer.Push(2, 222);
-
-	ASSERT_EQUAL("test_sink_pop_key first 1", 111, consumer.Pop(1));
-	ASSERT_EQUAL("test_sink_pop_key size 1 left", StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL("test_sink_pop_key size 2 untouched", StormByte::Size{1}, consumer.Size(2));
-	ASSERT_EQUAL("test_sink_pop_key key 2", 222, consumer.Pop(2));
-	ASSERT_EQUAL("test_sink_pop_key dry 2", 0, consumer.Pop(2));
-	ASSERT_EQUAL("test_sink_pop_key second 1", 112, consumer.Pop(1));
-	ASSERT_TRUE("test_sink_pop_key empty 1", consumer.Empty(1));
-
+	ASSERT_EQUAL(111, consumer.Pop(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(2));
+	ASSERT_EQUAL(222, consumer.Pop(2));
+	ASSERT_EQUAL(0, consumer.Pop(2));
+	ASSERT_EQUAL(112, consumer.Pop(1));
+	ASSERT_TRUE(consumer.Empty(1));
 	producer.Eof();
 	Sink<int> closed;
 	closed.Eof();
-	ASSERT_EQUAL("test_sink_pop_key missing after eof", 0, closed.Pop(99));
-
-	RETURN_TEST("test_sink_pop_key", 0);
+	ASSERT_EQUAL(0, closed.Pop(99));
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Provider-declared over-aligned payloads are rejected before allocation.
- * @return 0 on success.
- */
-int test_sink_overaligned_payload() {
-	static_assert(StormByte::Type::SafeValue<OveralignedValue>);
-	static_assert(!SinkAdmits<OveralignedValue>);
-	static_assert(alignof(OveralignedValue) > alignof(std::max_align_t));
-	RETURN_TEST("test_sink_overaligned_payload", 0);
-}
-
-/**
- * @brief Safe key snapshots are ordered, independent and survive their Sink.
- * @return 0 on success.
- */
 int test_sink_query_snapshot() {
 	StormByte::Safe::Vector<int> keys;
 	{
@@ -1178,279 +989,114 @@ int test_sink_query_snapshot() {
 		producer.To(0) >> consumer;
 		keys = consumer.Keys();
 		producer.To(5) >> consumer;
-		ASSERT_EQUAL("test_sink_query_snapshot wired buckets", StormByte::Size{4}, consumer.Buckets());
-		ASSERT_EQUAL("test_sink_query_snapshot unchanged size", std::size_t{3}, keys.size());
+		ASSERT_EQUAL(StormByte::Size{4}, consumer.Buckets());
+		ASSERT_EQUAL(std::size_t{3}, keys.size());
 		producer.Eof();
 	}
 	const StormByte::Safe::Vector<int> copy = keys;
 	keys[0] = -20;
 	const StormByte::Safe::Vector<int> moved = std::move(keys);
-	ASSERT_EQUAL("test_sink_query_snapshot copy negative", -10, copy[0]);
-	ASSERT_EQUAL("test_sink_query_snapshot copy zero", 0, copy[1]);
-	ASSERT_EQUAL("test_sink_query_snapshot copy positive", 20, copy[2]);
-	ASSERT_EQUAL("test_sink_query_snapshot moved size", std::size_t{3}, moved.size());
-	ASSERT_EQUAL("test_sink_query_snapshot moved value", -20, moved[0]);
-	RETURN_TEST("test_sink_query_snapshot", 0);
+	ASSERT_EQUAL(-10, copy[0]);
+	ASSERT_EQUAL(0, copy[1]);
+	ASSERT_EQUAL(20, copy[2]);
+	ASSERT_EQUAL(std::size_t{3}, moved.size());
+	ASSERT_EQUAL(-20, moved[0]);
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Keys, Buckets, Contains, Empty/EoF/Ready per key on an empty Sink.
- * @return 0 on success.
- */
 int test_sink_query_unwired() {
 	Sink<int> sink;
-	ASSERT_EQUAL("test_sink_query_unwired buckets", StormByte::Size{0}, sink.Buckets());
-	ASSERT_TRUE("test_sink_query_unwired keys empty", sink.Keys().empty());
-	ASSERT_FALSE("test_sink_query_unwired contains", sink.Contains(42));
-	ASSERT_TRUE("test_sink_query_unwired empty missing", sink.Empty(42));
-	ASSERT_FALSE("test_sink_query_unwired eof missing", sink.EoF(42));
-	ASSERT_FALSE("test_sink_query_unwired ready missing", sink.Ready(42));
-
-	RETURN_TEST("test_sink_query_unwired", 0);
+	ASSERT_EQUAL(StormByte::Size{0}, sink.Buckets());
+	ASSERT_TRUE(sink.Keys().empty());
+	ASSERT_FALSE(sink.Contains(42));
+	ASSERT_TRUE(sink.Empty(42));
+	ASSERT_FALSE(sink.EoF(42));
+	ASSERT_FALSE(sink.Ready(42));
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Query after wiring two keys and pushing one item.
- * @return 0 on success.
- */
 int test_sink_query_wired() {
 	Sink<int> producer;
 	Sink<int> consumer;
-
 	producer.To(10) >> consumer;
 	producer.To(20) >> consumer;
-
-	ASSERT_EQUAL("test_sink_query_wired buckets", StormByte::Size{2}, consumer.Buckets());
-	ASSERT_TRUE("test_sink_query_wired contains 10", consumer.Contains(10));
-	ASSERT_TRUE("test_sink_query_wired contains 20", consumer.Contains(20));
-	ASSERT_FALSE("test_sink_query_wired contains 30", consumer.Contains(30));
-	ASSERT_TRUE("test_sink_query_wired empty 10", consumer.Empty(10));
-	ASSERT_FALSE("test_sink_query_wired ready 10 empty", consumer.Ready(10));
-	ASSERT_FALSE("test_sink_query_wired eof 10", consumer.EoF(10));
-
+	ASSERT_EQUAL(StormByte::Size{2}, consumer.Buckets());
+	ASSERT_TRUE(consumer.Contains(10));
+	ASSERT_TRUE(consumer.Contains(20));
+	ASSERT_FALSE(consumer.Contains(30));
+	ASSERT_TRUE(consumer.Empty(10));
+	ASSERT_FALSE(consumer.Ready(10));
+	ASSERT_FALSE(consumer.EoF(10));
 	const StormByte::Safe::Vector<int> keys = consumer.Keys();
-	ASSERT_EQUAL("test_sink_query_wired keys size", static_cast<std::size_t>(2), keys.size());
-	ASSERT_EQUAL("test_sink_query_wired keys 0", 10, keys[0]);
-	ASSERT_EQUAL("test_sink_query_wired keys 1", 20, keys[1]);
-
+	ASSERT_EQUAL(static_cast<std::size_t>(2), keys.size());
+	ASSERT_EQUAL(10, keys[0]);
+	ASSERT_EQUAL(20, keys[1]);
 	producer.Push(10, 100);
-	ASSERT_FALSE("test_sink_query_wired empty after push", consumer.Empty(10));
-	ASSERT_TRUE("test_sink_query_wired ready 10", consumer.Ready(10));
-	ASSERT_TRUE("test_sink_query_wired empty 20", consumer.Empty(20));
-	ASSERT_FALSE("test_sink_query_wired ready 20", consumer.Ready(20));
-	ASSERT_EQUAL("test_sink_query_wired size 10", StormByte::Size{1}, consumer.Size(10));
-
+	ASSERT_FALSE(consumer.Empty(10));
+	ASSERT_TRUE(consumer.Ready(10));
+	ASSERT_TRUE(consumer.Empty(20));
+	ASSERT_FALSE(consumer.Ready(20));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(10));
 	producer.Eof();
-	ASSERT_TRUE("test_sink_query_wired eof 10", consumer.EoF(10));
-	ASSERT_TRUE("test_sink_query_wired eof 20", consumer.EoF(20));
-	ASSERT_TRUE("test_sink_query_wired ready 10 after eof", consumer.Ready(10));
-	ASSERT_TRUE("test_sink_query_wired ready 20 after eof", consumer.Ready(20));
-
-	RETURN_TEST("test_sink_query_wired", 0);
+	ASSERT_TRUE(consumer.EoF(10));
+	ASSERT_TRUE(consumer.EoF(20));
+	ASSERT_TRUE(consumer.Ready(10));
+	ASSERT_TRUE(consumer.Ready(20));
+	RETURN_TEST(0);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Wiring (To / >> / <<)                                                      */
-/* -------------------------------------------------------------------------- */
+// -------------------
+// Wire
+// -------------------
 
-/**
- * @brief Extra writer: first Eof does not close; last writer does.
- * @return 0 on success.
- */
 int test_sink_extra_writer_eof() {
 	Sink<int> src;
 	Sink<int> dest;
 	Sink<int> extra;
-
 	src.To(0) >> dest;
 	dest.To(0) >> extra;
-
 	src.Push(0, 1);
 	extra.Push(0, 2);
-	ASSERT_EQUAL("test_sink_extra_writer_eof queued", StormByte::Size{2}, dest.Size(0));
-
+	ASSERT_EQUAL(StormByte::Size{2}, dest.Size(0));
 	src.Eof();
-	ASSERT_FALSE("test_sink_extra_writer_eof dest open after first writer", dest.EoF());
+	ASSERT_FALSE(dest.EoF());
 	extra.Push(0, 3);
-	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", StormByte::Size{3}, dest.Size(0));
-
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 1", 1, dest.Pop());
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 2", 2, dest.Pop());
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 3", 3, dest.Pop());
-
+	ASSERT_EQUAL(StormByte::Size{3}, dest.Size(0));
+	ASSERT_EQUAL(1, dest.Pop());
+	ASSERT_EQUAL(2, dest.Pop());
+	ASSERT_EQUAL(3, dest.Pop());
 	extra.Eof();
-	ASSERT_TRUE("test_sink_extra_writer_eof dest eof after last writer", dest.EoF());
-
-	RETURN_TEST("test_sink_extra_writer_eof", 0);
+	ASSERT_TRUE(dest.EoF());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Re-wire of the same producer must not leave a phantom writer.
- * @return 0 on success.
- */
 int test_sink_rewire_same_writer_eof() {
 	Sink<int> src;
 	Sink<int> dest;
-
 	src.To(0) >> dest;
 	dest.To(0) >> src;
-
-	std::condition_variable cv;
-	std::mutex m;
+	StormByte::Safe::ConditionVariable cv;
+	StormByte::Safe::Mutex m;
 	dest.Notify(cv);
-
 	src.Push(0, 1);
-	ASSERT_EQUAL("test_sink_rewire_same_writer_eof pop", 1, dest.Pop());
-
+	ASSERT_EQUAL(1, dest.Pop());
 	std::atomic<bool> eof{false};
 	std::thread waiter([&]() {
-		std::unique_lock<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		eof.store(cv.wait_for(lock, std::chrono::seconds(1), [&]() {
 			return dest.EoF();
 		}), std::memory_order_release);
 	});
-
 	{
-		std::lock_guard<std::mutex> lock(m);
+		StormByte::Safe::UniqueLock lock(m);
 		src.Eof();
 	}
 	waiter.join();
-
-	ASSERT_TRUE("test_sink_rewire_same_writer_eof dest eof within 1s (would hang remuxer)",
-		eof.load(std::memory_order_acquire));
-	ASSERT_TRUE("test_sink_rewire_same_writer_eof dest eof", dest.EoF());
-
-	RETURN_TEST("test_sink_rewire_same_writer_eof", 0);
+	ASSERT_TRUE(eof.load(std::memory_order_acquire));
+	ASSERT_TRUE(dest.EoF());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief consumer << producer and consumer << producer.To(key).
- * @return 0 on success.
- */
-int test_sink_stream_operators() {
-	Sink<int> producer;
-	Sink<int> consumer;
-	Sink<int> extra;
-
-	producer.To(1) >> consumer;
-	consumer << producer.To(2);
-	producer.Push(1, 10);
-	producer.Push(2, 20);
-	ASSERT_EQUAL("test_sink_stream_operators size 1", StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL("test_sink_stream_operators size 2", StormByte::Size{1}, consumer.Size(2));
-
-	producer.To(1) >> extra;
-	extra.Push(1, 11);
-	ASSERT_EQUAL("test_sink_stream_operators co-writer queued", StormByte::Size{2}, consumer.Size(1));
-
-	producer.Eof();
-	ASSERT_FALSE("test_sink_stream_operators open while extra writer", consumer.EoF());
-	extra.Eof();
-
-	std::vector<int> got;
-	got.push_back(consumer.Pop());
-	got.push_back(consumer.Pop());
-	got.push_back(consumer.Pop());
-	std::sort(got.begin(), got.end());
-	ASSERT_EQUAL("test_sink_stream_operators pop a", 10, got[0]);
-	ASSERT_EQUAL("test_sink_stream_operators pop b", 11, got[1]);
-	ASSERT_EQUAL("test_sink_stream_operators pop c", 20, got[2]);
-	ASSERT_TRUE("test_sink_stream_operators eof after last writer", consumer.EoF());
-
-	Sink<int> left;
-	Sink<int> dummy;
-	left.To(3) >> dummy;
-	left.Push(3, 30);
-	Sink<int> all;
-	all << left;
-	ASSERT_EQUAL("test_sink_stream_operators bind-all size", StormByte::Size{1}, all.Size(3));
-	ASSERT_EQUAL("test_sink_stream_operators bind-all pop", 30, all.Pop());
-
-	RETURN_TEST("test_sink_stream_operators", 0);
-}
-
-/**
- * @brief Wire after Eof: new hoppers are born with EoF.
- * @return 0 on success.
- */
-int test_sink_wire_after_eof() {
-	Sink<int> producer;
-	Sink<int> consumer;
-
-	producer.Eof();
-	ASSERT_TRUE("test_sink_wire_after_eof producer eof with zero buckets", producer.EoF());
-
-	producer.To(50) >> consumer;
-	ASSERT_TRUE("test_sink_wire_after_eof consumer born eof", consumer.EoF());
-	ASSERT_TRUE("test_sink_wire_after_eof consumer ready on eof", consumer.Ready());
-
-	RETURN_TEST("test_sink_wire_after_eof", 0);
-}
-
-/**
- * @brief producer >> consumer shares every existing hopper.
- * @return 0 on success.
- */
-int test_sink_wire_all_hoppers() {
-	Sink<int> producer;
-	Sink<int> consumer;
-	Sink<int> dummy;
-
-	producer.To(1) >> dummy;
-	producer.To(2) >> dummy;
-	producer >> consumer;
-
-	producer.Push(1, 100);
-	producer.Push(2, 200);
-
-	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 1", StormByte::Size{1}, consumer.Size(1));
-	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 2", StormByte::Size{1}, consumer.Size(2));
-
-	int val1 = consumer.Pop();
-	int val2 = consumer.Pop();
-	bool correct_set = (val1 == 100 && val2 == 200) || (val1 == 200 && val2 == 100);
-	ASSERT_TRUE("test_sink_wire_all_hoppers popped values", correct_set);
-
-	RETURN_TEST("test_sink_wire_all_hoppers", 0);
-}
-
-/**
- * @brief To(key) >> consumer and Push/Pop across keys.
- * @return 0 on success.
- */
-int test_sink_wire_and_push_pop() {
-	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> producer;
-	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> consumer;
-
-	producer.To(10) >> consumer;
-	producer.To(20) >> consumer;
-
-	producer.Capacity(10, 5);
-	ASSERT_EQUAL("test_sink_wire_and_push_pop capacity key 10", StormByte::Size{5}, producer.Capacity(10));
-
-	producer.Push(10, StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("String-10"));
-	producer.Push(20, StormByte::Safe::Heap::MakeShared<StormByte::Safe::String>("String-20"));
-
-	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 10", StormByte::Size{1}, consumer.Size(10));
-	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 20", StormByte::Size{1}, consumer.Size(20));
-	ASSERT_TRUE("test_sink_wire_and_push_pop consumer ready", consumer.Ready());
-
-	auto item1 = consumer.Pop();
-	auto item2 = consumer.Pop();
-
-	ASSERT_TRUE("test_sink_wire_and_push_pop item1 valid", static_cast<bool>(item1));
-	ASSERT_TRUE("test_sink_wire_and_push_pop item2 valid", static_cast<bool>(item2));
-
-	producer.Eof();
-	ASSERT_TRUE("test_sink_wire_and_push_pop consumer eof", consumer.EoF());
-
-	RETURN_TEST("test_sink_wire_and_push_pop", 0);
-}
-
-/**
- * @brief Shared hoppers retain queued items after the producer is destroyed.
- * @return 0 on success.
- */
 int test_sink_shared_hopper_lifetime() {
 	Sink<int> consumer;
 	{
@@ -1460,75 +1106,167 @@ int test_sink_shared_hopper_lifetime() {
 		producer.Push(-1, 43);
 		producer.Eof();
 	}
-	ASSERT_EQUAL("test_sink_shared_hopper_lifetime first", 42, consumer.Pop(-1));
-	ASSERT_EQUAL("test_sink_shared_hopper_lifetime second", 43, consumer.Pop(-1));
-	ASSERT_TRUE("test_sink_shared_hopper_lifetime drained", consumer.Empty(-1));
-	ASSERT_TRUE("test_sink_shared_hopper_lifetime eof", consumer.EoF());
-	RETURN_TEST("test_sink_shared_hopper_lifetime", 0);
+	ASSERT_EQUAL(42, consumer.Pop(-1));
+	ASSERT_EQUAL(43, consumer.Pop(-1));
+	ASSERT_TRUE(consumer.Empty(-1));
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
 }
 
-/**
- * @brief Main entry point for Sink tests.
- * @return 0 on all tests passing, non-zero on failure.
- */
+int test_sink_stream_operators() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> extra;
+	producer.To(1) >> consumer;
+	consumer << producer.To(2);
+	producer.Push(1, 10);
+	producer.Push(2, 20);
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(2));
+	producer.To(1) >> extra;
+	extra.Push(1, 11);
+	ASSERT_EQUAL(StormByte::Size{2}, consumer.Size(1));
+	producer.Eof();
+	ASSERT_FALSE(consumer.EoF());
+	extra.Eof();
+	std::vector<int> got;
+	got.push_back(consumer.Pop());
+	got.push_back(consumer.Pop());
+	got.push_back(consumer.Pop());
+	std::sort(got.begin(), got.end());
+	ASSERT_EQUAL(10, got[0]);
+	ASSERT_EQUAL(11, got[1]);
+	ASSERT_EQUAL(20, got[2]);
+	ASSERT_TRUE(consumer.EoF());
+	Sink<int> left;
+	Sink<int> dummy;
+	left.To(3) >> dummy;
+	left.Push(3, 30);
+	Sink<int> all;
+	all << left;
+	ASSERT_EQUAL(StormByte::Size{1}, all.Size(3));
+	ASSERT_EQUAL(30, all.Pop());
+	RETURN_TEST(0);
+}
+
+int test_sink_wire_after_eof() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.Eof();
+	ASSERT_TRUE(producer.EoF());
+	producer.To(50) >> consumer;
+	ASSERT_TRUE(consumer.EoF());
+	ASSERT_TRUE(consumer.Ready());
+	RETURN_TEST(0);
+}
+
+int test_sink_wire_all_hoppers() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> dummy;
+	producer.To(1) >> dummy;
+	producer.To(2) >> dummy;
+	producer >> consumer;
+	producer.Push(1, 100);
+	producer.Push(2, 200);
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(1));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(2));
+	int val1 = consumer.Pop();
+	int val2 = consumer.Pop();
+	bool correct_set = (val1 == 100 && val2 == 200) || (val1 == 200 && val2 == 100);
+	ASSERT_TRUE(correct_set);
+	RETURN_TEST(0);
+}
+
+int test_sink_wire_and_push_pop() {
+	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> producer;
+	Sink<StormByte::Safe::Shared<StormByte::Safe::String>> consumer;
+	producer.To(10) >> consumer;
+	producer.To(20) >> consumer;
+	producer.Capacity(10, 5);
+	ASSERT_EQUAL(StormByte::Size{5}, producer.Capacity(10));
+	producer.Push(10, StormByte::Safe::MakeShared<StormByte::Safe::String>("String-10"));
+	producer.Push(20, StormByte::Safe::MakeShared<StormByte::Safe::String>("String-20"));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(10));
+	ASSERT_EQUAL(StormByte::Size{1}, consumer.Size(20));
+	ASSERT_TRUE(consumer.Ready());
+	auto item1 = consumer.Pop();
+	auto item2 = consumer.Pop();
+	ASSERT_TRUE(static_cast<bool>(item1));
+	ASSERT_TRUE(static_cast<bool>(item2));
+	producer.Eof();
+	ASSERT_TRUE(consumer.EoF());
+	RETURN_TEST(0);
+}
+
 int main() {
-	int failed = 0;
+	int result = 0;
 
+	// -------------------
 	// Concurrency
-	failed += test_sink_concurrent_wire_and_eof();
-	failed += test_sink_concurrent_wire_and_notify();
+	// -------------------
+	result += test_sink_concurrent_wire_and_eof();
+	result += test_sink_concurrent_wire_and_notify();
 
-	// Construction
-	failed += test_sink_default_constructor();
+	// -------------------
+	// Construct
+	// -------------------
+	result += test_sink_default_constructor();
 
-	// Item types / Drain / Pop
-	failed += test_sink_drain_mode();
-	failed += test_sink_eof_unblocks_waiters();
-	failed += test_sink_non_nullable_smart_pointer();
-	failed += test_sink_overaligned_payload();
-	failed += test_sink_pop_custom_select();
-	failed += test_sink_pop_selector_exception_preserves_items();
-	failed += test_sink_selector_borrowed_state();
-	failed += test_sink_safe_selector_status();
-	failed += test_sink_safe_selector_provider_release();
-	failed += test_sink_single_bucket_selector_failure();
-	failed += test_sink_push_waiting_for_wire();
+	// -------------------
+	// Drain
+	// -------------------
+	result += test_sink_drain_mode();
+	result += test_sink_eof_unblocks_waiters();
+	result += test_sink_non_nullable_smart_pointer();
+	result += test_sink_overaligned_payload();
+	result += test_sink_pop_custom_select();
+	result += test_sink_pop_selector_exception_preserves_items();
+	result += test_sink_push_waiting_for_wire();
+	result += test_sink_selector_borrowed_state();
+	result += test_sink_safe_selector_status();
+	result += test_sink_safe_selector_provider_release();
+	result += test_sink_single_bucket_selector_failure();
 
-	// Notify / Unnotify
-	failed += test_sink_notify_condition_variable();
-	failed += test_sink_unnotify_before_cv_dies();
-	failed += test_sink_observer_identity();
-	failed += test_sink_observer_rebind_and_destruction();
-	failed += test_sink_rebound_writer_eof();
-	failed += test_sink_writer_destruction();
-	failed += test_sink_closed_binding_writer_release();
-	failed += test_sink_closed_cowriter_push();
-	failed += test_sink_observer_concurrent_unnotify();
-	failed += test_sink_stored_concurrent_unnotify();
-	failed += test_sink_stored_handoff();
-	failed += test_sink_stored_observer_identity();
-	failed += test_sink_stored_wiring();
+	// -------------------
+	// Notify
+	// -------------------
+	result += test_sink_closed_binding_writer_release();
+	result += test_sink_closed_cowriter_push();
+	result += test_sink_notify_condition_variable();
+	result += test_sink_observer_concurrent_unnotify();
+	result += test_sink_observer_identity();
+	result += test_sink_observer_rebind_and_destruction();
+	result += test_sink_rebound_writer_eof();
+	result += test_sink_stored_concurrent_unnotify();
+	result += test_sink_stored_handoff();
+	result += test_sink_stored_observer_identity();
+	result += test_sink_stored_wiring();
+	result += test_sink_unnotify_before_cv_dies();
+	result += test_sink_writer_destruction();
 
-	// Query / keyed Pop
-	failed += test_sink_pop_key();
-	failed += test_sink_query_snapshot();
-	failed += test_sink_query_unwired();
-	failed += test_sink_query_wired();
+	// -------------------
+	// Query
+	// -------------------
+	result += test_sink_pop_key();
+	result += test_sink_query_snapshot();
+	result += test_sink_query_unwired();
+	result += test_sink_query_wired();
 
-	// Wiring (To / >> / <<)
-	failed += test_sink_extra_writer_eof();
-	failed += test_sink_rewire_same_writer_eof();
-	failed += test_sink_shared_hopper_lifetime();
-	failed += test_sink_stream_operators();
-	failed += test_sink_wire_after_eof();
-	failed += test_sink_wire_all_hoppers();
-	failed += test_sink_wire_and_push_pop();
+	// -------------------
+	// Wire
+	// -------------------
+	result += test_sink_extra_writer_eof();
+	result += test_sink_rewire_same_writer_eof();
+	result += test_sink_shared_hopper_lifetime();
+	result += test_sink_stream_operators();
+	result += test_sink_wire_after_eof();
+	result += test_sink_wire_all_hoppers();
+	result += test_sink_wire_and_push_pop();
 
-	if (failed != 0) {
-		std::cerr << failed << " test(s) failed." << std::endl;
-		return 1;
-	}
-
-	std::cout << "Sink tests passed!" << std::endl;
-	return 0;
+	if (result == 0)
+		std::cout << "All tests passed!" << std::endl;
+	else
+		std::cout << result << " tests failed." << std::endl;
+	return result;
 }

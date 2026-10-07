@@ -44,18 +44,19 @@
 using namespace StormByte::Buffer;
 
 Exception::Exception(std::string_view message)
-	: Exception(StormByte::Safe::String(message)) {}
+	: Exception(Segment{}, StormByte::Safe::String(), StormByte::Safe::String(message)) {}
 
-Exception::Exception(const StormByte::Safe::String& message)
-	: Exception(StormByte::Safe::String(), message) {}
-
-Exception::Exception(const StormByte::Safe::String& child, const StormByte::Safe::String& message)
+Exception::Exception(Segment, const StormByte::Safe::String& child, const StormByte::Safe::String& message)
 	: StormByte::Exception(StormByte::Exception::Path{std::string_view(Compose(child))}, "{}", std::string_view(message)) {}
 
 Exception::Exception(const Exception& other) = default;
+
 Exception::Exception(Exception&& other) noexcept = default;
+
 Exception& Exception::operator=(const Exception& other) = default;
+
 Exception& Exception::operator=(Exception&& other) noexcept = default;
+
 Exception::~Exception() noexcept = default;
 
 StormByte::Safe::String Exception::Compose(const StormByte::Safe::String& child) {
@@ -69,31 +70,37 @@ StormByte::Safe::String Exception::Compose(const StormByte::Safe::String& child)
 }
 
 Error::Error(const Error& other) = default;
+
 Error::Error(Error&& other) noexcept = default;
+
 Error& Error::operator=(const Error& other) = default;
+
 Error& Error::operator=(Error&& other) noexcept = default;
+
 Error::~Error() noexcept = default;
 
 ReadError::ReadError(std::string_view message)
-	: ReadError(StormByte::Safe::String(message)) {}
-
-ReadError::ReadError(const StormByte::Safe::String& message)
-	: Error(StormByte::Safe::String("Read"), message) {}
+	: Error(Segment{}, StormByte::Safe::String("Read"), StormByte::Safe::String(message)) {}
 
 ReadError::ReadError(const ReadError& other) = default;
+
 ReadError::ReadError(ReadError&& other) noexcept = default;
+
 ReadError& ReadError::operator=(const ReadError& other) = default;
+
 ReadError& ReadError::operator=(ReadError&& other) noexcept = default;
+
 ReadError::~ReadError() noexcept = default;
 
 WriteError::WriteError(std::string_view message)
-	: WriteError(StormByte::Safe::String(message)) {}
-
-WriteError::WriteError(const StormByte::Safe::String& message)
-	: Error(StormByte::Safe::String("Write"), message) {}
+	: Error(Segment{}, StormByte::Safe::String("Write"), StormByte::Safe::String(message)) {}
 
 WriteError::WriteError(const WriteError& other) = default;
+
 WriteError::WriteError(WriteError&& other) noexcept = default;
+
 WriteError& WriteError::operator=(const WriteError& other) = default;
+
 WriteError& WriteError::operator=(WriteError&& other) noexcept = default;
+
 WriteError::~WriteError() noexcept = default;

@@ -41,8 +41,10 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/ring.hxx>
-#include <StormByte/exception.hxx>
+#include <StormByte/safe/exception.hxx>
 #include <StormByte/safe/owner.hxx>
 
 #include <atomic>
@@ -70,8 +72,8 @@ namespace StormByte {
 			 * @brief Module-local Ring state shared by opaque owner claims.
 			 */
 			struct RingOwnerState {
-				std::atomic<std::size_t> references{1}; ///< Number of live Safe owner claims.
-				Ring ring; ///< Shared storage; destroyed in the Buffer module.
+				std::atomic<std::size_t> references{1};	///< Number of live Safe owner claims.
+				Ring ring;								///< Shared storage. Destroyed in the Buffer module.
 			};
 
 			/**
@@ -103,20 +105,21 @@ namespace StormByte {
 			/**
 			 * @brief Create a Safe owner for a new shared Ring.
 			 * @return Owner whose callbacks remain in the Buffer module.
+			 * @throws StormByte::Safe::AllocationError The Ring state cannot be allocated.
 			 */
 			inline StormByte::Safe::Owner MakeRingOwner() {
 				try {
 					return StormByte::Safe::Owner(new RingOwnerState(), &CloneRingOwnerState, &DestroyRingOwnerState);
 				}
 				catch (const std::bad_alloc&) {
-					throw StormByte::AllocationError{};
+					throw StormByte::Safe::AllocationError{};
 				}
 			}
 
 			/**
 			 * @brief Borrow the Ring held by an owner.
 			 * @param owner Ring owner.
-			 * @return Ring pointer; valid only while @p owner remains alive.
+			 * @return Ring pointer. Valid only while @p owner remains alive.
 			 */
 			inline Ring* GetRing(const StormByte::Safe::Owner& owner) noexcept {
 				auto* state = static_cast<RingOwnerState*>(owner.Get());
@@ -125,3 +128,5 @@ namespace StormByte {
 		}
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Backend::RingOwnerState);

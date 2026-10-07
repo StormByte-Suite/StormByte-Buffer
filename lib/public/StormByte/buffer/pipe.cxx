@@ -45,7 +45,7 @@ using namespace StormByte::Buffer;
 
 PipeInput::PipeInput(ReadOnly& input) noexcept: m_input(&input) {}
 
-bool PipeInput::Read(const StormByte::ByteSize& count, BinaryData& data) const noexcept {
+bool PipeInput::Read(const StormByte::ByteSize& count, StormByte::Safe::Binary& data) const noexcept {
 	return m_input->Read(count, data);
 }
 
@@ -63,11 +63,11 @@ bool PipeInput::IsReadable() const noexcept {
 
 PipeOutput::PipeOutput(WriteOnly& output) noexcept: m_output(&output) {}
 
-bool PipeOutput::Write(const BinaryData& data) const noexcept {
+bool PipeOutput::Write(const StormByte::Safe::Binary& data) const noexcept {
 	return m_output->Write(data);
 }
 
-bool PipeOutput::Write(BinaryData&& data) const noexcept {
+bool PipeOutput::Write(StormByte::Safe::Binary&& data) const noexcept {
 	return m_output->Write(std::move(data));
 }
 
@@ -89,11 +89,6 @@ void PipeOutput::SetError() const noexcept {
 
 Pipe::Pipe(Callback callback) noexcept: m_callback(std::move(callback)) {}
 
-StormByte::Safe::Status Pipe::Run(const PipeInput& in, const PipeOutput& out,
-		const StormByte::Safe::Shared<StormByte::Logger::Log>& log) const {
-	return m_callback.Call(in, out, log);
-}
-
 Pipe::Pipe(const Pipe&) = default;
 
 Pipe::Pipe(Pipe&&) noexcept = default;
@@ -103,3 +98,8 @@ Pipe::~Pipe() noexcept = default;
 Pipe& Pipe::operator=(const Pipe&) = default;
 
 Pipe& Pipe::operator=(Pipe&&) noexcept = default;
+
+StormByte::Safe::Status Pipe::Run(const PipeInput& in, const PipeOutput& out,
+	const StormByte::Safe::Shared<StormByte::Logger::Log>& log) const {
+	return m_callback.Call(in, out, log);
+}

@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/parameters.hxx>
 #include <StormByte/buffer/io/telemetry.hxx>

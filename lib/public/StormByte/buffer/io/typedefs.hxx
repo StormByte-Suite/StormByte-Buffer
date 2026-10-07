@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/byte_size.hxx>
 #include <StormByte/platform.h>

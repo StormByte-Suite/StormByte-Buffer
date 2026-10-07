@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/backend/io/buffered_reader.hxx>
+#include <StormByte/safe/unique_lock.hxx>
 
 #include <limits>
 #include <optional>
@@ -164,12 +165,12 @@ BufferedReader::operator bool() const noexcept {
 }
 
 StormByte::Buffer::IO::State BufferedReader::State() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_state;
 }
 
 void BufferedReader::SetState(const StormByte::Buffer::IO::State state) noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_state = state;
 }
 
@@ -179,13 +180,13 @@ bool BufferedReader::Open() {
 
 	bool already = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		already = m_open;
 	}
 
 	const Result opened = InvokeOrigin([this] { return m_owner->OriginOpen(); });
 
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (already)
 		return false;
 
@@ -212,7 +213,7 @@ Result BufferedReader::Close() {
 
 	bool was_open = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		was_open = m_open;
 		CloseSeekEpoch();
 	}
@@ -221,7 +222,7 @@ Result BufferedReader::Close() {
 	if (was_open && m_owner)
 		closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
 
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_open = false;
 	m_failed = false;
 	m_origin_exhausted = true;
@@ -235,7 +236,7 @@ Result BufferedReader::Close() {
 void BufferedReader::Shutdown() {
 	FlushPrefetch();
 	StopWorker();
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	CloseSeekEpoch();
 	m_open = false;
 	m_state = StormByte::Buffer::IO::State::Unavailable;
@@ -248,7 +249,7 @@ void BufferedReader::Shutdown() {
 bool BufferedReader::Rewind() {
 	bool seekable = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		if (!m_open)
 			return false;
 		// A faulted session, or a pipe, still needs a new origin.
@@ -264,26 +265,26 @@ bool BufferedReader::Rewind() {
 }
 
 bool BufferedReader::IsOpen() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_open;
 }
 
 bool BufferedReader::IsReadable() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (m_state != StormByte::Buffer::IO::State::Idle || !m_open || m_failed)
 		return false;
 	return !(m_origin_exhausted && CoverageFrom(m_tell) == StormByte::ByteSize{0});
 }
 
 bool BufferedReader::EoF() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (!m_open)
 		return true;
 	return m_origin_exhausted && CoverageFrom(m_tell) == StormByte::ByteSize{0};
 }
 
 StormByte::ByteSize BufferedReader::Available() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (!m_open)
 		return StormByte::ByteSize{0};
 	return CoverageFrom(m_tell);
@@ -300,7 +301,7 @@ Result BufferedReader::Peek(const StormByte::ByteSize n, FIFO& dest) const {
 Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) const {
 	FlushPrefetch();
 
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle || !m_owner)
 		return { Status::Failed, 0 };
 	if (!m_owner->OriginCanSeek())
@@ -341,7 +342,7 @@ Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) co
 }
 
 StormByte::ByteSize BufferedReader::Tell() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_tell;
 }
 
@@ -429,36 +430,36 @@ void BufferedReader::CloseSeekEpoch() const noexcept {
 }
 
 StormByte::ByteSize BufferedReader::ReadAhead() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_read_ahead;
 }
 
 void BufferedReader::ReadAhead(const StormByte::ByteSize bytes) {
 	FlushPrefetch();
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_read_ahead = bytes;
 	CollectGarbage();
 }
 
 StormByte::ByteSize BufferedReader::MaxMemory() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_max_memory;
 }
 
 void BufferedReader::MaxMemory(const StormByte::ByteSize bytes) {
 	FlushPrefetch();
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_max_memory = bytes;
 	CollectGarbage();
 }
 
 std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	return m_max_wait;
 }
 
 void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_max_wait = wait;
 }
 
@@ -466,7 +467,7 @@ void BufferedReader::StartWorker() {
 	if (m_worker.joinable())
 		return;
 	m_stop.store(false);
-	m_worker = std::thread(&BufferedReader::Worker, this);
+	m_worker = StormByte::Safe::Thread([this] { Worker(); });
 }
 
 void BufferedReader::StopWorker() {
@@ -478,7 +479,7 @@ void BufferedReader::StopWorker() {
 }
 
 void BufferedReader::RequestPrefetch() const {
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (m_hold_prefetch)
 		return;
 	if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle || m_origin_exhausted)
@@ -496,7 +497,7 @@ void BufferedReader::RequestPrefetch() const {
 void BufferedReader::FlushPrefetch() const {
 	m_cancel_prefetch.store(true);
 	m_cv.notify_all();
-	std::unique_lock lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_cv.wait(lock, [this] {
 		return m_stop.load() || !m_prefetch_run;
 	});
@@ -504,7 +505,7 @@ void BufferedReader::FlushPrefetch() const {
 
 void BufferedReader::Worker() {
 	for (;;) {
-		std::unique_lock lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		m_cv.wait(lock, [this] {
 			return m_stop.load() || m_prefetch_run;
 		});
@@ -521,7 +522,7 @@ void BufferedReader::Worker() {
 			StormByte::ByteSize pull_at{0};
 			StormByte::ByteSize need{0};
 			{
-				std::lock_guard inner(m_mutex);
+				StormByte::Safe::UniqueLock inner(m_mutex);
 				if (m_hold_prefetch)
 					break;
 				if (!m_open || m_origin_exhausted || m_state != StormByte::Buffer::IO::State::Idle)
@@ -552,7 +553,7 @@ void BufferedReader::Worker() {
 
 			FIFO chunk;
 			const Result pulled = PullAt(pull_at, need, chunk);
-			std::lock_guard inner(m_mutex);
+			StormByte::Safe::UniqueLock inner(m_mutex);
 			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
 				m_failed = true;
 				m_prefetch_run = false;
@@ -589,7 +590,7 @@ StormByte::ByteSize BufferedReader::CoverageFrom(const StormByte::ByteSize pos) 
 	return SpanEnd(it->first, it->second) - pos;
 }
 
-std::map<StormByte::ByteSize, FIFO>::iterator BufferedReader::FindSpan(const StormByte::ByteSize pos) const noexcept {
+StormByte::Safe::Map<StormByte::ByteSize, FIFO>::iterator BufferedReader::FindSpan(const StormByte::ByteSize pos) const noexcept {
 	auto it = m_spans.upper_bound(pos);
 	if (it == m_spans.begin())
 		return m_spans.end();
@@ -624,10 +625,10 @@ void BufferedReader::EraseRange(const StormByte::ByteSize from, const StormByte:
 		const StormByte::ByteSize end = SpanEnd(start, it->second);
 
 		if (start >= from && end > to) {
-			auto node = m_spans.extract(it);
-			TrimFront(node.mapped(), to - start);
-			node.key() = to;
-			m_spans.insert(std::move(node));
+			FIFO kept = std::move(it->second);
+			TrimFront(kept, to - start);
+			m_spans.erase(it);
+			m_spans.emplace(to, std::move(kept));
 			return;
 		}
 
@@ -775,7 +776,7 @@ Result BufferedReader::EnsureOrigin(const StormByte::ByteSize pos) const {
 	bool seekable = false;
 	bool exhausted = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		valid = m_origin_valid;
 		origin = m_origin_pos;
 		exhausted = m_origin_exhausted;
@@ -795,7 +796,7 @@ Result BufferedReader::EnsureOrigin(const StormByte::ByteSize pos) const {
 	if (seeked.status != Status::Ok)
 		return { Status::Failed, 0 };
 
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_origin_pos = pos;
 	m_origin_valid = true;
 	m_origin_exhausted = false;
@@ -823,7 +824,7 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 	if (pulled.status == Status::Failed || pulled.status == Status::Error)
 		return { pulled.status, 0 };
 
-	std::lock_guard lock(m_mutex);
+	StormByte::Safe::UniqueLock lock(m_mutex);
 	if (pulled.count > StormByte::ByteSize{0}) {
 		m_origin = m_origin + pulled.count;
 		m_origin_pos = at + pulled.count;
@@ -851,7 +852,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 	std::chrono::milliseconds wait{0};
 	bool can_prefetch = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		if (!m_open || m_failed || m_state != StormByte::Buffer::IO::State::Idle || !m_owner)
 			return { Status::Failed, 0 };
 		wait = m_max_wait;
@@ -864,7 +865,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		FIFO out;
 		StormByte::ByteSize count{0};
 		{
-			std::lock_guard lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			count = CoverageFrom(m_tell);
 			if (count > StormByte::ByteSize{0})
 				static_cast<void>(CopyFromCache(m_tell, count, out));
@@ -895,7 +896,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 			dest = std::move(out);
 		bool ended = false;
 		{
-			std::lock_guard lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			ended = count == StormByte::ByteSize{0} && m_origin_exhausted;
 		}
 		RequestPrefetch();
@@ -905,7 +906,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 	}
 
 	if (can_prefetch) {
-		std::unique_lock lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		if (CoverageFrom(m_tell) < n && !m_origin_exhausted && !m_failed && !m_hold_prefetch) {
 			m_prefetch_target = m_read_ahead > n ? m_read_ahead : n;
 			m_prefetch_run = true;
@@ -925,7 +926,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 				const auto deadline = std::chrono::steady_clock::now() + wait;
 				while (CoverageFrom(m_tell) < n && !m_origin_exhausted && !m_failed
 						&& !m_stop.load() && m_prefetch_run && !m_hold_prefetch) {
-					if (m_cv.wait_until(lock, deadline) == std::cv_status::timeout)
+					if (m_cv.wait_until(lock, deadline) == StormByte::Safe::CvStatus::Timeout)
 						break;
 				}
 				if (CoverageFrom(m_tell) < n && !m_origin_exhausted && !m_failed
@@ -956,7 +957,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		bool failed = false;
 		FIFO from_cache;
 		{
-			std::lock_guard lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			pos = m_tell + have;
 			cached = CoverageFrom(pos);
 			max_tell = m_max_tell;
@@ -981,7 +982,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		if (exhausted) {
 			bool seekable = false;
 			{
-				std::lock_guard lock(m_mutex);
+				StormByte::Safe::UniqueLock lock(m_mutex);
 				seekable = m_owner && m_owner->OriginCanSeek();
 			}
 			if (!seekable)
@@ -992,7 +993,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		FIFO piece;
 		const Result pulled = PullAt(pos, n - have, piece);
 		if (pulled.status == Status::Failed || pulled.status == Status::Error) {
-			std::lock_guard lock(m_mutex);
+			StormByte::Safe::UniqueLock lock(m_mutex);
 			m_failed = true;
 			return { pulled.status, 0 };
 		}
@@ -1006,7 +1007,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 	bool exhausted = false;
 	bool failed = false;
 	{
-		std::lock_guard lock(m_mutex);
+		StormByte::Safe::UniqueLock lock(m_mutex);
 		exhausted = m_origin_exhausted;
 		failed = m_failed;
 		if (take < n && !exhausted && !failed)

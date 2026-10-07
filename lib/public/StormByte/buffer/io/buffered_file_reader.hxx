@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/visibility.h>
 
@@ -104,8 +106,9 @@ namespace StormByte {
 						public:
 							/**
 							 * @brief Construct an empty Safe-owned parameter bag.
+							 * @note Not noexcept: a bag may allocate while it is being filled.
 							 */
-							Parameters() = default;
+							Parameters() {}
 							/**
 							 * @brief Store reader knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported reader knobs.

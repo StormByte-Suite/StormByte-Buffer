@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/exception.hxx>
 #include <StormByte/safe/string.hxx>
@@ -68,6 +70,10 @@ namespace StormByte {
 		 * Buffer joins child segments in its provider before passing safe text to
 		 * the out-of-line Base constructor. No caller string allocation is adopted.
 		 *
+		 * The message constructor takes `string_view`. A literal, a C string,
+		 * `std::string` and `Safe::String` reach it through their existing
+		 * conversions. `Safe::String` converts implicitly.
+		 *
 		 * @see Error, ReadError, WriteError
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
@@ -84,15 +90,9 @@ namespace StormByte {
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer` in the provider.
-				 * @param message Exception text; copied during the call and never retained.
+				 * @param message Exception text. Copied during the call and never retained.
 				 */
 				explicit Exception(std::string_view message);
-
-				/**
-				 * @brief Copies Base-owned text under `StormByte.Buffer`.
-				 * @param message Exception text.
-				 */
-				explicit Exception(const StormByte::Safe::String& message);
 
 				/**
 				 * @brief Copy Base-owned message storage through its provider.
@@ -121,22 +121,27 @@ namespace StormByte {
 				Exception& operator=(Exception&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 * @brief Destroy the exception. Defined in this module so `catch` matches across a DLL.
 				 */
 				~Exception() noexcept override;
 
 			protected:
 				/**
+				 * @brief Distinguishes the internal path join from the format constructor.
+				 */
+				struct Segment {};
+
+				/**
 				 * @brief Join a child path and plain message in the Buffer provider.
-				 * @param child Joined segments under `Buffer`; empty selects `Buffer`.
+				 * @param child Joined segments under `Buffer`. Empty selects `Buffer`.
 				 * @param message Base-owned exception text.
 				 */
-				explicit Exception(const StormByte::Safe::String& child, const StormByte::Safe::String& message);
+				explicit Exception(Segment, const StormByte::Safe::String& child, const StormByte::Safe::String& message);
 
 				/**
 				 * @brief Format in the caller and copy the result into Base-owned text.
 				 * @tparam Args Format argument types.
-				 * @param fmt Format string; used verbatim when there are no arguments.
+				 * @param fmt Format string. Used verbatim when there are no arguments.
 				 * @param args Format arguments.
 				 * @return Base-owned formatted message.
 				 */
@@ -199,7 +204,7 @@ namespace StormByte {
 				Error& operator=(Error&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 * @brief Destroy the error. Defined in this module so `catch` matches across a DLL.
 				 */
 				~Error() noexcept override;
 		};
@@ -222,15 +227,9 @@ namespace StormByte {
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Read` in the provider.
-				 * @param message Exception text; copied during the call and never retained.
+				 * @param message Exception text. Copied during the call and never retained.
 				 */
 				explicit ReadError(std::string_view message);
-
-				/**
-				 * @brief Copies Base-owned text under `StormByte.Buffer.Read`.
-				 * @param message Exception text.
-				 */
-				explicit ReadError(const StormByte::Safe::String& message);
 
 				/**
 				 * @brief Copy the message through the Base storage provider.
@@ -259,7 +258,7 @@ namespace StormByte {
 				ReadError& operator=(ReadError&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 * @brief Destroy the error. Defined in this module so `catch` matches across a DLL.
 				 */
 				~ReadError() noexcept override;
 		};
@@ -282,15 +281,9 @@ namespace StormByte {
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Write` in the provider.
-				 * @param message Exception text; copied during the call and never retained.
+				 * @param message Exception text. Copied during the call and never retained.
 				 */
 				explicit WriteError(std::string_view message);
-
-				/**
-				 * @brief Copies Base-owned text under `StormByte.Buffer.Write`.
-				 * @param message Exception text.
-				 */
-				explicit WriteError(const StormByte::Safe::String& message);
 
 				/**
 				 * @brief Copy the message through the Base storage provider.
@@ -319,9 +312,14 @@ namespace StormByte {
 				WriteError& operator=(WriteError&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Defined in this module so `catch` matches across a DLL.
+				 * @brief Destroy the error. Defined in this module so `catch` matches across a DLL.
 				 */
 				~WriteError() noexcept override;
 		};
 	}
 }
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Exception);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Error);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::ReadError);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::WriteError);

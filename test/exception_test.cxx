@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/exception.hxx>
+#include <StormByte/safe/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
@@ -53,44 +54,89 @@ using StormByte::Buffer::ReadError;
 using StormByte::Buffer::WriteError;
 
 // -------------------
-// Exceptions
+// Copy
 // -------------------
 
-int test_buffer_error_message() {
-	constexpr auto fn = "test_buffer_error_message";
-	int result = 0;
+int test_copy_move_and_assign() {
+	Exception source(std::string_view("message"));
+	Exception copied(source);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(copied.what()));
+	Exception moved(std::move(copied));
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(moved.what()));
+	Exception assigned(std::string_view("other"));
+	assigned = source;
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(assigned.what()));
+	assigned = std::move(moved);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(assigned.what()));
+
+	ReadError read_source(std::string_view("read"));
+	ReadError read_copy(read_source);
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Read: read"), std::string(read_copy.what()));
+	WriteError write_source(std::string_view("write"));
+	WriteError write_moved(std::move(write_source));
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Write: write"), std::string(write_moved.what()));
+	RETURN_TEST(0);
+}
+
+// -------------------
+// Hierarchy
+// -------------------
+
+int test_hierarchy_and_paths() {
+	ReadError read(std::string_view("read failed"));
+	WriteError write(std::string_view("write failed"));
+	Error error(std::string_view("plain"));
+	ASSERT_TRUE(dynamic_cast<Error*>(&read) != nullptr);
+	ASSERT_TRUE(dynamic_cast<Exception*>(&write) != nullptr);
+	ASSERT_TRUE(dynamic_cast<StormByte::Exception*>(&error) != nullptr);
+	ASSERT_CONTAINS(std::string_view(read.what()), std::string_view("StormByte.Buffer.Read: "));
+	ASSERT_CONTAINS(std::string_view(write.what()), std::string_view("StormByte.Buffer.Write: "));
+	ASSERT_NOT_CONTAINS(std::string_view(error.what()), std::string_view("StormByte.Buffer.Read: "));
+	RETURN_TEST(0);
+}
+
+// -------------------
+// Messages
+// -------------------
+
+int test_error_from_std_string() {
 	Error exception(std::string("message"));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	RETURN_TEST(0);
 }
 
-int test_buffer_exception_format() {
-	constexpr auto fn = "test_buffer_exception_format";
-	int result = 0;
+int test_exception_empty_literal_and_null() {
+	Exception empty(std::string_view{});
+	ASSERT_EQUAL(std::string("StormByte.Buffer: "), std::string(empty.what()));
+	Exception literal("literal");
+	ASSERT_EQUAL(std::string("StormByte.Buffer: literal"), std::string(literal.what()));
+	RETURN_TEST(0);
+}
+
+int test_exception_format() {
 	Exception exception("value is {}", 42);
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: value is 42"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: value is 42"), std::string(exception.what()));
+	ReadError read("read {}", "failed");
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Read: read failed"), std::string(read.what()));
+	WriteError write("write {}", 7);
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Write: write 7"), std::string(write.what()));
+	RETURN_TEST(0);
 }
 
-int test_buffer_exception_message() {
-	constexpr auto fn = "test_buffer_exception_message";
-	int result = 0;
-	Exception exception(std::string("message"));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
-}
-
-int test_buffer_exception_safe_string() {
-	constexpr auto fn = "test_buffer_exception_safe_string";
-	int result = 0;
+int test_exception_from_safe_string() {
 	const StormByte::Safe::String message(std::string_view("base text"));
 	Exception exception(message);
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: base text"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: base text"), std::string(exception.what()));
+	const StormByte::Safe::String read_text(std::string_view("base read"));
+	ReadError read(read_text);
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Read: base read"), std::string(read.what()));
+	const StormByte::Safe::String write_text(std::string_view("base write"));
+	WriteError write(write_text);
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Write: base write"), std::string(write.what()));
+	RETURN_TEST(0);
 }
 
-int test_buffer_exception_view_lifetime() {
-	constexpr auto fn = "test_buffer_exception_view_lifetime";
+int test_exception_view_lifetime() {
 	std::string source("prefix:message:suffix");
 	const std::string_view message(source.data() + 7, 7);
 	Exception exception(message);
@@ -98,61 +144,41 @@ int test_buffer_exception_view_lifetime() {
 	ReadError read(message);
 	WriteError write(message);
 	source.assign(source.size(), 'x');
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(error.what()));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: message"), std::string(read.what()));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Write: message"), std::string(write.what()));
-	Exception copied(exception);
-	Exception moved(std::move(copied));
-	exception = moved;
-	Exception assigned(std::string_view("other"));
-	assigned = std::move(moved);
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(exception.what()));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: message"), std::string(assigned.what()));
-	Exception empty(std::string_view{});
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer: "), std::string(empty.what()));
-	RETURN_TEST(fn, 0);
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(exception.what()));
+	ASSERT_EQUAL(std::string("StormByte.Buffer: message"), std::string(error.what()));
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Read: message"), std::string(read.what()));
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Write: message"), std::string(write.what()));
+	RETURN_TEST(0);
 }
 
-int test_read_error_message() {
-	constexpr auto fn = "test_read_error_message";
-	int result = 0;
-	ReadError exception("read {}", "failed");
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: read failed"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
-}
-
-int test_read_error_safe_string() {
-	constexpr auto fn = "test_read_error_safe_string";
-	int result = 0;
-	const StormByte::Safe::String message(std::string_view("base read"));
-	ReadError exception(message);
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Read: base read"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
-}
-
-int test_write_error_message() {
-	constexpr auto fn = "test_write_error_message";
-	int result = 0;
+int test_write_error_from_std_string() {
 	WriteError exception(std::string("write failed"));
-	ASSERT_EQUAL(fn, std::string("StormByte.Buffer.Write: write failed"), std::string(exception.what()));
-	RETURN_TEST(fn, result);
+	ASSERT_EQUAL(std::string("StormByte.Buffer.Write: write failed"), std::string(exception.what()));
+	RETURN_TEST(0);
 }
 
 int main() {
 	int result = 0;
 
 	// -------------------
-	// Exceptions
+	// Copy
 	// -------------------
-	result += test_buffer_error_message();
-	result += test_buffer_exception_format();
-	result += test_buffer_exception_message();
-	result += test_buffer_exception_safe_string();
-	result += test_buffer_exception_view_lifetime();
-	result += test_read_error_message();
-	result += test_read_error_safe_string();
-	result += test_write_error_message();
+	result += test_copy_move_and_assign();
+
+	// -------------------
+	// Hierarchy
+	// -------------------
+	result += test_hierarchy_and_paths();
+
+	// -------------------
+	// Messages
+	// -------------------
+	result += test_error_from_std_string();
+	result += test_exception_empty_literal_and_null();
+	result += test_exception_format();
+	result += test_exception_from_safe_string();
+	result += test_exception_view_lifetime();
+	result += test_write_error_from_std_string();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

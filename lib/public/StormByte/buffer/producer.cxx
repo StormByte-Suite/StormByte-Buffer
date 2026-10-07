@@ -95,11 +95,11 @@ StormByte::ByteSize Producer::Size() const noexcept {
 	return Storage().Size();
 }
 
-bool Producer::Write(const StormByte::ByteSize& count, const BinaryData& data) noexcept {
+bool Producer::Write(const StormByte::ByteSize& count, const StormByte::Safe::Binary& data) noexcept {
 	return Storage().Write(count, data);
 }
 
-bool Producer::Write(const StormByte::ByteSize& count, BinaryData&& data) noexcept {
+bool Producer::Write(const StormByte::ByteSize& count, StormByte::Safe::Binary&& data) noexcept {
 	return Storage().Write(count, std::move(data));
 }
 

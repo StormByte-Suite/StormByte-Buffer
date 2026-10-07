@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/ring.hxx>
 #include <StormByte/safe/owner.hxx>
 #include <StormByte/type_traits.hxx>
@@ -61,31 +63,21 @@ namespace StormByte {
 		 * @class Consumer
 		 * @brief Read-oriented handle over a shared @ref Ring.
 		 *
-		 * Multiple Consumer instances may share the same underlying Ring,
-		 * allowing concurrent reads in a fully thread-safe manner.
+		 * Several Consumer instances may share the same Ring. An empty Consumer
+		 * creates its own Ring. @ref Producer() then returns a writer on that Ring.
+		 * A Consumer may also come from @ref Producer::Consumer().
 		 *
-		 * An empty Consumer (`Consumer()`) creates its own Ring. @ref Producer()
-		 * then returns a writer on that Ring. A Consumer may also be obtained
-		 * from @ref Producer::Consumer().
+		 * All operations are thread-safe and delegate to the shared Ring. Ring
+		 * ownership is held by @ref StormByte::Safe::Owner. Blocking semantics match
+		 * @ref Ring.
 		 *
-		 * All operations are thread-safe and delegate to the shared Ring.
-			 * Ring ownership is held by @ref StormByte::Safe::Owner; the Ring
-			 * and its lifetime callbacks remain inside the Buffer module.
-		 * Blocking semantics match @ref Ring. Read / Extract / Peek block until
-		 * data is available or the buffer is closed / in error.
-		 *
-		 * @par Lifecycle signalling
-		 * Although Consumer is primarily a @ref ReadOnly view, it also exposes:
-		 * - @ref Close() — closes the shared Ring for further writes (same effect
-		 *   as @ref Producer::Close on the same buffer).
-		 * - @ref IsWritable() / @ref HasError() — observe the shared Ring state
-		 *   (useful in wait loops, e.g. until a pipeline finishes).
+		 * Consumer is a @ref ReadOnly view and also exposes @ref Close(),
+		 * @ref IsWritable() and @ref HasError() so a reader can observe the shared
+		 * lifecycle.
 		 *
 		 * @see Producer, Ring, ReadOnly
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Consumer final: public ReadOnly {
-			friend class Producer;
-
 			public:
 				/**
 				 * @name Constructors / destructor / assignment
@@ -93,48 +85,47 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Empty Consumer. Creates a new shared @ref Ring.
-				 *
-				 * @ref Producer() returns a writer on that Ring. Use this when
-				 * the owner only reads and still needs a write tip for a @ref Bridge.
-				 * @throws StormByte::AllocationError If Ring ownership cannot be allocated.
+				 * @brief Create a Consumer and a new shared Ring.
+				 * @throws StormByte::Safe::AllocationError Ring ownership cannot be allocated.
 				 */
 				Consumer();
 
 				/**
-				 * @brief Copy constructor.
-				 * @param other Source Consumer; both share the same Ring.
-				 * @throws StormByte::Exception If the shared owner cannot be retained.
+				 * @brief Copy a Consumer. Both share the same Ring.
+				 * @param other Source.
+				 * @throws StormByte::Exception The shared owner cannot be retained.
 				 */
 				Consumer(const Consumer& other);
 
 				/**
-				 * @brief Move constructor.
-				 * @param other Source Consumer (left in a valid but unspecified state).
+				 * @brief Take a Consumer. @p other is left valid and unspecified.
+				 * @param other Source.
 				 */
 				Consumer(Consumer&& other) noexcept;
 
 				/**
-				 * @brief Destructor.
+				 * @brief Destroy the Consumer.
 				 */
 				~Consumer() noexcept override;
 
 				/**
-				 * @brief Copy assignment.
-				 * @param other Source Consumer; both share the same Ring afterwards.
-				 * @return Reference to this Consumer.
-				 * @throws StormByte::Exception If the shared owner cannot be retained.
+				 * @brief Copy-assign a Consumer. Both share the same Ring afterwards.
+				 * @param other Source.
+				 * @return This Consumer.
+				 * @throws StormByte::Exception The shared owner cannot be retained.
 				 */
 				Consumer& operator=(const Consumer& other);
 
 				/**
-				 * @brief Move assignment.
-				 * @param other Source Consumer.
-				 * @return Reference to this Consumer.
+				 * @brief Move-assign a Consumer.
+				 * @param other Source.
+				 * @return This Consumer.
 				 */
 				Consumer& operator=(Consumer&& other) noexcept;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Comparison
@@ -142,22 +133,24 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Equality comparison.
+				 * @brief Compare two Consumers.
 				 * @param other Other Consumer.
-				 * @return @c true if both refer to the same underlying Ring instance.
+				 * @return Whether both refer to the same Ring.
 				 */
 				bool operator==(const Consumer& other) const noexcept;
 
 				/**
-				 * @brief Inequality comparison.
+				 * @brief Compare two Consumers.
 				 * @param other Other Consumer.
-				 * @return @c true if the underlying Ring instances differ.
+				 * @return Whether the underlying Rings differ.
 				 */
 				inline bool operator!=(const Consumer& other) const noexcept {
 					return !(*this == other);
 				}
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Queries
@@ -165,43 +158,40 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Number of bytes available for reading from the current position.
+				 * @brief Bytes available from the current position.
 				 * @return Available byte count.
 				 */
 				StormByte::ByteSize Available() const noexcept override;
 
 				/**
-				 * @brief Access a snapshot of the underlying data (implementation-defined).
-				 * @return Constant reference to the Ring’s @ref StormByte::BinaryData view.
-				 * @warning Not intended for concurrent mutation; prefer Read / Extract.
+				 * @brief Snapshot of the underlying data.
+				 * @return Owned snapshot.
+				 * @warning Prefer Read or Extract under concurrent mutation.
 				 */
-				const StormByte::BinaryData& Data() const noexcept override;
+				const StormByte::Safe::Binary& Data() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring holds no stored bytes.
-				 * @return @c true if empty.
-				 * @note With a non-zero read position, @ref Empty() may still be @c false
-				 *       even when @ref Available() is zero.
+				 * @return Whether storage is empty.
+				 * @note With a non-zero read position this may be false while @ref Available() is zero.
 				 */
 				bool Empty() const noexcept override;
 
 				/**
 				 * @brief End-of-stream condition.
-				 * @return @c true when the Ring is closed (or in error) and no bytes remain.
+				 * @return Whether the Ring is closed or in error and nothing remains.
 				 */
 				bool EoF() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring can still be read.
-				 * @return @c false if the Ring is in a permanent error state.
+				 * @return False in a permanent error state.
 				 */
 				bool IsReadable() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring still accepts writes.
-				 * @return @c false if closed or in error.
-				 * @details Observes producer-side lifecycle on the same Ring
-				 *          (e.g. wait until a pipeline stage calls Close()).
+				 * @return False if closed or in error.
 				 */
 				inline bool IsWritable() const noexcept {
 					return Storage().IsWritable();
@@ -209,7 +199,7 @@ namespace StormByte {
 
 				/**
 				 * @brief Whether the shared Ring is in a permanent error state.
-				 * @return @c true after @ref Producer::SetError on any handle to the same Ring.
+				 * @return Whether any handle called SetError on this Ring.
 				 */
 				inline bool HasError() const noexcept {
 					return Storage().HasError();
@@ -223,14 +213,13 @@ namespace StormByte {
 
 				/**
 				 * @brief Writer on the same Ring.
-				 * @return Producer that shares this Consumer’s store.
-				 *
-				 * Inverse of @ref Producer::Consumer. The Ring already exists
-				 * (`Consumer()` or a Producer-born Consumer).
+				 * @return Producer that shares this store.
 				 */
 				class Producer Producer() const;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Maintenance / lifecycle
@@ -238,40 +227,41 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Discard already-consumed data (from start up to the read position).
+				 * @brief Discard already-consumed data up to the read position.
 				 */
 				void Clean() noexcept override;
 
 				/**
-				 * @brief Clear all buffer contents.
-				 * @details Does not clear closed / error flags on the shared Ring.
+				 * @brief Clear stored bytes.
+				 * @details Does not clear closed or error flags on the shared Ring.
 				 */
 				void Clear() noexcept override;
 
 				/**
 				 * @brief Close the shared Ring for further writes.
-				 * @details Equivalent to @ref Producer::Close on the same underlying buffer.
-				 *          Readers may still drain remaining data until EoF.
+				 * @details Same effect as Producer::Close on this Ring. Readers may still drain.
 				 */
 				inline void Close() noexcept {
 					Storage().Close();
 				}
 
 				/**
-				 * @brief Discard @p count bytes from the current read position.
-				 * @param count Number of bytes to drop.
-				 * @return @c true on success, @c false if fewer bytes were available.
+				 * @brief Discard bytes from the current read position.
+				 * @param count Bytes to drop.
+				 * @return False if fewer bytes were available.
 				 */
 				bool Drop(const StormByte::ByteSize& count) noexcept override;
 
 				/**
-				 * @brief Move the logical read position for non-destructive reads.
-				 * @param offset Offset value.
-				 * @param mode @ref Position::Absolute or @ref Position::Relative.
+				 * @brief Move the logical read position.
+				 * @param offset Offset.
+				 * @param mode Absolute or relative.
 				 */
 				void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Extract (destructive read)
@@ -279,34 +269,36 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Extract bytes into a @ref StormByte::BinaryData (consumes data from the Ring).
-				 * @param count Number of bytes to extract; 0 extracts all available.
-				 * @param out Destination (appended to).
-				 * @return @c true on success.
+				 * @brief Extract bytes into owned storage.
+				 * @param count Bytes to extract. 0 means all available.
+				 * @param out Destination. Appended to.
+				 * @return False on failure.
 				 */
-				bool Extract(const StormByte::ByteSize& count, StormByte::BinaryData& out) noexcept override;
+				bool Extract(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) noexcept override;
 
 				/**
-				 * @brief Extract bytes into a @ref WriteOnly store.
-				 * @param count Number of bytes to extract; 0 extracts all available.
+				 * @brief Extract bytes into a writer.
+				 * @param count Bytes to extract. 0 means all available.
 				 * @param out Destination.
-				 * @return @c true on success.
+				 * @return False on failure.
 				 */
 				bool Extract(const StormByte::ByteSize& count, WriteOnly& out) noexcept override;
 
 				/**
-				 * @brief Extract until EoF into a @ref StormByte::BinaryData.
+				 * @brief Extract until EoF into owned storage.
 				 * @param out Destination.
 				 */
-				void ExtractUntilEoF(StormByte::BinaryData& out) noexcept override;
+				void ExtractUntilEoF(StormByte::Safe::Binary& out) noexcept override;
 
 				/**
-				 * @brief Extract until EoF into a @ref WriteOnly store.
+				 * @brief Extract until EoF into a writer.
 				 * @param out Destination.
 				 */
 				void ExtractUntilEoF(WriteOnly& out) noexcept override;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Read (non-destructive)
@@ -314,34 +306,36 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Read bytes into a @ref StormByte::BinaryData. Advances the cursor.
-				 * @param count Number of bytes to read; 0 reads all available.
-				 * @param out Destination (appended to).
-				 * @return @c true on success.
+				 * @brief Read into owned storage and advance the cursor.
+				 * @param count Bytes to read. 0 means all available.
+				 * @param out Destination. Appended to.
+				 * @return False on failure.
 				 */
-				bool Read(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept override;
+				bool Read(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) const noexcept override;
 
 				/**
-				 * @brief Read bytes into a @ref WriteOnly store. Advances the cursor.
-				 * @param count Number of bytes to read; 0 reads all available.
+				 * @brief Read into a writer and advance the cursor.
+				 * @param count Bytes to read. 0 means all available.
 				 * @param out Destination.
-				 * @return @c true on success.
+				 * @return False on failure.
 				 */
 				bool Read(const StormByte::ByteSize& count, WriteOnly& out) const noexcept override;
 
 				/**
-				 * @brief Read until EoF into a @ref StormByte::BinaryData.
+				 * @brief Read until EoF into owned storage.
 				 * @param out Destination.
 				 */
-				void ReadUntilEoF(StormByte::BinaryData& out) const noexcept override;
+				void ReadUntilEoF(StormByte::Safe::Binary& out) const noexcept override;
 
 				/**
-				 * @brief Read until EoF into a @ref WriteOnly store.
+				 * @brief Read until EoF into a writer.
 				 * @param out Destination.
 				 */
 				void ReadUntilEoF(WriteOnly& out) const noexcept override;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 				/**
 				 * @name Peek
@@ -349,28 +343,29 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Peek bytes into a @ref StormByte::BinaryData. Does not advance the cursor.
-				 * @param count Number of bytes to peek; 0 peeks all available.
-				 * @param out Destination (appended to).
-				 * @return @c true on success.
+				 * @brief Peek into owned storage. Does not advance the cursor.
+				 * @param count Bytes to peek. 0 means all available.
+				 * @param out Destination. Appended to.
+				 * @return False on failure.
 				 */
-				bool Peek(const StormByte::ByteSize& count, StormByte::BinaryData& out) const noexcept override;
+				bool Peek(const StormByte::ByteSize& count, StormByte::Safe::Binary& out) const noexcept override;
 
 				/**
-				 * @brief Peek bytes into a @ref WriteOnly store. Does not advance the cursor.
-				 * @param count Number of bytes to peek; 0 peeks all available.
+				 * @brief Peek into a writer. Does not advance the cursor.
+				 * @param count Bytes to peek. 0 means all available.
 				 * @param out Destination.
-				 * @return @c true on success.
+				 * @return False on failure.
 				 */
 				bool Peek(const StormByte::ByteSize& count, WriteOnly& out) const noexcept override;
 
-				/** @} */
+				/**
+				 * @}
+				 */
 
 			private:
-				/**
-				 * @brief Opaque shared Ring ownership with Buffer-local retain and release callbacks.
-				 */
-				StormByte::Safe::Owner m_buffer;
+				friend class Producer;
+
+				StormByte::Safe::Owner m_buffer;	///< Shared Ring ownership.
 
 				/**
 				 * @brief Borrow the Ring held by this handle.
@@ -380,9 +375,7 @@ namespace StormByte {
 
 				/**
 				 * @brief Construct over an existing Ring.
-				 * @param buffer Shared ring instance (must not be null).
-				 *
-				 * Used by @ref Producer::Consumer.
+				 * @param buffer Shared ring. Must not be null.
 				 */
 				explicit Consumer(StormByte::Safe::Owner buffer) noexcept;
 		};
@@ -392,6 +385,6 @@ namespace StormByte {
 /**
  * @brief Consumer ownership relies on Buffer's module-local Ring callbacks.
  * @note Buffer and Base must remain loaded with a compatible ABI until all handles are released.
- *       Copies share storage; borrowed data references must not outlive the shared Ring.
+ *       Copies share storage. Borrowed data references must not outlive the shared Ring.
  */
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::Consumer);

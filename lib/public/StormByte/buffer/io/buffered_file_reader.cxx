@@ -39,8 +39,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/safe/wstring.hxx>
 
 #include <filesystem>
@@ -156,7 +156,7 @@ Result BufferedFileReader::OriginPull(const StormByte::ByteSize n, FIFO& dest) {
 
 	m_file.clear();
 
-	BinaryData chunk;
+	StormByte::Safe::Binary chunk;
 	chunk.resize(n);
 	m_file.read(reinterpret_cast<char*>(chunk.data()),
 		static_cast<std::streamsize>(static_cast<std::size_t>(n)));
@@ -195,9 +195,8 @@ Result BufferedFileReader::OriginSeek(const std::ptrdiff_t offset, const Positio
 			return { IO::Status::Failed, 0 };
 		m_file.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
 	}
-	else {
+	else
 		m_file.seekg(static_cast<std::streamoff>(offset), std::ios::cur);
-	}
 
 	if (!m_file)
 		return { IO::Status::Failed, 0 };

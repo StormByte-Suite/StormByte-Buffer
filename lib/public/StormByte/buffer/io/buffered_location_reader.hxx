@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/safe/pointers.hxx>

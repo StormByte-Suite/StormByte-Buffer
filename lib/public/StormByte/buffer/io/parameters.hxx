@@ -41,6 +41,8 @@
 
 #pragma once
 
+#include <StormByte/type_traits/safe.hxx>
+
 #include <StormByte/byte_size.hxx>
 #include <StormByte/platform.h>
 #include <StormByte/safe/optional.hxx>
@@ -489,3 +491,6 @@ STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxMemory);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxWait);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteChunk);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::BackPressure);
+
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReaderParameters);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriterParameters);
