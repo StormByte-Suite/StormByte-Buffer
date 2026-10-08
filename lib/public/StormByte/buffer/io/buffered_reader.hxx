@@ -105,7 +105,7 @@ namespace StormByte {
 			 * @c Peek, @c Seek, @c Open, @c Close or @c Rewind.
 			 *
 			 * @par Binary only
-			 * Octets only (@ref StormByte::BinaryData / @ref FIFO / @c std::span<std::byte>). No text mode.
+			 * Octets only (@ref StormByte::Safe::Binary / @ref FIFO / @c std::span<std::byte>). No text mode.
 			 *
 			 * @par Session
 			 * Construction leaves @ref State::Unavailable. A successful
