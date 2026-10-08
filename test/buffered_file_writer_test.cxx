@@ -227,6 +227,12 @@ namespace {
 // Direct
 // -------------------
 
+int test_idle_direct_writer_shutdown() {
+	for (std::size_t i = 0; i < 128; ++i)
+		BufferedFileWriter out(Loc(Scratch("idle")), P(StormByte::ByteSize{0}, 0));
+	RETURN_TEST(0);
+}
+
 int test_direct_span_write() {
 	const auto path = Scratch("span");
 	std::filesystem::remove(path);
@@ -1302,6 +1308,7 @@ int main() {
 	// -------------------
 	// Direct
 	// -------------------
+	result += test_idle_direct_writer_shutdown();
 	result += test_direct_span_write();
 	result += test_direct_write_hits_disk();
 	result += test_empty_write_ok();
