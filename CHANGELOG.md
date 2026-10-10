@@ -34,7 +34,7 @@ Reviso el changelog en `a2e7da4` contra lo que de verdad cambió. La fecha, si h
 
 El summary no miente. El 2.0.0 sí: la fecha es de ayer, y sigue diciendo que la espera de `Sink` es `std::mutex`, `std::condition_variable` y `std::atomic` hasta que Base tenga primitiva. Eso ya no es cierto. Tampoco lo es el `Notify` del bloque Fixed.
 
-## [2.0.0] - 2026-10-08
+## [2.0.0] - 2026-10-10
 
 ### Added
 
