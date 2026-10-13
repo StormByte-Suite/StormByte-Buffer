@@ -28,11 +28,19 @@ If you landed here from a release link and have not read the tree:
 
 ### Removed
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.1...HEAD
 
-Reviso el changelog en `a2e7da4` contra lo que de verdad cambió. La fecha, si hay que tocarla, es 2026-10-08.
+## [2.0.1] - 2026-10-13
 
-El summary no miente. El 2.0.0 sí: la fecha es de ayer, y sigue diciendo que la espera de `Sink` es `std::mutex`, `std::condition_variable` y `std::atomic` hasta que Base tenga primitiva. Eso ya no es cierto. Tampoco lo es el `Notify` del bloque Fixed.
+### Changed
+
+- Updated dependency pins for BuildMaster, StormByte Logger and StormByte System, and bumped the project version to 2.0.1.
+
+### Fixed
+
+- Prevented a lost wakeup during buffered reader shutdown by publishing stop and prefetch-cancellation state under the worker wait mutex before notifying and joining. Added repeated idle-reader shutdown coverage.
+
+[2.0.1]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.0...2.0.1
 
 ## [2.0.0] - 2026-10-10
 
