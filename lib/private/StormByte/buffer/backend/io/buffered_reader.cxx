@@ -471,8 +471,11 @@ void BufferedReader::StartWorker() {
 }
 
 void BufferedReader::StopWorker() {
-	m_stop.store(true);
-	m_cancel_prefetch.store(true);
+	{
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		m_stop.store(true);
+		m_cancel_prefetch.store(true);
+	}
 	m_cv.notify_all();
 	if (m_worker.joinable())
 		m_worker.join();

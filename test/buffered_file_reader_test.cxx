@@ -1205,6 +1205,13 @@ int test_ctor_unavailable_bool_false() {
 	RETURN_TEST(0);
 }
 
+int test_idle_reader_repeated_shutdown() {
+	for (std::size_t attempt = 0; attempt < 512; ++attempt) {
+		BufferedFileReader in(Loc(File("five.bin")));
+	}
+	RETURN_TEST(0);
+}
+
 int test_open_directory() {
 	BufferedFileReader in(Loc(CurrentFileDirectory / "files"));
 	ASSERT_FALSE(in.Open());
@@ -1587,6 +1594,7 @@ int main() {
 	// -------------------
 	result += test_close_then_reopen();
 	result += test_ctor_unavailable_bool_false();
+	result += test_idle_reader_repeated_shutdown();
 	result += test_open_directory();
 	result += test_open_missing();
 	result += test_open_not_idempotent();
