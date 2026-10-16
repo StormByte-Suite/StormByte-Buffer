@@ -154,7 +154,7 @@ STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
 /**
  * @brief Provider-declared value whose alignment exceeds Base's heap contract.
  */
-struct alignas(alignof(std::max_align_t) * 2) OveralignedValue {
+struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__ * 2) OveralignedValue {
 	int value = 0;	///< Embedded integer with no allocator or external lifetime.
 };
 

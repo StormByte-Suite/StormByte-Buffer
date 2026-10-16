@@ -497,7 +497,7 @@ Final file leaf. It passes `Location::Local` and probes the device at `Setup` wh
 
 ## Items
 
-Items are not byte buffers and not IO. `Hopper<T>` and `Sink<T>` carry C++ objects. `T` must be an unqualified `StormByte::Type::SafeValue`, default-constructible and movable, with nonthrowing default construction, move construction, move assignment and destruction. `alignof(T)` must not exceed `alignof(std::max_align_t)`. Counts are `StormByte::Size`. A `Safe::Binary`, a `std::string` or a raw pointer is not admitted just because it can be moved. Use `int`, `Safe::String`, `Safe::Shared<int>` or another value that already meets the contract.
+Items are not byte buffers and not IO. `Hopper<T>` and `Sink<T>` carry C++ objects. `T` must be an unqualified `StormByte::Type::SafeValue`, default-constructible and movable, with nonthrowing default construction, move construction, move assignment and destruction. `alignof(T)` must not exceed `__STDCPP_DEFAULT_NEW_ALIGNMENT__`, the alignment `operator new` gives Base's heap. That is 16 on the supported platforms, so `Safe::String` is admitted. `alignof(std::max_align_t)` is not the limit: it is 8 on macOS. Counts are `StormByte::Size`. A `Safe::Binary`, a `std::string` or a raw pointer is not admitted just because it can be moved. Use `int`, `Safe::String`, `Safe::Shared<int>` or another value that already meets the contract.
 
 The wait path is `Safe::Mutex`, `Safe::ConditionVariable` and `Safe::Atomic<std::size_t>`. It is not a public `std::mutex`, `std::condition_variable` or `std::atomic`.
 

@@ -156,7 +156,7 @@ STORMBYTE_DECLARE_MAYBE_SAFE(NonNullableSmartPointer);
 /**
  * @brief Provider-declared element with unsupported extended alignment.
  */
-struct alignas(alignof(std::max_align_t) * 2) OveralignedValue {
+struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__ * 2) OveralignedValue {
 	int value = 0;	///< Embedded integer with no allocator or external lifetime.
 };
 
@@ -368,7 +368,7 @@ int test_sink_non_nullable_smart_pointer() {
 int test_sink_overaligned_payload() {
 	static_assert(StormByte::Type::SafeValue<OveralignedValue>);
 	static_assert(!SinkAdmits<OveralignedValue>);
-	static_assert(alignof(OveralignedValue) > alignof(std::max_align_t));
+	static_assert(alignof(OveralignedValue) > __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 	RETURN_TEST(0);
 }
 

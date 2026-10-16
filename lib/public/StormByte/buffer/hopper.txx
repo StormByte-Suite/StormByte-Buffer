@@ -373,7 +373,7 @@ namespace StormByte {
 				static_cast<Implementation*>(context)->~Implementation();
 				StormByte::Safe::Heap::Free(context);
 			}) {
-			static_assert(alignof(Implementation) <= alignof(std::max_align_t));
+			static_assert(alignof(Implementation) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 		}
 
 		template<Detail::HopperValue T>

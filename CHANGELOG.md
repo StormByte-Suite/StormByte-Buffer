@@ -35,6 +35,10 @@ If you landed here from a release link and have not read the tree:
 - **Breaking:** `Buffer::Exception`, `ReadError` and `WriteError` no longer format with `std::format`. A message with arguments replaces literal `{}` through `Safe::String::ReplaceToken`, the same rule as Base 2.1.0. `what()` stays `StormByte.Buffer: message`, `StormByte.Buffer.Read: message` and `StormByte.Buffer.Write: message`.
 - Bumped the project version to 2.0.2.
 
+### Fixed
+
+- `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
+
 [2.0.2]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.1...2.0.2
 
 ## [2.0.1] - 2026-10-13

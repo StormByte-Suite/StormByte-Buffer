@@ -73,7 +73,10 @@ namespace StormByte {
 			/**
 			 * @brief Values supported by the nonthrowing, Base-allocated typed queues.
 			 * @tparam T Unqualified element with Base SafeValue lifetime guarantees.
-			 * @note Extended alignment is rejected because Base's heap has no aligned allocation API.
+			 * @note Alignment above `__STDCPP_DEFAULT_NEW_ALIGNMENT__` is rejected.
+			 * Base's heap is `operator new(std::size_t)`, which guarantees that
+			 * alignment. `alignof(std::max_align_t)` is not the limit: on macOS
+			 * and Windows it is 8 while `operator new` still returns 16.
 			 */
 			template<typename T>
 			concept HopperValue = Type::SafeValue<T> && Type::DefaultConstructible<T> &&
@@ -81,7 +84,7 @@ namespace StormByte {
 				(!Type::Const<T>) && (!std::is_volatile_v<T>) &&
 				std::is_nothrow_default_constructible_v<T> && std::is_nothrow_move_constructible_v<T> &&
 				std::is_nothrow_move_assignable_v<T> && std::is_nothrow_destructible_v<T> &&
-				(alignof(T) <= alignof(std::max_align_t));
+				(alignof(T) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 		}
 
 		/**
@@ -109,7 +112,8 @@ namespace StormByte {
 		 * - Non-copyable, non-movable: Shared via StormByte::Safe::Shared.
 		 *
 		 * @tparam T SafeValue with nonthrowing default construction, move construction,
-		 * move assignment and destruction, and at most fundamental alignment.
+		 * move assignment and destruction, and alignment no greater than
+		 * `__STDCPP_DEFAULT_NEW_ALIGNMENT__`.
 		 * @note Conditional DLL safety requires compatible C++/STL ABI, Base and all
 		 * template/provider modules remaining loaded, and the element provider's SafeValue
 		 * guarantees. Derived classes must preserve these guarantees; this is not a
