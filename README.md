@@ -9,7 +9,7 @@
 
 This repository is **StormByte Buffer**: byte streams, buffered I/O and typed item queues for the StormByte C++ suite. Those are three different things. A byte buffer does not carry a C++ object, and a Hopper does not carry octets.
 
-It uses [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer through [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and uses [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline pipes (`Scope`). Base provides the owned UTF-8 and wide text types, the octet payload, and the wait primitives. Public headers live under `StormByte/buffer/`.
+It uses [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2. Base is downloaded on its own. Logger does not bring it. Base provides the owned UTF-8 and wide text types, the octet payload, and the wait primitives. Logger is used for pipeline pipes (`Scope`). Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network and System are **other repositories**. This one does not implement them.
 
@@ -101,7 +101,7 @@ Public headers do not export `std::mutex`, `std::condition_variable`, `std::atom
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte Base 2.0.0](https://github.com/StormByte-Suite/StormByte/releases/tag/2.0.0) or newer via [StormByte-System 2.0.0](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.0.0) or newer, and [StormByte-Logger 2.0.0](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.0) for pipeline pipes.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0, [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2. Configure downloads those release archives. There are no StormByte source submodules. BuildMaster is the installed package when it is >= 2.1.0, otherwise the `buildmaster` submodule.
 
 ```sh
 git clone --recursive https://github.com/StormByte-Suite/StormByte-Buffer.git
@@ -110,7 +110,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Shared vs static follows CMake `BUILD_SHARED_LIBS` (declared in `lib/`, default ON). A plain configure builds the shared library. `-DBUILD_SHARED_LIBS=OFF` builds a static archive; on Windows the headers then do not use `dllimport`. Vendored StormByte pins follow the same mode and are configured with `ENABLE_TEST=OFF`.
+Shared vs static follows CMake `BUILD_SHARED_LIBS` (declared in `lib/`, default ON). A plain configure builds the shared library. `-DBUILD_SHARED_LIBS=OFF` builds a static archive; on Windows the headers then do not use `dllimport`. The downloaded archives are the same mode.
 
 A shared build keeps this library as its own `.so` / `.dll`. Under the LGPL that is usually the simpler way to ship: the user can replace that file. A static archive is folded into your binary. The LGPL still applies to this code; you must give the recipient a way to relink your product with a different build of this library. If that does not fit how you distribute the final product, a commercial license is available from the copyright holder (see [License](#license)).
 

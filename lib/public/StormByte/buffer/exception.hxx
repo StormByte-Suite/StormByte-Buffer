@@ -47,8 +47,6 @@
 #include <StormByte/exception.hxx>
 #include <StormByte/safe/string.hxx>
 
-#include <format>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -66,9 +64,7 @@ namespace StormByte {
 		 * @class Exception
 		 * @brief Root exception for Buffer. `what()` is `StormByte.Buffer: message`.
 		 *
-		 * Formatting runs in the caller and copies into Base-owned safe text.
-		 * Buffer joins child segments in its provider before passing safe text to
-		 * the out-of-line Base constructor. No caller string allocation is adopted.
+		 * This type applies the `Buffer` segment. A further segment is an @ref Path (`Read`, `Write`). The body does not include the path. Literal `{}` are replaced by @ref StormByte::Safe::String::ReplaceToken. This does not call `std::format`. The destructor is defined in this module.
 		 *
 		 * The message constructor takes `string_view`. A literal, a C string,
 		 * `std::string` and `Safe::String` reach it through their existing
@@ -79,14 +75,29 @@ namespace StormByte {
 		class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
 			public:
 				/**
-				 * @brief Format under `StormByte.Buffer`.
-				 * @tparam Args Format argument types.
-				 * @param fmt Format string.
-				 * @param args Format arguments.
+				 * @struct Path
+				 * @brief Additional path segments nested below `StormByte.Buffer`.
+				 */
+				struct Path {
+					std::string_view segments; ///< Additional dotted path segments.
+
+					/**
+					 * @brief Wraps additional path segments.
+					 * @param segments Dotted segments appended below `Buffer`.
+					 */
+					explicit constexpr Path(std::string_view segments) noexcept: segments(segments) {}
+				};
+
+				/**
+				 * @brief Replace literal `{}` under `StormByte.Buffer`.
+				 * @tparam Args Views, numbers, or types that convert to `std::string`. A number uses `std::to_string`.
+				 * @param pattern Body with literal `{}` tokens. Not a `std::format` string.
+				 * @param args Replacements. One per token, in order.
 				 */
 				template <typename... Args>
-				STORMBYTE_FORCE_INLINE explicit Exception(std::format_string<Args...> fmt, Args&&... args)
-					: Exception(Format(fmt, std::forward<Args>(args)...)) {}
+					requires (sizeof...(Args) >= 1)
+				explicit Exception(std::string_view pattern, Args&&... args)
+					: StormByte::Exception(StormByte::Exception::Path{"Buffer"}, pattern, std::forward<Args>(args)...) {}
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer` in the provider.
@@ -127,41 +138,23 @@ namespace StormByte {
 
 			protected:
 				/**
-				 * @brief Distinguishes the internal path join from the format constructor.
+				 * @brief Plain message under an additional Buffer path.
+				 * @param path Additional segments nested below `StormByte.Buffer`.
+				 * @param message Exception text. Not a format string.
 				 */
-				struct Segment {};
+				Exception(Path path, std::string_view message);
 
 				/**
-				 * @brief Join a child path and plain message in the Buffer provider.
-				 * @param child Joined segments under `Buffer`. Empty selects `Buffer`.
-				 * @param message Base-owned exception text.
-				 */
-				explicit Exception(Segment, const StormByte::Safe::String& child, const StormByte::Safe::String& message);
-
-				/**
-				 * @brief Format in the caller and copy the result into Base-owned text.
-				 * @tparam Args Format argument types.
-				 * @param fmt Format string. Used verbatim when there are no arguments.
-				 * @param args Format arguments.
-				 * @return Base-owned formatted message.
+				 * @brief Replace literal `{}` under an additional Buffer path.
+				 * @tparam Args Views, numbers, or types that convert to `std::string`. A number uses `std::to_string`.
+				 * @param path Additional segments nested below `StormByte.Buffer`.
+				 * @param pattern Body with literal `{}` tokens. Not a `std::format` string.
+				 * @param args Replacements. One per token, in order.
 				 */
 				template <typename... Args>
-				static STORMBYTE_FORCE_INLINE StormByte::Safe::String Format(std::format_string<Args...> fmt, Args&&... args) {
-					if constexpr (sizeof...(Args) == 0)
-						return StormByte::Safe::String(fmt.get());
-					else {
-						const std::string message = std::format(fmt, std::forward<Args>(args)...);
-						return StormByte::Safe::String(std::string_view(message));
-					}
-				}
-
-			private:
-				/**
-				 * @brief Compose the `Buffer.child` path in the Buffer provider.
-				 * @param child Joined child segments, or empty for `Buffer`.
-				 * @return Base-owned path consumed synchronously by the Base constructor.
-				 */
-				static StormByte::Safe::String Compose(const StormByte::Safe::String& child);
+					requires (sizeof...(Args) >= 1)
+				Exception(Path path, std::string_view pattern, Args&&... args)
+					: Exception(path, static_cast<std::string_view>(StormByte::Safe::String::ReplaceToken(pattern, std::forward<Args>(args)...))) {}
 		};
 
 		/**
@@ -216,14 +209,15 @@ namespace StormByte {
 		class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
 			public:
 				/**
-				 * @brief Format under `StormByte.Buffer.Read`.
-				 * @tparam Args Format argument types.
-				 * @param fmt Format string.
-				 * @param args Format arguments.
+				 * @brief Replace literal `{}` under `StormByte.Buffer.Read`.
+				 * @tparam Args Views, numbers, or types that convert to `std::string`. A number uses `std::to_string`.
+				 * @param pattern Body with literal `{}` tokens. Not a `std::format` string.
+				 * @param args Replacements. One per token, in order.
 				 */
 				template <typename... Args>
-				STORMBYTE_FORCE_INLINE explicit ReadError(std::format_string<Args...> fmt, Args&&... args)
-					: ReadError(Format(fmt, std::forward<Args>(args)...)) {}
+					requires (sizeof...(Args) >= 1)
+				explicit ReadError(std::string_view pattern, Args&&... args)
+					: Error(Path{"Read"}, pattern, std::forward<Args>(args)...) {}
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Read` in the provider.
@@ -270,14 +264,15 @@ namespace StormByte {
 		class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
 			public:
 				/**
-				 * @brief Format under `StormByte.Buffer.Write`.
-				 * @tparam Args Format argument types.
-				 * @param fmt Format string.
-				 * @param args Format arguments.
+				 * @brief Replace literal `{}` under `StormByte.Buffer.Write`.
+				 * @tparam Args Views, numbers, or types that convert to `std::string`. A number uses `std::to_string`.
+				 * @param pattern Body with literal `{}` tokens. Not a `std::format` string.
+				 * @param args Replacements. One per token, in order.
 				 */
 				template <typename... Args>
-				STORMBYTE_FORCE_INLINE explicit WriteError(std::format_string<Args...> fmt, Args&&... args)
-					: WriteError(Format(fmt, std::forward<Args>(args)...)) {}
+					requires (sizeof...(Args) >= 1)
+				explicit WriteError(std::string_view pattern, Args&&... args)
+					: Error(Path{"Write"}, pattern, std::forward<Args>(args)...) {}
 
 				/**
 				 * @brief Copy a borrowed plain message under `StormByte.Buffer.Write` in the provider.

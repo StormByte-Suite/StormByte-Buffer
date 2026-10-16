@@ -41,13 +41,26 @@
 
 #include <StormByte/buffer/exception.hxx>
 
+#include <string>
+
 using namespace StormByte::Buffer;
 
-Exception::Exception(std::string_view message)
-	: Exception(Segment{}, StormByte::Safe::String(), StormByte::Safe::String(message)) {}
+namespace {
+	std::string FullPath(std::string_view extra) {
+		std::string path = "Buffer";
+		if (!extra.empty()) {
+			path.push_back('.');
+			path.append(extra);
+		}
+		return path;
+	}
+}
 
-Exception::Exception(Segment, const StormByte::Safe::String& child, const StormByte::Safe::String& message)
-	: StormByte::Exception(StormByte::Exception::Path{std::string_view(Compose(child))}, "{}", std::string_view(message)) {}
+Exception::Exception(std::string_view message)
+	: StormByte::Exception(StormByte::Exception::Path{"Buffer"}, message) {}
+
+Exception::Exception(Path path, std::string_view message)
+	: StormByte::Exception(StormByte::Exception::Path{FullPath(path.segments)}, message) {}
 
 Exception::Exception(const Exception& other) = default;
 
@@ -58,16 +71,6 @@ Exception& Exception::operator=(const Exception& other) = default;
 Exception& Exception::operator=(Exception&& other) noexcept = default;
 
 Exception::~Exception() noexcept = default;
-
-StormByte::Safe::String Exception::Compose(const StormByte::Safe::String& child) {
-	std::string text("Buffer");
-	const std::string_view segment(child);
-	if (!segment.empty()) {
-		text.push_back('.');
-		text.append(segment);
-	}
-	return StormByte::Safe::String(std::string_view(text));
-}
 
 Error::Error(const Error& other) = default;
 
@@ -80,7 +83,7 @@ Error& Error::operator=(Error&& other) noexcept = default;
 Error::~Error() noexcept = default;
 
 ReadError::ReadError(std::string_view message)
-	: Error(Segment{}, StormByte::Safe::String("Read"), StormByte::Safe::String(message)) {}
+	: Error(Path{"Read"}, message) {}
 
 ReadError::ReadError(const ReadError& other) = default;
 
@@ -93,7 +96,7 @@ ReadError& ReadError::operator=(ReadError&& other) noexcept = default;
 ReadError::~ReadError() noexcept = default;
 
 WriteError::WriteError(std::string_view message)
-	: Error(Segment{}, StormByte::Safe::String("Write"), StormByte::Safe::String(message)) {}
+	: Error(Path{"Write"}, message) {}
 
 WriteError::WriteError(const WriteError& other) = default;
 
