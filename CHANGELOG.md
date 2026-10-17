@@ -20,21 +20,14 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-### Added
-
-- Release archives include `THIRD-PARTY` (not `THIRDPARTY`: on Windows and macOS that name is the same path as the `thirdparty/` directory, so the file never landed in those zips). No third-party object code is compiled into this shared library. Base, Logger and System are linked at run time and keep their own notices.
-
-### Fixed
-
-- `cmake/pgo.cmake` matches Base. MSVC PGO links with `/LTCG:PGINSTRUMENT` and `/LTCG:PGOPTIMIZE`. `/GENPROFILE` alone fails with LNK1220 because the current `link.exe` requires an `/LTCG` specification, and CMake's own `/LTCG` stays off so it does not replace the profile mode.
-
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
 
-## [2.0.2] - 2026-10-16
+## [2.0.2] - 2026-10-17
 
 ### Added
 
 - `ENABLE_PGO` and `ENABLE_LTO`. Profile-guided optimization trains in `pgo-instr` and installs this build. Link-time optimization follows `ENABLE_LTO` (default ON) for every build type. Both apply to Buffer. Base, Logger and System are not rebuilt.
+- Release archives include `THIRD-PARTY` (not `THIRDPARTY`: on Windows and macOS that name is the same path as the `thirdparty/` directory, so the file never landed in those zips). No third-party object code is compiled into this shared library. Base, Logger and System are linked at run time and keep their own notices.
 
 ### Changed
 
@@ -48,6 +41,7 @@ If you landed here from a release link and have not read the tree:
 
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
 - Part of the port: the DLL does not return a `std::` object. `std::strong_ordering` is not a DLL ABI. clang-cl returns it through a hidden pointer and MSVC does not pass one, so a call into a clang-built Base wrote at address 0. Ordering is compiled by the caller from Base 2.1.0, where those operators are `STORMBYTE_FORCE_INLINE`. A signature that must return `std::` (`operator std::string`) is `STORMBYTE_FORCE_INLINE` in the header too. This archive must be built against that Base.
+- `cmake/pgo.cmake` matches Base. MSVC PGO links with `/LTCG:PGINSTRUMENT` and `/LTCG:PGOPTIMIZE`. `/GENPROFILE` alone fails with LNK1220 because the current `link.exe` requires an `/LTCG` specification, and CMake's own `/LTCG` stays off so it does not replace the profile mode.
 
 [2.0.2]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.1...2.0.2
 
