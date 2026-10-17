@@ -43,6 +43,7 @@ If you landed here from a release link and have not read the tree:
 ### Fixed
 
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
+- Part of the port: Buffer exports no `operator<=>`. `std::strong_ordering` is not a DLL ABI. clang-cl returns it through a hidden pointer and MSVC does not pass one, so a call into a clang-built Base wrote at address 0. Ordering is compiled by the caller from Base 2.1.0, where those operators are `STORMBYTE_FORCE_INLINE`. This archive must be built against that Base.
 
 [2.0.2]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.1...2.0.2
 
