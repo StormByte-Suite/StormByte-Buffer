@@ -613,3 +613,5 @@ Open an issue before large work. Conventional Commits. Public headers need Doxyg
 ## License
 
 Dual license: GNU Lesser General Public License v3.0 or later, or a commercial license from the copyright holder. See [LICENSE](LICENSE), [COPYING.LGPLv3](COPYING.LGPLv3) and <https://www.gnu.org/licenses/lgpl-3.0.html>. Third-party trees under `thirdparty/` keep their own licenses.
+
+Binary releases add THIRDPARTY beside LICENSE. That file is a notice for what was compiled into the shared library, not another grant. The texts it names are the COPYING.* files in the same archive.

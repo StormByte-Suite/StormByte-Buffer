@@ -35,4 +35,8 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser
 General Public License for more details.
 
+Notices for code compiled into a binary of this library, including any
+third-party object code, are in THIRDPARTY. The license texts that notice
+cites are the COPYING.* files shipped beside this file.
+
 SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
