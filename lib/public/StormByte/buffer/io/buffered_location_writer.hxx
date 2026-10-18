@@ -224,26 +224,44 @@ namespace StormByte {
 
 				protected:
 					/**
-					 * @brief Store the locator and resolve knobs in the caller.
-					 * @param path Locator. Stored once on @ref BufferedWriter.
-					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
-					 * @param parameters Omitted @ref WriteChunk, @ref BackPressure and
-					 *        @ref MaxMemory → @ref Setup probes the device.
-					 *        Omitted @ref MaxWait → 0 ms.
+					 * @brief Knobs after @ref Parameters has been unpacked.
 					 *
-					 * Header-only. @ref Parameters holds @c Safe::Optional and is destroyed
-					 * here, not inside the DLL. Only the unpacked knobs cross.
+					 * Trivial. This is what crosses the DLL. @ref Parameters stays
+					 * in the caller because it owns @c Safe::Optional.
 					 */
-					STORMBYTE_FORCE_INLINE BufferedLocationWriter(StormByte::Safe::String path,
-							enum Location location, Parameters parameters = {}):
-						BufferedLocationWriter(std::move(path), location,
-							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
-							parameters.BackPressure().value_or(0),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-							!parameters.WriteChunk().has_value()
+					struct Unpacked {
+						StormByte::ByteSize write_chunk;
+						std::size_t back_pressure;
+						std::chrono::milliseconds max_wait;
+						StormByte::ByteSize max_memory;
+						bool probe;
+
+						/**
+						 * @brief Unpack a bag in the caller.
+						 * @param parameters Omitted @ref WriteChunk, @ref BackPressure and
+						 *        @ref MaxMemory → probe. Omitted @ref MaxWait → 0 ms.
+						 */
+						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters):
+							write_chunk(parameters.WriteChunk().value_or(StormByte::ByteSize{0})),
+							back_pressure(parameters.BackPressure().value_or(0)),
+							max_wait(std::chrono::milliseconds{parameters.MaxWait().value_or(0)}),
+							max_memory(parameters.MaxMemory().value_or(StormByte::ByteSize{0})),
+							probe(!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
 								&& !parameters.MaxMemory().has_value()) {}
+					};
+
+					/**
+					 * @brief Store the locator and the already-unpacked knobs.
+					 * @param path Locator. Stored once on @ref BufferedWriter.
+					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
+					 * @param knobs Result of unpacking @ref Parameters. Not a bag.
+					 *
+					 * Not a delegating constructor. GCC would emit a reference to the
+					 * complete-object constructor (@c C1) of an abstract class, and it
+					 * does not emit that symbol. @c m_io is created in this module.
+					 */
+					BufferedLocationWriter(StormByte::Safe::String path, enum Location location, Unpacked knobs);
 
 					/**
 					 * @brief Forward the locator and the sink knobs.
@@ -306,18 +324,6 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
-#if !defined(_WIN32)
-					/**
-					 * @brief Forces emission of the complete-object constructor.
-					 *
-					 * Same reason as @ref BufferedLocationReader. Hidden: not a DLL entry.
-					 */
-					struct CompleteCtor {};
-					__attribute__((visibility("hidden"), used))
-					BufferedLocationWriter(CompleteCtor, StormByte::Safe::String path, enum Location location,
-						StormByte::ByteSize write_chunk, std::size_t back_pressure,
-						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory, bool probe);
-#endif
 					/**
 					 * @brief Provider-owned location state and probe flag.
 					 */

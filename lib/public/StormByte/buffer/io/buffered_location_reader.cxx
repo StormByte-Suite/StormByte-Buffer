@@ -48,12 +48,10 @@
 
 using namespace StormByte::Buffer::IO;
 
-#if !defined(_WIN32)
-BufferedLocationReader::BufferedLocationReader(CompleteCtor, StormByte::Safe::String path, const enum Location location,
-		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
-		const std::chrono::milliseconds max_wait, const bool probe):
-	BufferedLocationReader(std::move(path), location, read_ahead, max_memory, max_wait, probe) {}
-#endif
+BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
+		const Unpacked knobs):
+	BufferedReader(std::move(path), location, knobs.read_ahead, knobs.max_memory, knobs.max_wait),
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationReader>(knobs.probe)) {}
 
 BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,

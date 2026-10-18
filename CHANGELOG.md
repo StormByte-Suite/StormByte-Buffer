@@ -20,6 +20,10 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Fixed
+
+- `BufferedLocationReader` and `BufferedLocationWriter` no longer use a delegating constructor. Both classes are abstract, so GCC does not emit the complete-object constructor (`C1`), and the header constructor was the reference Multimedia's test library could not resolve under LTO. A leaf still passes `Parameters`. That bag is unpacked in the caller (it owns `Safe::Optional`) and only the resulting scalars cross the DLL. `m_io` is still created in this library.
+
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
 
 ## [2.0.2] - 2026-10-17
@@ -39,7 +43,6 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
-- `BufferedLocationReader` and `BufferedLocationWriter` also export the complete-object constructor (`C1`). The `Parameters` constructor stays header-only: that bag holds `Safe::Optional` and must be destroyed in the caller. It delegates, and GCC emits `C1` for that call. The library used to export only the base constructor (`C2`), so a GCC LTO link with `--no-undefined` failed. Clang already called `C2`. `Parameters` does not enter the DLL.
 - `-stdlib=libc++` and `-stdlib=libstdc++` do not count as custom C++ flags. If either is the only extra flag, Release still gets `-O2` and the CPU baseline.
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
 - Part of the port: the DLL does not return a `std::` object. `std::strong_ordering` is not a DLL ABI. clang-cl returns it through a hidden pointer and MSVC does not pass one, so a call into a clang-built Base wrote at address 0. Ordering is compiled by the caller from Base 2.1.0, where those operators are `STORMBYTE_FORCE_INLINE`. A signature that must return `std::` (`operator std::string`) is `STORMBYTE_FORCE_INLINE` in the header too. This archive must be built against that Base.

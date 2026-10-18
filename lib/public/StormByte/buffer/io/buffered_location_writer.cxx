@@ -53,12 +53,10 @@ namespace {
 	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
 }
 
-#if !defined(_WIN32)
-BufferedLocationWriter::BufferedLocationWriter(CompleteCtor, StormByte::Safe::String path, const enum Location location,
-		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory, const bool probe):
-	BufferedLocationWriter(std::move(path), location, write_chunk, back_pressure, max_wait, max_memory, probe) {}
-#endif
+BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
+		const Unpacked knobs):
+	BufferedWriter(std::move(path), location, knobs.write_chunk, knobs.back_pressure, knobs.max_wait, knobs.max_memory),
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(knobs.probe)) {}
 
 BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
