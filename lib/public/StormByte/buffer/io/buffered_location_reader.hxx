@@ -207,17 +207,22 @@ namespace StormByte {
 
 				protected:
 					/**
-					 * @brief Store the locator and resolve knobs in this module.
+					 * @brief Store the locator and resolve knobs in the caller.
 					 * @param path Locator. Forwarded. Stored once on @ref BufferedReader.
 					 * @param location @ref Location::Local or @ref Location::Remote. Forwarded.
 					 * @param parameters Omitted @ref ReadAhead → @ref Setup probes @ref Device.
 					 *        Omitted @ref MaxMemory / @ref MaxWait → 0 / 0 ms.
 					 *
-					 * Defined in this module. A delegating constructor in the header
-					 * would make GCC emit the complete-object constructor into the caller.
+					 * Header-only. @ref Parameters holds @c Safe::Optional and is destroyed
+					 * here, not inside the DLL. Only the unpacked knobs cross.
 					 */
-					BufferedLocationReader(StormByte::Safe::String path, enum Location location,
-						Parameters parameters = {});
+					STORMBYTE_FORCE_INLINE BufferedLocationReader(StormByte::Safe::String path,
+							enum Location location, Parameters parameters = {}):
+						BufferedLocationReader(std::move(path), location,
+							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
+							!parameters.ReadAhead().has_value()) {}
 
 					/**
 					 * @brief Store the locator and forward the cache knobs.
@@ -278,6 +283,20 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
+#if !defined(_WIN32)
+					/**
+					 * @brief Forces emission of the complete-object constructor.
+					 *
+					 * GCC's delegating call from the header uses @c C1. A derived
+					 * class only references @c C2, so without this the symbol is missing.
+					 * Hidden: it is not a DLL entry.
+					 */
+					struct CompleteCtor {};
+					__attribute__((visibility("hidden"), used))
+					BufferedLocationReader(CompleteCtor, StormByte::Safe::String path, enum Location location,
+						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
+						std::chrono::milliseconds max_wait, bool probe);
+#endif
 					/**
 					 * @brief Provider-owned location state and probe flag.
 					 */

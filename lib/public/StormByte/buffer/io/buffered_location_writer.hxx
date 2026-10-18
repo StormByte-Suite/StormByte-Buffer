@@ -224,17 +224,26 @@ namespace StormByte {
 
 				protected:
 					/**
-					 * @brief Store the locator and resolve knobs in this module.
+					 * @brief Store the locator and resolve knobs in the caller.
 					 * @param path Locator. Stored once on @ref BufferedWriter.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
 					 * @param parameters Omitted @ref WriteChunk, @ref BackPressure and
 					 *        @ref MaxMemory → @ref Setup probes the device.
 					 *        Omitted @ref MaxWait → 0 ms.
 					 *
-					 * Defined in this module, same reason as @ref BufferedLocationReader.
+					 * Header-only. @ref Parameters holds @c Safe::Optional and is destroyed
+					 * here, not inside the DLL. Only the unpacked knobs cross.
 					 */
-					BufferedLocationWriter(StormByte::Safe::String path, enum Location location,
-						Parameters parameters = {});
+					STORMBYTE_FORCE_INLINE BufferedLocationWriter(StormByte::Safe::String path,
+							enum Location location, Parameters parameters = {}):
+						BufferedLocationWriter(std::move(path), location,
+							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
+							parameters.BackPressure().value_or(0),
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							!parameters.WriteChunk().has_value()
+								&& !parameters.BackPressure().has_value()
+								&& !parameters.MaxMemory().has_value()) {}
 
 					/**
 					 * @brief Forward the locator and the sink knobs.
@@ -297,6 +306,18 @@ namespace StormByte {
 					void Setup() final;
 
 				private:
+#if !defined(_WIN32)
+					/**
+					 * @brief Forces emission of the complete-object constructor.
+					 *
+					 * Same reason as @ref BufferedLocationReader. Hidden: not a DLL entry.
+					 */
+					struct CompleteCtor {};
+					__attribute__((visibility("hidden"), used))
+					BufferedLocationWriter(CompleteCtor, StormByte::Safe::String path, enum Location location,
+						StormByte::ByteSize write_chunk, std::size_t back_pressure,
+						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory, bool probe);
+#endif
 					/**
 					 * @brief Provider-owned location state and probe flag.
 					 */

@@ -53,16 +53,12 @@ namespace {
 	constexpr StormByte::ByteSize DefaultMaxMemory{1024ull * 1024ull};
 }
 
-BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
-		Parameters parameters):
-	BufferedLocationWriter(std::move(path), location,
-		parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
-		parameters.BackPressure().value_or(0),
-		std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-		parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-		!parameters.WriteChunk().has_value()
-			&& !parameters.BackPressure().has_value()
-			&& !parameters.MaxMemory().has_value()) {}
+#if !defined(_WIN32)
+BufferedLocationWriter::BufferedLocationWriter(CompleteCtor, StormByte::Safe::String path, const enum Location location,
+		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
+		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory, const bool probe):
+	BufferedLocationWriter(std::move(path), location, write_chunk, back_pressure, max_wait, max_memory, probe) {}
+#endif
 
 BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
