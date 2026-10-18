@@ -49,6 +49,14 @@
 using namespace StormByte::Buffer::IO;
 
 BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
+		Parameters parameters):
+	BufferedLocationReader(std::move(path), location,
+		parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+		parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+		std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
+		!parameters.ReadAhead().has_value()) {}
+
+BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
 		const std::chrono::milliseconds max_wait, const bool probe):
 	BufferedReader(std::move(path), location, read_ahead, max_memory, max_wait),
