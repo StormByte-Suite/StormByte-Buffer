@@ -20,13 +20,9 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-### Fixed
-
-- `BufferedLocationReader` and `BufferedLocationWriter` no longer use a delegating constructor. Both classes are abstract, so GCC does not emit the complete-object constructor (`C1`), and the header constructor was the reference Multimedia's test library could not resolve under LTO. A leaf still passes `Parameters`. That bag is unpacked in the caller (it owns `Safe::Optional`) and only the resulting scalars cross the DLL. `m_io` is still created in this library.
-
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
 
-## [2.0.2] - 2026-10-17
+## [2.0.2] - 2026-10-18
 
 ### Added
 
@@ -36,13 +32,14 @@ If you landed here from a release link and have not read the tree:
 ### Changed
 
 - `cmake/optimizations.cmake` is the same file as Base. On Release, and only when that language was not set from the outside, it appends `OPTIMIZATION_FLAGS_LINUX`, `OPTIMIZATION_FLAGS_MAC` or `OPTIMIZATION_FLAGS_WINDOWS`. Linux is `-O2 -march=x86-64-v3`, Apple is `-O2 -mcpu=apple-m1`, Windows is `/O2 /arch:AVX2`. There is no `/fp:fast` and no `/EHsc`. `cmake/pgo.cmake` is the same file as Base, so a forwarded list keeps its semicolons.
-- Requires [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0. An older install is not used; the `buildmaster` submodule supplies 2.1.0.
+- Requires [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0. An older install is not used; the `buildmaster` submodule supplies 2.1.2.
 - Requires [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2. Each is a release archive (`stormbyte_component_url`) linked with `BACKEND=binary`. Base is declared here: Logger and System no longer carry it as a submodule. The archive matches this OS and C++ runtime: `libstdc++` or `libc++` on Linux and macOS, no runtime suffix on Windows. Doxygen include path is `${BUILDMASTER_INSTALL_INCLUDEDIR}`.
 - **Breaking:** `Buffer::Exception`, `ReadError` and `WriteError` no longer format with `std::format`. A message with arguments replaces literal `{}` through `Safe::String::ReplaceToken`, the same rule as Base 2.1.0. `what()` stays `StormByte.Buffer: message`, `StormByte.Buffer.Read: message` and `StormByte.Buffer.Write: message`.
 - Bumped the project version to 2.0.2.
 
 ### Fixed
 
+- `BufferedLocationReader` and `BufferedLocationWriter` no longer use a delegating constructor. Both classes are abstract, so GCC does not emit the complete-object constructor (`C1`), and the header constructor was the reference Multimedia's test library could not resolve under LTO. A leaf still passes `Parameters`. That bag is unpacked in the caller (it owns `Safe::Optional`) and only the resulting scalars cross the DLL. `m_io` is still created in this library.
 - `-stdlib=libc++` and `-stdlib=libstdc++` do not count as custom C++ flags. If either is the only extra flag, Release still gets `-O2` and the CPU baseline.
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
 - Part of the port: the DLL does not return a `std::` object. `std::strong_ordering` is not a DLL ABI. clang-cl returns it through a hidden pointer and MSVC does not pass one, so a call into a clang-built Base wrote at address 0. Ordering is compiled by the caller from Base 2.1.0, where those operators are `STORMBYTE_FORCE_INLINE`. A signature that must return `std::` (`operator std::string`) is `STORMBYTE_FORCE_INLINE` in the header too. This archive must be built against that Base.
