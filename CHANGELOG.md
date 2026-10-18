@@ -20,10 +20,6 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-### Changed
-
-- CI builds with `ENABLE_LTO=ON`, `ENABLE_PGO=OFF` and `ENABLE_TEST=ON`, then runs ctest. Profile-guided optimization stays on the release workflow.
-
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
 
 ## [2.0.2] - 2026-10-18
@@ -35,6 +31,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Changed
 
+- CI builds with `ENABLE_LTO=ON`, `ENABLE_PGO=OFF` and `ENABLE_TEST=ON`, then runs ctest. Profile-guided optimization stays on the release workflow.
 - `cmake/optimizations.cmake` is the same file as Base. On Release, and only when that language was not set from the outside, it appends `OPTIMIZATION_FLAGS_LINUX`, `OPTIMIZATION_FLAGS_MAC` or `OPTIMIZATION_FLAGS_WINDOWS`. Linux is `-O2 -march=x86-64-v3`, Apple is `-O2 -mcpu=apple-m1`, Windows is `/O2 /arch:AVX2`. There is no `/fp:fast` and no `/EHsc`. `cmake/pgo.cmake` is the same file as Base, so a forwarded list keeps its semicolons.
 - Requires [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0. An older install is not used; the `buildmaster` submodule supplies 2.1.2.
 - Requires [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2. Each is a release archive (`stormbyte_component_url`) linked with `BACKEND=binary`. Base is declared here: Logger and System no longer carry it as a submodule. The archive matches this OS and C++ runtime: `libstdc++` or `libc++` on Linux and macOS, no runtime suffix on Windows. Doxygen include path is `${BUILDMASTER_INSTALL_INCLUDEDIR}`.
