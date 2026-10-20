@@ -17,6 +17,7 @@ if(ENABLE_TEST)
 	add_executable(BufferedLocationDeviceTests buffered_location_device_test.cxx)
 	target_link_libraries(BufferedLocationDeviceTests StormByte-Buffer)
 	add_test(NAME BufferedLocationDeviceTests COMMAND BufferedLocationDeviceTests)
+	set_tests_properties(BufferedLocationDeviceTests PROPERTIES TIMEOUT 20)
 
 	add_executable(ExceptionTests exception_test.cxx)
 	target_link_libraries(ExceptionTests StormByte-Buffer)

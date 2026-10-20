@@ -531,6 +531,7 @@ namespace StormByte {
 						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};	///< Local or remote. Not changed afterwards.
 
 						mutable StormByte::Safe::Mutex m_mutex;										///< Session state and the cache map.
+						mutable StormByte::Safe::Mutex m_origin_io;									///< Serialises origin hooks with Close.
 						mutable StormByte::Safe::ConditionVariable m_cv;							///< Worker and flush waits.
 
 						StormByte::ByteSize m_read_ahead {0};										///< Prefetch target length.

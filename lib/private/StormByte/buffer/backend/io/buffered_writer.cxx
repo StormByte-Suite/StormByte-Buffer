@@ -278,13 +278,17 @@ bool BufferedWriter::Close() {
 	}
 
 	Result closed{ Status::Ok, 0 };
-	if (was_open && m_owner) {
+	{
 		StormByte::Safe::UniqueLock origin(m_origin_io);
-		closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
+		if (was_open && m_owner)
+			closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
+		// Publish closure before another origin-lock holder can call a derived hook.
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		m_open = false;
+		m_cv.notify_all();
 	}
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_open = false;
 	if (flushed.status == Status::Error) {
 		m_failed = true;
 		m_state = StormByte::Buffer::IO::State::Fault;
@@ -556,8 +560,10 @@ Result BufferedWriter::Flush() {
 		return pages;
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	if (!m_open || m_failed || !m_owner)
+	if (!m_open || !m_owner)
 		return { Status::Failed, 0 };
+	if (m_failed)
+		return { Status::Error, 0 };
 
 	const bool ring_dirty = m_ring && m_ring->Available() > StormByte::ByteSize{0};
 	if (ring_dirty) {
@@ -569,11 +575,14 @@ Result BufferedWriter::Flush() {
 		const bool empty = !m_ring || m_ring->Available() == StormByte::ByteSize{0};
 		return m_stop.load(StormByte::Safe::MemoryOrder::Acquire)
 			|| m_failed
+			|| !m_open
 			|| (empty && !m_drain_run);
 	});
 	m_flush.store(false, StormByte::Safe::MemoryOrder::Release);
 	if (m_failed)
 		return { Status::Error, 0 };
+	if (!m_open)
+		return { Status::Failed, 0 };
 	if (m_stop.load(StormByte::Safe::MemoryOrder::Acquire))
 		return { Status::Failed, 0 };
 	lock.unlock();
@@ -581,6 +590,13 @@ Result BufferedWriter::Flush() {
 	Result visible;
 	{
 		StormByte::Safe::UniqueLock origin(m_origin_io);
+		{
+			StormByte::Safe::UniqueLock inner(m_mutex);
+			if (m_failed)
+				return { Status::Error, 0 };
+			if (!m_open)
+				return { Status::Failed, 0 };
+		}
 		visible = InvokeOrigin([this] { return m_owner->OriginFlush(); });
 	}
 	{
@@ -1014,12 +1030,21 @@ void BufferedWriter::Worker() {
 
 			Result aligned;
 			Result pushed;
+			bool live = false;
 			{
 				StormByte::Safe::UniqueLock origin(m_origin_io);
-				aligned = EnsureOrigin(start);
-				if (aligned.status == Status::Ok)
-					pushed = PushAll(front);
+				{
+					StormByte::Safe::UniqueLock inner(m_mutex);
+					live = m_open && !m_failed;
+				}
+				if (live) {
+					aligned = EnsureOrigin(start);
+					if (aligned.status == Status::Ok)
+						pushed = PushAll(front);
+				}
 			}
+			if (!live)
+				break;
 			if (aligned.status != Status::Ok) {
 				StormByte::Safe::UniqueLock inner(m_mutex);
 				m_failed = true;
@@ -1054,6 +1079,7 @@ void BufferedWriter::Worker() {
 		m_drain_run = false;
 		m_cv.notify_all();
 		if (!m_stop.load(StormByte::Safe::MemoryOrder::Acquire)
+				&& !m_failed
 				&& m_flush.load(StormByte::Safe::MemoryOrder::Acquire)
 				&& m_ring
 				&& m_ring->Available() > StormByte::ByteSize{0}) {

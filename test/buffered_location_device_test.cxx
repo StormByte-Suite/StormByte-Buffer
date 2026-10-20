@@ -45,10 +45,14 @@
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/buffer/io/buffered_location_reader.hxx>
 #include <StormByte/buffer/io/buffered_location_writer.hxx>
+#include <StormByte/safe/binary.hxx>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/system/device.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -58,6 +62,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 using StormByte::Buffer::FIFO;
@@ -314,6 +319,160 @@ namespace {
 			DevicePolicy m_policy;	///< How this leaf reports its origin.
 	};
 
+	class TrackingWriter final: public BufferedLocationWriter {
+		public:
+			explicit TrackingWriter(std::atomic<int>& late_calls, const bool fail_push = true):
+				BufferedLocationWriter(StormByte::Safe::String(std::string_view("test://writer")),
+					Location::Remote, Parameters{
+						StormByte::Buffer::IO::WriteChunk(StormByte::ByteSize{4}),
+						StormByte::Buffer::IO::BackPressure(2),
+						StormByte::Buffer::IO::MaxMemory(StormByte::ByteSize{0})}),
+				m_late_calls(late_calls),
+				m_fail_push(fail_push) {}
+
+			~TrackingWriter() noexcept override {
+				static_cast<void>(Close());
+				m_closed.store(true);
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			}
+
+			void MarkClosed() noexcept {
+				m_closed.store(true);
+			}
+
+		protected:
+			Result OriginOpen() override {
+				NoteLateCall();
+				SetState(State::Idle);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginClose() override {
+				SetState(State::Unavailable);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginPush(const std::span<const std::byte> data) override {
+				NoteLateCall();
+				return m_fail_push
+					? Result{ Status::Error, 0 }
+					: Result{ Status::Ok, StormByte::ByteSize{data.size()} };
+			}
+
+			Result OriginFlush() override {
+				NoteLateCall();
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginTruncate() override {
+				NoteLateCall();
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginSeek(StormByte::ByteSize) override {
+				NoteLateCall();
+				return { Status::Ok, 0 };
+			}
+
+			StormByte::ByteSize OriginSize() const noexcept override {
+				NoteLateCall();
+				return StormByte::ByteSize{0};
+			}
+
+			Shared<StormByte::System::Device> OriginDevice() const override {
+				NoteLateCall();
+				return {};
+			}
+
+		private:
+			void NoteLateCall() const noexcept {
+				if (m_closed.load())
+					++m_late_calls;
+			}
+
+			std::atomic<bool> m_closed{false};
+			std::atomic<int>& m_late_calls;
+			bool m_fail_push;
+	};
+
+	class TrackingReader final: public BufferedLocationReader {
+		public:
+			explicit TrackingReader(std::atomic<int>& late_calls, const bool prefetch = true):
+				BufferedLocationReader(StormByte::Safe::String(std::string_view("test://reader")),
+					Location::Remote, Parameters{
+						StormByte::Buffer::IO::ReadAhead(StormByte::ByteSize{prefetch ? 4u : 0u}),
+						StormByte::Buffer::IO::MaxMemory(StormByte::ByteSize{8})}),
+				m_late_calls(late_calls) {}
+
+			~TrackingReader() noexcept override {
+				static_cast<void>(Close());
+				m_closed.store(true);
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			}
+
+			void MarkClosed() noexcept {
+				m_closed.store(true);
+			}
+
+			void PausePull(const bool pause) noexcept {
+				m_pause_pull.store(pause);
+			}
+
+			bool PullStarted() const noexcept {
+				return m_pull_started.load();
+			}
+
+		protected:
+			Shared<StormByte::System::Device> OriginDevice() const override {
+				NoteLateCall();
+				return {};
+			}
+
+			Result OriginOpen() override {
+				NoteLateCall();
+				SetState(State::Idle);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginClose() override {
+				SetState(State::Unavailable);
+				return { Status::Ok, 0 };
+			}
+
+			Result OriginPull(const StormByte::ByteSize n, FIFO& dest) override {
+				NoteLateCall();
+				m_pull_started.store(true);
+				while (m_pause_pull.load())
+					std::this_thread::yield();
+				NoteLateCall();
+				const StormByte::ByteSize count = std::min(n, StormByte::ByteSize{4});
+				StormByte::Safe::Binary data(count);
+				static_cast<void>(dest.Write(StormByte::ByteSize{data.size()}, std::move(data)));
+				return { Status::Ok, count };
+			}
+
+			Result OriginSeek(std::ptrdiff_t, Position) override {
+				NoteLateCall();
+				return { Status::Ok, 0 };
+			}
+
+			StormByte::Safe::Optional<StormByte::ByteSize> OriginSize() const noexcept override {
+				NoteLateCall();
+				return {};
+			}
+
+		private:
+			void NoteLateCall() const noexcept {
+				if (m_closed.load())
+					++m_late_calls;
+			}
+
+			std::atomic<bool> m_closed{false};
+			std::atomic<int>& m_late_calls;
+			std::atomic<bool> m_pause_pull{false};
+			std::atomic<bool> m_pull_started{false};
+	};
+
 	/**
 	 * @brief Which reader hook throws a foreign exception.
 	 */
@@ -538,6 +697,146 @@ int test_origin_hook_exceptions_become_domain_failures() {
 	RETURN_TEST(0);
 }
 
+int test_writer_does_not_call_origin_during_derived_destruction() {
+	std::atomic<int> late_calls{0};
+	const std::array<std::byte, 12> payload{};
+	for (int iteration = 0; iteration < 100; ++iteration) {
+		{
+			TrackingWriter writer(late_calls);
+			ASSERT_TRUE(writer.Open());
+			ASSERT_EQUAL(Status::TryAgain, writer.Write(std::span<const std::byte>(payload)).status);
+			ASSERT_EQUAL(Status::Ok, writer.Flush().status);
+			std::size_t offset = 0;
+			while (offset < payload.size()) {
+				const std::size_t count = std::min<std::size_t>(8, payload.size() - offset);
+				const Result written = writer.Write(
+					std::span<const std::byte>(payload).subspan(offset, count));
+				if (written.status == Status::TryAgain) {
+					const Result flushed = writer.Flush();
+					ASSERT_TRUE(flushed.status == Status::Ok || flushed.status == Status::Error);
+					if (flushed.status == Status::Error)
+						break;
+					continue;
+				}
+				ASSERT_TRUE(written.status == Status::Ok || written.status == Status::Failed);
+				if (written.status == Status::Failed)
+					break;
+				ASSERT_EQUAL(StormByte::ByteSize{count}, written.count);
+				offset += static_cast<std::size_t>(written.count);
+			}
+			ASSERT_EQUAL(Status::Error, writer.Flush().status);
+		}
+		ASSERT_EQUAL(0, late_calls.load());
+	}
+	RETURN_TEST(0);
+}
+
+int test_writer_close_unblocks_concurrent_flush() {
+	std::atomic<int> late_calls{0};
+	for (int iteration = 0; iteration < 32; ++iteration) {
+		std::atomic<bool> flush_started{false};
+		Status flush_status = Status::Ok;
+		bool write_status_valid = true;
+		const bool fail_push = iteration % 2 == 0;
+		TrackingWriter writer(late_calls, fail_push);
+		ASSERT_TRUE(writer.Open());
+		std::thread io_thread([&] {
+			const std::array<std::byte, 8> payload{};
+			do {
+				const Result written = writer.Write(std::span<const std::byte>(payload));
+				write_status_valid = write_status_valid && (written.status == Status::Ok
+					|| written.status == Status::TryAgain || written.status == Status::Failed);
+				flush_started.store(true);
+				flush_status = writer.Flush().status;
+			} while (flush_status == Status::Ok);
+		});
+		while (!flush_started.load())
+			std::this_thread::yield();
+		static_cast<void>(writer.Close());
+		writer.MarkClosed();
+		io_thread.join();
+		ASSERT_TRUE(write_status_valid);
+		ASSERT_TRUE(flush_status == Status::Error || flush_status == Status::Failed);
+		if (!fail_push)
+			ASSERT_EQUAL(Status::Failed, flush_status);
+		ASSERT_EQUAL(Status::Failed, writer.Flush().status);
+		ASSERT_EQUAL(0, late_calls.load());
+	}
+	ASSERT_EQUAL(0, late_calls.load());
+	RETURN_TEST(0);
+}
+
+int test_reader_serializes_prefetch_with_close() {
+	std::atomic<int> late_calls{0};
+	for (int iteration = 0; iteration < 32; ++iteration) {
+		{
+			TrackingReader reader(late_calls);
+			ASSERT_TRUE(reader.Open());
+			FIFO data;
+			ASSERT_EQUAL(Status::Ok, reader.Read(StormByte::ByteSize{1}, data).status);
+			ASSERT_EQUAL(Status::Ok, reader.Close().status);
+			reader.MarkClosed();
+		}
+		ASSERT_EQUAL(0, late_calls.load());
+	}
+
+	std::atomic<bool> close_returned{false};
+	{
+		TrackingReader reader(late_calls);
+		ASSERT_TRUE(reader.Open());
+		std::atomic<bool> read_started{false};
+		std::thread read_thread([&] {
+			while (!close_returned.load()) {
+				FIFO data;
+				static_cast<void>(reader.Read(StormByte::ByteSize{1}, data));
+				read_started.store(true);
+			}
+		});
+		while (!read_started.load())
+			std::this_thread::yield();
+		const Result closed = reader.Close();
+		reader.MarkClosed();
+		close_returned.store(true);
+		read_thread.join();
+		ASSERT_EQUAL(Status::Ok, closed.status);
+	}
+	ASSERT_EQUAL(0, late_calls.load());
+	RETURN_TEST(0);
+}
+
+int test_reader_close_waits_for_active_origin_pull() {
+	std::atomic<int> late_calls{0};
+	TrackingReader reader(late_calls, false);
+	ASSERT_TRUE(reader.Open());
+	reader.PausePull(true);
+	std::thread read_thread([&] {
+		FIFO data;
+		static_cast<void>(reader.Read(StormByte::ByteSize{1}, data));
+	});
+	while (!reader.PullStarted())
+		std::this_thread::yield();
+	std::atomic<bool> close_started{false};
+	std::atomic<bool> close_returned{false};
+	Result closed;
+	std::thread close_thread([&] {
+		close_started.store(true);
+		closed = reader.Close();
+		reader.MarkClosed();
+		close_returned.store(true);
+	});
+	while (!close_started.load())
+		std::this_thread::yield();
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	const bool closed_during_pull = close_returned.load();
+	reader.PausePull(false);
+	read_thread.join();
+	close_thread.join();
+	ASSERT_FALSE(closed_during_pull);
+	ASSERT_EQUAL(Status::Ok, closed.status);
+	ASSERT_EQUAL(0, late_calls.load());
+	RETURN_TEST(0);
+}
+
 // -------------------
 // Parameters
 // -------------------
@@ -645,6 +944,10 @@ int main() {
 	// Failure
 	// -------------------
 	result += test_origin_hook_exceptions_become_domain_failures();
+	result += test_writer_does_not_call_origin_during_derived_destruction();
+	result += test_writer_close_unblocks_concurrent_flush();
+	result += test_reader_serializes_prefetch_with_close();
+	result += test_reader_close_waits_for_active_origin_pull();
 
 	// -------------------
 	// Parameters

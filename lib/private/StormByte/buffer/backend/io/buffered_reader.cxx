@@ -219,11 +219,16 @@ Result BufferedReader::Close() {
 	}
 
 	Result closed{ Status::Ok, 0 };
-	if (was_open && m_owner)
-		closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
+	{
+		StormByte::Safe::UniqueLock origin(m_origin_io);
+		if (was_open && m_owner)
+			closed = InvokeOrigin([this] { return m_owner->OriginClose(); });
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		m_open = false;
+		m_cv.notify_all();
+	}
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_open = false;
 	m_failed = false;
 	m_origin_exhausted = true;
 	m_origin_valid = false;
@@ -557,6 +562,8 @@ void BufferedReader::Worker() {
 			FIFO chunk;
 			const Result pulled = PullAt(pull_at, need, chunk);
 			StormByte::Safe::UniqueLock inner(m_mutex);
+			if (!m_open)
+				break;
 			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
 				m_failed = true;
 				m_prefetch_run = false;
@@ -818,6 +825,13 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 	if (n == StormByte::ByteSize{0})
 		return { Status::Ok, 0 };
 
+	StormByte::Safe::UniqueLock origin(m_origin_io);
+	{
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		if (!m_open || m_failed)
+			return { Status::Failed, 0 };
+	}
+
 	const Result aligned = EnsureOrigin(at);
 	if (aligned.status != Status::Ok)
 		return aligned;
@@ -910,6 +924,8 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 
 	if (can_prefetch) {
 		StormByte::Safe::UniqueLock lock(m_mutex);
+		if (!m_open)
+			return { Status::Failed, 0 };
 		if (CoverageFrom(m_tell) < n && !m_origin_exhausted && !m_failed && !m_hold_prefetch) {
 			m_prefetch_target = m_read_ahead > n ? m_read_ahead : n;
 			m_prefetch_run = true;
@@ -961,6 +977,8 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		FIFO from_cache;
 		{
 			StormByte::Safe::UniqueLock lock(m_mutex);
+			if (!m_open)
+				return { Status::Failed, 0 };
 			pos = m_tell + have;
 			cached = CoverageFrom(pos);
 			max_tell = m_max_tell;

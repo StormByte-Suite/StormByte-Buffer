@@ -22,7 +22,7 @@ If you landed here from a release link and have not read the tree:
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
 
-## [2.0.2] - 2026-10-19
+## [2.0.2] - 2026-10-20
 
 ### Added
 
@@ -40,6 +40,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+- Prevented `BufferedWriter` from scheduling failed drains or calling derived origin hooks after `Close()` returns. `Flush()` now also wakes and fails when a concurrent close shuts the writer. Serialized reader prefetch with origin close to prevent post-close origin calls.
 - `BufferedLocationReader` and `BufferedLocationWriter` no longer use a delegating constructor. Both classes are abstract, so GCC does not emit the complete-object constructor (`C1`), and the header constructor was the reference Multimedia's test library could not resolve under LTO. A leaf still passes `Parameters`. That bag is unpacked in the caller (it owns `Safe::Optional`) and only the resulting scalars cross the DLL. `m_io` is still created in this library.
 - `-stdlib=libc++` and `-stdlib=libstdc++` do not count as custom C++ flags. If either is the only extra flag, Release still gets `-O2` and the CPU baseline.
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
