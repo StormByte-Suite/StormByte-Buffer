@@ -10,8 +10,6 @@ else()
 	add_subdirectory(base)
 	add_subdirectory(logger)
 	add_subdirectory(system)
-	buildmaster_link(StormByte-Logger StormByte-Base)
-	buildmaster_link(StormByte-System StormByte-Base)
 endif()
 
 buildmaster_link(StormByte-Buffer StormByte-Base StormByte-Logger StormByte-System)

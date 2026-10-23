@@ -20,6 +20,7 @@ buildmaster_component(
 	"StormByte-System"
 	"${STORMBYTE_SYSTEM_OPTSTR}"
 )
+buildmaster_link(StormByte-System StormByte-Base)
 
 if(WIN32 AND BUILD_SHARED_LIBS)
 	target_compile_definitions(StormByte-System INTERFACE STORMBYTE_SYSTEM_SHARED)

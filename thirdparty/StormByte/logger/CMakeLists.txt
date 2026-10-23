@@ -20,6 +20,7 @@ buildmaster_component(
 	"StormByte-Logger"
 	"${STORMBYTE_LOGGER_OPTSTR}"
 )
+buildmaster_link(StormByte-Logger StormByte-Base)
 
 if(WIN32 AND BUILD_SHARED_LIBS)
 	target_compile_definitions(StormByte-Logger INTERFACE STORMBYTE_LOGGER_SHARED)
