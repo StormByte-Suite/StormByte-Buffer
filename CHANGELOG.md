@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.0) 2.2.0, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.3 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.0. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::Safe::Binary`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
@@ -20,7 +20,15 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...HEAD
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.3...HEAD
+
+## [2.0.3] - 2026-10-23
+
+### Changed
+
+- Bumped the project version to 2.0.3.
+
+[2.0.3]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.2...2.0.3
 
 ## [2.0.2] - 2026-10-20
 
@@ -43,6 +51,7 @@ If you landed here from a release link and have not read the tree:
 - Prevented `BufferedWriter` from scheduling failed drains or calling derived origin hooks after `Close()` returns. `Flush()` now also wakes and fails when a concurrent close shuts the writer. Serialized reader prefetch with origin close to prevent post-close origin calls.
 - `BufferedLocationReader` and `BufferedLocationWriter` no longer use a delegating constructor. Both classes are abstract, so GCC does not emit the complete-object constructor (`C1`), and the header constructor was the reference Multimedia's test library could not resolve under LTO. A leaf still passes `Parameters`. That bag is unpacked in the caller (it owns `Safe::Optional`) and only the resulting scalars cross the DLL. `m_io` is still created in this library.
 - `-stdlib=libc++` and `-stdlib=libstdc++` do not count as custom C++ flags. If either is the only extra flag, Release still gets `-O2` and the CPU baseline.
+- Bumped the project version to 2.0.3.
 - `Hopper` and `Sink` admit an element aligned up to `__STDCPP_DEFAULT_NEW_ALIGNMENT__`. They used to require `alignof(std::max_align_t)`. Base's heap is `operator new(std::size_t)`, which returns 16-byte alignment on every supported platform. On macOS `max_align_t` is only 8, so the 16-byte `Safe::String` was rejected. A value aligned past what `operator new` guarantees is still rejected.
 - Part of the port: the DLL does not return a `std::` object. `std::strong_ordering` is not a DLL ABI. clang-cl returns it through a hidden pointer and MSVC does not pass one, so a call into a clang-built Base wrote at address 0. Ordering is compiled by the caller from Base 2.1.0, where those operators are `STORMBYTE_FORCE_INLINE`. A signature that must return `std::` (`operator std::string`) is `STORMBYTE_FORCE_INLINE` in the header too. This archive must be built against that Base.
 - `cmake/pgo.cmake` matches Base. MSVC PGO links with `/LTCG:PGINSTRUMENT` and `/LTCG:PGOPTIMIZE`. `/GENPROFILE` alone fails with LNK1220 because the current `link.exe` requires an `/LTCG` specification, and CMake's own `/LTCG` stays off so it does not replace the profile mode. The profile mode is `add_link_options` on this project, not `CMAKE_EXE_LINKER_FLAGS`. A nested `project()` inherits the cache and its compiler test links `cmTC_*.exe`, which was never instrumented, so `/LTCG:PGOPTIMIZE` aborted with LNK1266 (`cmTC_*.pgd` missing). The cache keeps a bare `/LTCG` so those `/GL` objects still link. A static dependency stays LTCG and is optimized by the link that owns the `.pgd`.
