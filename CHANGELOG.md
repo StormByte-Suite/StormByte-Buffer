@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.1. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.2. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::Safe::Binary`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
@@ -20,10 +20,6 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-### Changed
-
-- Require BuildMaster 2.1.3 and pin its bundled submodule to the published release.
-
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.5...HEAD
 
 ## [2.0.5] - 2026-10-28
@@ -31,7 +27,8 @@ If you landed here from a release link and have not read the tree:
 ### Changed
 
 - Buffered-reader prefetch uses batches of up to 64 KiB instead of 4 KiB, reducing origin calls and worker wakeups for sequential reads. Each batch remains bounded by the requested read-ahead and memory budget; cancellation, seek, EOF and error behavior are preserved.
-- Bundled builds use Base 2.2.2 and Logger 2.0.5.
+- Bundled builds use Base 2.2.2, Logger 2.0.5 and System 2.1.2.
+- Require BuildMaster 2.1.3 and pin its bundled submodule to the published release.
 
 ### Added
 

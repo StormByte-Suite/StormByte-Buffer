@@ -101,7 +101,7 @@ Public headers do not export `std::mutex`, `std::condition_variable`, `std::atom
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.3, [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.1 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5. Configure downloads those release archives. There are no StormByte source submodules. BuildMaster is the installed package when it is >= 2.1.3, otherwise the `buildmaster` submodule.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.3, [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.2 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5. Configure downloads those release archives. There are no StormByte source submodules. BuildMaster is the installed package when it is >= 2.1.3, otherwise the `buildmaster` submodule.
 
 ```sh
 git clone --recursive https://github.com/StormByte-Suite/StormByte-Buffer.git
