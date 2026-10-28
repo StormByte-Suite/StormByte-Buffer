@@ -20,6 +20,10 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Changed
+
+- Require BuildMaster 2.1.3 and pin its bundled submodule to the published release.
+
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.5...HEAD
 
 ## [2.0.5] - 2026-10-28
