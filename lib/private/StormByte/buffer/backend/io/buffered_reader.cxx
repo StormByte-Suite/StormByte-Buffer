@@ -54,7 +54,7 @@ using FIFO = StormByte::Buffer::FIFO;
 using Position = StormByte::Buffer::Position;
 
 namespace {
-	constexpr StormByte::ByteSize PullBatch{4096};
+	constexpr StormByte::ByteSize PullBatch{64 * 1024};
 
 	template<typename Call>
 	Result InvokeOrigin(Call&& call) noexcept {

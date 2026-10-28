@@ -101,7 +101,7 @@ Public headers do not export `std::mutex`, `std::condition_variable`, `std::atom
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0, [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.1.0) 2.1.0, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.0.2 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.2. Configure downloads those release archives. There are no StormByte source submodules. BuildMaster is the installed package when it is >= 2.1.0, otherwise the `buildmaster` submodule.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte-BuildMaster](https://github.com/StormByte-Suite/StormByte-BuildMaster) >= 2.1.0, [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.1 and [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5. Configure downloads those release archives. There are no StormByte source submodules. BuildMaster is the installed package when it is >= 2.1.0, otherwise the `buildmaster` submodule.
 
 ```sh
 git clone --recursive https://github.com/StormByte-Suite/StormByte-Buffer.git
@@ -444,6 +444,8 @@ Public base for a binary origin. Leaves implement `OriginOpen`, `OriginClose`, `
 Exceptions from `OriginOpen`, `OriginClose`, `OriginPull` and `OriginSeek` are converted to `Status::Error`. Exceptions from `Setup` or `CreateTelemetry` make `Open` return `false`. The public `Device()` accessor rethrows StormByte exceptions and translates foreign exceptions to `StormByte::Buffer::Exception`.
 
 `Available()` is cached bytes at `Tell`. It does not call the origin.
+
+Prefetch pulls at most 64 KiB per origin call, further clamped to the requested read-ahead and memory budget. Small budgets are not rounded up. This amortizes sequential I/O and worker notifications without letting a large prefetch request delay cancellation for a full read-ahead window.
 
 `Seek` is logical. A cache hit does not move the device. `Tell` never lies. Consumed bytes remain in RAM up to `MaxMemory`. Garbage collection evicts farthest from `Tell`.
 

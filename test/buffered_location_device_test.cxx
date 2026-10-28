@@ -473,6 +473,73 @@ namespace {
 			std::atomic<bool> m_pull_started{false};
 	};
 
+	class BatchReader final: public BufferedLocationReader {
+		public:
+			explicit BatchReader(const StormByte::ByteSize budget):
+				BufferedLocationReader(StormByte::Safe::String{"test://batch-reader"},
+					Location::Remote, Parameters{
+						StormByte::Buffer::IO::ReadAhead{StormByte::ByteSize{512 * 1024}},
+						StormByte::Buffer::IO::MaxMemory{budget}}) {}
+
+			~BatchReader() noexcept override {
+				static_cast<void>(Close());
+			}
+
+			std::size_t Pulls() const noexcept {
+				return m_pulls.load();
+			}
+
+			std::size_t LargestPull() const noexcept {
+				return m_largest_pull.load();
+			}
+
+		protected:
+			Shared<StormByte::System::Device> OriginDevice() const override {
+				return {};
+			}
+
+			Result OriginOpen() override {
+				SetState(State::Idle);
+				return {Status::Ok, 0};
+			}
+
+			Result OriginClose() override {
+				SetState(State::Unavailable);
+				return {Status::Ok, 0};
+			}
+
+			Result OriginPull(const StormByte::ByteSize n, FIFO& dest) override {
+				const std::size_t count = std::min(static_cast<std::size_t>(n), 512 * 1024 - m_position);
+				if (count == 0)
+					return {Status::End, 0};
+				++m_pulls;
+				m_largest_pull.store(std::max(m_largest_pull.load(), count));
+				StormByte::Safe::Binary bytes(StormByte::ByteSize{count});
+				for (std::size_t i = 0; i < count; ++i)
+					bytes[i] = static_cast<std::byte>((m_position + i) % 251);
+				if (!dest.Write(StormByte::ByteSize{count}, std::move(bytes)))
+					return {Status::Error, 0};
+				m_position += count;
+				return {Status::Ok, StormByte::ByteSize{count}};
+			}
+
+			Result OriginSeek(const std::ptrdiff_t offset, const Position position) override {
+				if (position != Position::Absolute || offset < 0 || offset > 512 * 1024)
+					return {Status::Failed, 0};
+				m_position = static_cast<std::size_t>(offset);
+				return {Status::Ok, 0};
+			}
+
+			StormByte::Safe::Optional<StormByte::ByteSize> OriginSize() const noexcept override {
+				return StormByte::ByteSize{512 * 1024};
+			}
+
+		private:
+			std::size_t m_position = 0;
+			std::atomic<std::size_t> m_pulls{0};
+			std::atomic<std::size_t> m_largest_pull{0};
+	};
+
 	/**
 	 * @brief Which reader hook throws a foreign exception.
 	 */
@@ -926,6 +993,27 @@ int test_parameter_special_operations_preserve_knobs() {
 	RETURN_TEST(0);
 }
 
+int test_reader_prefetch_batches_are_large_and_budget_bounded() {
+	for (const std::size_t budget : {512u * 1024, 16u * 1024}) {
+		BatchReader reader(StormByte::ByteSize{budget});
+		ASSERT_TRUE(reader.Open());
+		FIFO data;
+		const auto read = reader.Read(StormByte::ByteSize{budget}, data);
+		ASSERT_TRUE(read.status == Status::Ok);
+		ASSERT_EQUAL(StormByte::ByteSize{budget}, read.count);
+		ASSERT_TRUE(reader.LargestPull() <= std::min(budget, std::size_t{64 * 1024}));
+		if (budget == 512 * 1024)
+			ASSERT_EQUAL(std::size_t{8}, reader.Pulls());
+		const auto& bytes = data.Data();
+		ASSERT_EQUAL(StormByte::ByteSize{budget}, bytes.size());
+		for (std::size_t i = 0; i < budget; ++i)
+			ASSERT_EQUAL(static_cast<std::byte>(i % 251), bytes[i]);
+		ASSERT_EQUAL(StormByte::ByteSize{budget}, reader.Tell());
+		ASSERT_TRUE(reader.Close().status == Status::Ok);
+	}
+	RETURN_TEST(0);
+}
+
 int main() {
 	int result = 0;
 
@@ -937,6 +1025,7 @@ int main() {
 	result += test_file_writer_keeps_probe_behaviour();
 	result += test_reader_setup_falls_back_on_unusable_device();
 	result += test_reader_setup_uses_overridden_window();
+	result += test_reader_prefetch_batches_are_large_and_budget_bounded();
 	result += test_writer_setup_falls_back_on_unusable_device();
 	result += test_writer_setup_uses_overridden_window();
 
