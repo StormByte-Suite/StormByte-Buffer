@@ -20,19 +20,20 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
+
+## [2.0.6] - 2026-11-02
+
 ### Fixed
 
 - `Sink::Eof()` now closes its tracked writers in place without allocating, and `Sink::Abort()` closes all connected hoppers and discards queued items without allocating, so both lifecycle paths remain usable when memory allocation is exhausted.
 - Selector callback tests destroy and free their provider-owned state explicitly instead of invoking an empty deleter, eliminating leaks detected by LeakSanitizer.
 - The sink allocation-failure test explicitly skips unsupported platforms and AddressSanitizer builds, whose allocator conflicts with its glibc allocation interposition; ordinary Linux/glibc builds still exercise persistent allocation failure.
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
-
-## [2.0.6] - 2026-11-02
-
 ### Changed
 
 - Updated the bundled StormByte dependencies to Base 2.2.3, Logger 2.0.6 and System 2.1.3.
+- Rebuild release packages against the refreshed Base, Logger and System releases, including their final audit fixes.
 
 [2.0.6]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.5...2.0.6
 
