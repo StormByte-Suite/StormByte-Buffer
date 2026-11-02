@@ -20,6 +20,10 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Fixed
+
+- `Sink::Eof()` now closes its tracked writers in place without allocating, and `Sink::Abort()` closes all connected hoppers and discards queued items without allocating, so both lifecycle paths remain usable when memory allocation is exhausted.
+
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
 
 ## [2.0.6] - 2026-11-02

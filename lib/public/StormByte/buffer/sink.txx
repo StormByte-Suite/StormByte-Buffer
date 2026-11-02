@@ -136,23 +136,34 @@ namespace StormByte {
 				}
 
 				/**
-				 * @brief Closes this Sink and returns hoppers it writes, for last-writer Eof.
+				 * @brief Closes this Sink and releases its tracked writer holds.
 				 * @note Notifies the borrowed consumer while holding its registration lock.
-				 * @return Writer hoppers to CloseWriter, each returned exactly once even after closed wiring.
+				 * @note Does not allocate.
 				 */
-				HopperOwners Close() noexcept {
-					HopperOwners writers;
-					{
-						Safe::UniqueLock lock(m_mutex);
-						m_closed.store(true, Safe::MemoryOrder::Release);
-						writers.reserve(m_writers.size());
-						for (auto it = m_writers.begin(); it != m_writers.end(); ++it)
-							writers.push_back(*it);
-						m_writers.clear();
-						m_wired.notify_all();
-						SignalConsumer();
+				void Close() noexcept {
+					Safe::UniqueLock lock(m_mutex);
+					m_closed.store(true, Safe::MemoryOrder::Release);
+					m_wired.notify_all();
+					SignalConsumer();
+					for (auto it = m_writers.begin(); it != m_writers.end(); ++it)
+						(*it)->CloseWriter();
+					m_writers.clear();
+				}
+
+				/**
+				 * @brief Closes and drains every connected hopper without allocating.
+				 */
+				void Abort() noexcept {
+					Safe::UniqueLock lock(m_mutex);
+					m_closed.store(true, Safe::MemoryOrder::Release);
+					m_wired.notify_all();
+					SignalConsumer();
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it) {
+						const auto& hopper = (*it).second;
+						hopper->Eof();
+						while (hopper->Size() > 0)
+							static_cast<void>(hopper->Pop());
 					}
-					return writers;
 				}
 
 				/**
@@ -682,9 +693,12 @@ namespace StormByte {
 
 		template<Detail::HopperValue T>
 		void Sink<T>::Eof() noexcept {
-			const auto writers = m_io->Close();
-			for (auto it = writers.begin(); it != writers.end(); ++it)
-				(*it)->CloseWriter();
+			m_io->Close();
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::Abort() noexcept {
+			m_io->Abort();
 		}
 
 		template<Detail::HopperValue T>

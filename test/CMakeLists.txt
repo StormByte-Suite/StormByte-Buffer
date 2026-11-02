@@ -55,6 +55,10 @@ if(ENABLE_TEST)
 	target_link_libraries(SinkTests StormByte-Buffer)
 	add_test(NAME SinkTests COMMAND SinkTests)
 
+	add_executable(SinkAllocationFailureTests sink_allocation_failure_test.cxx)
+	target_link_libraries(SinkAllocationFailureTests StormByte-Buffer)
+	add_test(NAME SinkAllocationFailureTests COMMAND SinkAllocationFailureTests)
+
 	add_executable(TelemetryTests telemetry_test.cxx)
 	target_link_libraries(TelemetryTests StormByte-Buffer)
 	add_test(NAME TelemetryTests COMMAND TelemetryTests)

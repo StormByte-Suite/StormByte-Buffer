@@ -159,11 +159,20 @@ namespace StormByte {
 				 *
 				 * Hoppers this Sink created (or attached to as a co-writer) decrement
 				 * their writer count. A hopper shared by several producers Eofs when
-				 * the last writer closes. Idempotent.
+				 * the last writer closes. Idempotent and allocation-free.
 				 *
 				 * Wakes Push and Pop waiters.
 				 */
 				void Eof() noexcept;
+
+				/**
+				 * @brief Closes every connected hopper and discards queued items.
+				 *
+				 * Unlike Eof, Abort does not preserve buffered items or wait for
+				 * the last writer. It is idempotent, allocation-free and wakes
+				 * blocked producers and consumers.
+				 */
+				void Abort() noexcept;
 
 				/**
 				 * @}
@@ -501,4 +510,3 @@ namespace StormByte {
 		struct IsMaybeSafe<Buffer::Sink<T>>: std::true_type {};
 	}
 }
-
