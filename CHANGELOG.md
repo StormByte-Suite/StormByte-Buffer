@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.2) 2.2.2, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger) 2.0.5 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System) 2.1.2. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.3) 2.2.3, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.6) 2.0.6 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.1.3) 2.1.3. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::Safe::Binary`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
@@ -20,7 +20,15 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.5...HEAD
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
+
+## [2.0.6] - 2026-11-02
+
+### Changed
+
+- Updated the bundled StormByte dependencies to Base 2.2.3, Logger 2.0.6 and System 2.1.3.
+
+[2.0.6]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.5...2.0.6
 
 ## [2.0.5] - 2026-10-28
 
