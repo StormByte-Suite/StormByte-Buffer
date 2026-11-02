@@ -23,6 +23,7 @@ If you landed here from a release link and have not read the tree:
 ### Fixed
 
 - `Sink::Eof()` now closes its tracked writers in place without allocating, and `Sink::Abort()` closes all connected hoppers and discards queued items without allocating, so both lifecycle paths remain usable when memory allocation is exhausted.
+- Selector callback tests destroy and free their provider-owned state explicitly instead of invoking an empty deleter, eliminating leaks detected by LeakSanitizer.
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
 

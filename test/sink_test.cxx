@@ -474,7 +474,8 @@ int test_sink_safe_selector_status() {
 			}
 		},
 		[](void* context) noexcept {
-			StormByte::Safe::Heap::ObjectDeleter{}(static_cast<StormByte::Safe::Status*>(context));
+			std::destroy_at(static_cast<StormByte::Safe::Status*>(context));
+			StormByte::Safe::Heap::Free(context);
 		});
 	StormByte::Size output{7};
 	ASSERT_EQUAL(StormByte::Safe::Status::Failure, selector.Call(output, StormByte::Size{2}));
@@ -531,7 +532,8 @@ int test_sink_safe_selector_provider_release() {
 			[](void* context) noexcept {
 				auto* state = static_cast<Context*>(context);
 				++*state->releases;
-				StormByte::Safe::Heap::ObjectDeleter{}(state);
+				std::destroy_at(state);
+				StormByte::Safe::Heap::Free(state);
 			});
 		ASSERT_EQUAL(42, consumer.Pop(selector));
 		ASSERT_EQUAL(0, releases);
