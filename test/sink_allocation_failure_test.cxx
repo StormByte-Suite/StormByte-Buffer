@@ -11,7 +11,11 @@
 #include <cstdio>
 #include <cstdlib>
 
-#if defined(__linux__) && defined(__GLIBC__)
+#ifndef __has_feature
+#define __has_feature(feature) 0
+#endif
+
+#if defined(__linux__) && defined(__GLIBC__) && !defined(__SANITIZE_ADDRESS__) && !__has_feature(address_sanitizer)
 namespace {
 	bool fail_allocations = false;
 	std::size_t allocation_attempts = 0;
@@ -72,10 +76,7 @@ extern "C" void* aligned_alloc(std::size_t alignment, std::size_t size) noexcept
 	}
 	return __libc_memalign(alignment, size);
 }
-#endif
-
 int main() {
-#if defined(__linux__) && defined(__GLIBC__)
 	StormByte::Buffer::Sink<int> warm_producer;
 	StormByte::Buffer::Sink<int> warm_consumer;
 	warm_producer.To(6) >> warm_consumer;
@@ -119,6 +120,14 @@ int main() {
 		std::fputs("Sink::Abort did not close and drain the hopper\n", stderr);
 		return 1;
 	}
-#endif
 	return 0;
 }
+
+#else
+
+int main() {
+	std::fputs("Allocation interposition requires Linux/glibc without AddressSanitizer.\n", stderr);
+	return 77;
+}
+
+#endif
