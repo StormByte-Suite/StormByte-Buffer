@@ -87,6 +87,8 @@ namespace StormByte {
 		 *
 		 * Rate accumulators are atomic. Each operation records an independent
 		 * sample against the stable @c Buffer.Operation clock name.
+		 * Built-in counter reads are safe during transfers. Separate reads can
+		 * describe different instants rather than a single atomic snapshot.
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Telemetry: public StormByte::Telemetry {
 			public:
@@ -285,7 +287,7 @@ namespace StormByte {
 				/**
 				 * @brief Octets delivered.
 				 */
-				StormByte::ByteSize m_delivered;
+				mutable StormByte::ByteSize m_delivered;
 		};
 
 		/**
@@ -340,7 +342,7 @@ namespace StormByte {
 				/**
 				 * @brief Octets accepted.
 				 */
-				StormByte::ByteSize m_accepted;
+				mutable StormByte::ByteSize m_accepted;
 		};
 	}
 }

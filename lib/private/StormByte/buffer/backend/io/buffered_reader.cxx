@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/backend/io/buffered_reader.hxx>
+#include <StormByte/buffer/backend/telemetry_counter.hxx>
 #include <StormByte/safe/unique_lock.hxx>
 
 #include <limits>
@@ -342,7 +343,7 @@ Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) co
 	m_seek_did_origin = false;
 	m_hold_prefetch = !m_origin_valid || target != m_origin_pos;
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-		io->m_seek_logical = m_seek_logical;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_logical, m_seek_logical);
 	return { Status::Ok, 0 };
 }
 
@@ -393,10 +394,10 @@ void BufferedReader::NoteWait(const std::chrono::nanoseconds elapsed) const noex
 	m_wait_total += elapsed;
 	++m_wait_samples;
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry()) {
-		io->m_wait_min = m_wait_min;
-		io->m_wait_max = m_wait_max;
-		io->m_wait_total = m_wait_total;
-		io->m_wait_samples = m_wait_samples;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_min, m_wait_min);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_max, m_wait_max);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_total, m_wait_total);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_samples, m_wait_samples);
 	}
 }
 
@@ -407,10 +408,10 @@ void BufferedReader::NoteResident() const noexcept {
 	if (m_max_memory > StormByte::ByteSize{0} && now >= m_max_memory)
 		++m_saturated;
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry()) {
-		io->m_cached = now;
-		io->m_cached_peak = m_cached_peak;
-		io->m_cap = m_max_memory;
-		io->m_saturated = m_saturated;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_cached, now);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_cached_peak, m_cached_peak);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_cap, m_max_memory);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_saturated, m_saturated);
 	}
 }
 
@@ -429,8 +430,8 @@ void BufferedReader::CloseSeekEpoch() const noexcept {
 	}
 	m_seek_epoch = false;
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry()) {
-		io->m_seek_saved_full = m_seek_saved_full;
-		io->m_seek_saved_partial = m_seek_saved_partial;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_saved_full, m_seek_saved_full);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_saved_partial, m_seek_saved_partial);
 	}
 }
 
@@ -722,7 +723,7 @@ void BufferedReader::CollectGarbage() const {
 		m_evicted += m_spans.size();
 		DropCache();
 		if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-			io->m_evicted = m_evicted;
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_evicted, m_evicted);
 		return;
 	}
 
@@ -774,7 +775,7 @@ void BufferedReader::CollectGarbage() const {
 		break;
 	}
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-		io->m_evicted = m_evicted;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_evicted, m_evicted);
 }
 
 Result BufferedReader::EnsureOrigin(const StormByte::ByteSize pos) const {
@@ -815,7 +816,7 @@ Result BufferedReader::EnsureOrigin(const StormByte::ByteSize pos) const {
 	if (m_seek_epoch)
 		m_seek_did_origin = true;
 	if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-		io->m_seek_origin = m_seek_origin;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_origin, m_seek_origin);
 	return { Status::Ok, 0 };
 }
 
@@ -851,7 +852,7 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 		static_cast<void>(dest.Write(pulled.count, chunk));
 		CommitSpan(at, std::move(stored));
 		if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-			io->m_origin = m_origin;
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_origin, m_origin);
 	}
 	if (pulled.status == Status::End)
 		m_origin_exhausted = true;
@@ -901,9 +902,9 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 				m_hit_back = m_hit_back + back;
 				NoteWait(std::chrono::steady_clock::now() - started);
 				if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry()) {
-					io->m_delivered = m_delivered;
-					io->m_hit_ahead = m_hit_ahead;
-					io->m_hit_back = m_hit_back;
+					StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_delivered, m_delivered);
+					StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_ahead, m_hit_ahead);
+					StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_back, m_hit_back);
 					if (telemetry_sample)
 						telemetry_sample->Commit(count);
 				}
@@ -953,7 +954,7 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 					++m_try_again;
 					NoteWait(std::chrono::steady_clock::now() - started);
 					if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
-						io->m_try_again = m_try_again;
+						StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_try_again, m_try_again);
 					return { Status::TryAgain, 0 };
 				}
 			}
@@ -1045,10 +1046,10 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 			m_hit_back = m_hit_back + hit_back;
 			m_miss = m_miss + miss_bytes;
 			if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry()) {
-				io->m_delivered = m_delivered;
-				io->m_hit_ahead = m_hit_ahead;
-				io->m_hit_back = m_hit_back;
-				io->m_miss = m_miss;
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_delivered, m_delivered);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_ahead, m_hit_ahead);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_back, m_hit_back);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_miss, m_miss);
 				if (telemetry_sample)
 					telemetry_sample->Commit(take);
 			}

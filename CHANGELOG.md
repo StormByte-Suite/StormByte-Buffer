@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/2.2.3) 2.2.3, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/2.0.6) 2.0.6 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System/releases/tag/2.1.3) 2.1.3. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte Base](https://github.com/StormByte-Suite/StormByte/releases/tag/3.0.0) 3.0.0, [StormByte-Logger](https://github.com/StormByte-Suite/StormByte-Logger/releases/tag/3.0.0) 3.0.0 and [StormByte-System](https://github.com/StormByte-Suite/StormByte-System/releases/tag/3.0.0) 3.0.0. Base is its own archive: Logger and System no longer bring it. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks). Octet payloads are `StormByte::Safe::Binary`. Byte lengths are `StormByte::ByteSize`. `Hopper` and `Sink` count items with `StormByte::Size`.
 
@@ -20,7 +20,28 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...HEAD
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...HEAD
+
+## [3.0.0] - 2026-11-04
+
+### Added
+
+- Install `FindStormByteBuffer.cmake` so Base 3.0.0 can discover Buffer with its Logger and System dependencies. Verify consumers against an installed prefix and an extracted release ZIP.
+
+### Changed
+
+- **Breaking:** Require Base, Logger and System 3.0.0 and BuildMaster 2.1.5.
+- Select dependency archives and publish Linux releases by architecture, libc and C++ standard library.
+- Build and test the Linux amd64/arm64, glibc/musl, and GCC/libstdc++ or Clang/libc++ variants.
+
+### Fixed
+
+- Use the correct `:` separator when combining PGO runtime library paths, preserving inherited paths on musl.
+- Reconfigure automatically when `VERSION` changes.
+- Preserve compiler optimization defaults in manual Release builds; CPU selection comes from the toolchain and `ENABLE_LTO` remains independently configurable.
+- Synchronize Pumper pause and cancellation with active transfers, distinguish source failure from EOF, and make live basic and IO telemetry counter reads race-free.
+
+[3.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...3.0.0
 
 ## [2.0.6] - 2026-11-02
 

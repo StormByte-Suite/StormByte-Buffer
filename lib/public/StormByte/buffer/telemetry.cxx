@@ -39,6 +39,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/backend/telemetry_counter.hxx>
 #include <StormByte/buffer/telemetry.hxx>
 #include <StormByte/byte_size.hxx>
 
@@ -121,13 +122,13 @@ ReadTelemetry::ReadTelemetry() noexcept:
 ReadTelemetry::~ReadTelemetry() noexcept = default;
 
 StormByte::ByteSize ReadTelemetry::Delivered() const noexcept {
-	return m_delivered;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_delivered);
 }
 
 ReadTelemetry::operator StormByte::Safe::String() const {
 	std::string text;
 	text.reserve(64);
-	Append(text, "Delivered", m_delivered);
+	Append(text, "Delivered", Delivered());
 	AppendRate(text, MeanRate());
 	return StormByte::Safe::String(std::string_view(text));
 }
@@ -138,13 +139,13 @@ WriteTelemetry::WriteTelemetry() noexcept:
 WriteTelemetry::~WriteTelemetry() noexcept = default;
 
 StormByte::ByteSize WriteTelemetry::Accepted() const noexcept {
-	return m_accepted;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_accepted);
 }
 
 WriteTelemetry::operator StormByte::Safe::String() const {
 	std::string text;
 	text.reserve(64);
-	Append(text, "Accepted", m_accepted);
+	Append(text, "Accepted", Accepted());
 	AppendRate(text, MeanRate());
 	return StormByte::Safe::String(std::string_view(text));
 }

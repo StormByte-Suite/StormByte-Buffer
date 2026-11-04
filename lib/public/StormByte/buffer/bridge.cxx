@@ -39,6 +39,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/backend/telemetry_counter.hxx>
 #include <StormByte/buffer/bridge.hxx>
 
 #include <chrono>
@@ -192,8 +193,11 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 	if (m_ext_in) {
 		if (!m_ext_in->IsReadable())
 			return { IO::Status::Failed, 0 };
+		const auto end_status = [this] {
+			return m_ext_in->IsReadable() ? IO::Status::End : IO::Status::Failed;
+		};
 		if (m_ext_in->Available() == StormByte::ByteSize{0} && m_ext_in->EoF())
-			return { IO::Status::End, 0 };
+			return { end_status(), 0 };
 
 		StormByte::ByteSize want = n;
 		const StormByte::ByteSize now = m_ext_in->Available();
@@ -219,7 +223,7 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 			if (!m_ext_in->IsReadable())
 				return { IO::Status::Failed, 0 };
 			if (m_ext_in->EoF())
-				return { IO::Status::End, 0 };
+				return { end_status(), 0 };
 			if (operation == Operation::NonBlocking)
 				return { IO::Status::Ok, 0 };
 			return { IO::Status::Failed, 0 };
@@ -227,7 +231,7 @@ IO::Result Bridge::Pull(const StormByte::ByteSize n, FIFO& dest, const Operation
 		if (chunk.empty()) {
 			if (!m_ext_in->IsReadable())
 				return { IO::Status::Failed, 0 };
-			return { m_ext_in->EoF() ? IO::Status::End : IO::Status::Ok, 0 };
+			return { m_ext_in->EoF() ? end_status() : IO::Status::Ok, 0 };
 		}
 		if (!dest.Write(std::move(chunk)))
 			return { IO::Status::Failed, 0 };
@@ -301,7 +305,7 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 	const StormByte::ByteSize got = work.Available();
 	if (got == StormByte::ByteSize{0}) {
 		if (pulled.status == IO::Status::End) {
-			m_session_state = State::Closed;
+			m_session_state = m_ext_in && !m_ext_in->IsReadable() ? State::Failed : State::Closed;
 			ReleaseTips();
 		}
 		return StormByte::ByteSize{0};
@@ -316,15 +320,15 @@ StormByte::ByteSize Bridge::Passthrough(const StormByte::ByteSize n, const Opera
 
 	if (read_sample) {
 		read_sample->Commit(got);
-		m_owned_read->m_delivered = m_owned_read->m_delivered + got;
+		Backend::AddTelemetryCounter(m_owned_read->m_delivered, got);
 	}
 	if (write_sample) {
 		write_sample->Commit(got);
-		m_owned_write->m_accepted = m_owned_write->m_accepted + got;
+		Backend::AddTelemetryCounter(m_owned_write->m_accepted, got);
 	}
 
 	if (SourceEoF()) {
-		m_session_state = State::Closed;
+		m_session_state = m_ext_in && !m_ext_in->IsReadable() ? State::Failed : State::Closed;
 		ReleaseTips();
 	}
 	return got;

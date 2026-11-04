@@ -352,6 +352,8 @@ namespace StormByte {
 				 * @brief Pause or resume the worker.
 				 *
 				 * No-op if @ref Failed or @ref Canceled.
+				 * Pausing waits for an admitted transfer to finish; blocking
+				 * IO can therefore delay the return.
 				 */
 				void Toggle() noexcept;
 

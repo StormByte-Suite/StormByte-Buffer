@@ -101,6 +101,8 @@ void Pumper::Toggle() noexcept {
 	if (m_canceled || m_bridge.Failed())
 		return;
 	m_paused = !m_paused;
+	if (m_paused)
+		m_cv.wait(lock, [this] { return !m_in_flight; });
 	m_cv.notify_all();
 }
 
@@ -130,24 +132,21 @@ void Pumper::Worker() {
 			});
 			if (m_canceled || m_bridge.Failed())
 				return;
-			if (m_paused)
-				continue;
+			m_in_flight = true;
 		}
-
-		if (m_canceled || m_bridge.Failed())
-			return;
 
 		const StormByte::ByteSize want = CycleRequest();
 		const auto op = m_io_in_blocking
 			? StormByte::Buffer::Bridge::Operation::Blocking
 			: StormByte::Buffer::Bridge::Operation::NonBlocking;
 		const StormByte::ByteSize got = m_bridge.Passthrough(want, op);
-		if (m_canceled || m_bridge.Failed())
-			return;
-		if (m_bridge.EoF())
+
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		m_in_flight = false;
+		m_cv.notify_all();
+		if (m_canceled || m_bridge.State() != StormByte::Buffer::Bridge::State::Open)
 			return;
 		if (got == StormByte::ByteSize{0}) {
-			StormByte::Safe::UniqueLock lock(m_mutex);
 			if (m_canceled || m_paused || m_bridge.Failed())
 				continue;
 			m_cv.wait_for(lock, std::chrono::milliseconds(1), [this] {

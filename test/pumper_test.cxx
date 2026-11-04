@@ -44,6 +44,8 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/io/buffered_reader.hxx>
+#include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/pumper.hxx>
 #include <StormByte/byte_size.hxx>
@@ -51,11 +53,14 @@
 #include <StormByte/safe/string.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -70,12 +75,151 @@ using StormByte::Buffer::Producer;
 using StormByte::Buffer::Pumper;
 using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::BufferedFileWriter;
+using StormByte::Buffer::IO::BufferedReader;
 using StormByte::Buffer::IO::MaxMemory;
 using StormByte::Buffer::IO::ReadAhead;
 using StormByte::Buffer::IO::WriteChunk;
 using StormByte::Safe::Binary;
 
 namespace {
+	class TransferGate {
+		public:
+			bool WaitForEntry(const std::chrono::milliseconds timeout) {
+				std::unique_lock lock(m_mutex);
+				return m_cv.wait_for(lock, timeout, [this] { return m_entered; });
+			}
+
+			void Release() {
+				std::lock_guard lock(m_mutex);
+				m_released = true;
+				m_cv.notify_all();
+			}
+
+			void BlockFirst() {
+				std::unique_lock lock(m_mutex);
+				if (!m_entered) {
+					m_entered = true;
+					m_cv.notify_all();
+					m_cv.wait(lock, [this] { return m_released; });
+				}
+			}
+
+		private:
+			std::mutex m_mutex;
+			std::condition_variable m_cv;
+			bool m_entered {false};
+			bool m_released {false};
+	};
+
+	class GatedFIFO final: public FIFO {
+		public:
+			bool WaitForWrite(const std::chrono::milliseconds timeout) {
+				return m_gate.WaitForEntry(timeout);
+			}
+
+			void ReleaseWrite() {
+				m_gate.Release();
+			}
+
+			bool Write(const ByteSize& count, Binary&& data) noexcept override {
+				m_gate.BlockFirst();
+				return FIFO::Write(count, std::move(data));
+			}
+
+		private:
+			TransferGate m_gate;
+	};
+
+	class GatedEofFIFO final: public FIFO {
+		public:
+			explicit GatedEofFIFO(const std::size_t probe): m_gate_at(probe) {}
+
+			bool EoF() const noexcept override {
+				{
+					std::unique_lock lock(m_mutex);
+					if (++m_probes == m_gate_at) {
+						m_entered = true;
+						m_cv.notify_all();
+						m_cv.wait(lock, [this] { return m_released; });
+					}
+				}
+				return FIFO::EoF();
+			}
+
+			bool WaitForProbe(const std::chrono::milliseconds timeout) const {
+				std::unique_lock lock(m_mutex);
+				return m_cv.wait_for(lock, timeout, [this] { return m_entered; });
+			}
+
+			void ReleaseProbe() {
+				std::lock_guard lock(m_mutex);
+				m_released = true;
+				m_cv.notify_all();
+			}
+
+		private:
+			const std::size_t m_gate_at;
+			mutable std::mutex m_mutex;
+			mutable std::condition_variable m_cv;
+			mutable std::size_t m_probes {0};
+			mutable bool m_entered {false};
+			bool m_released {false};
+	};
+
+	class BlockingReader final: public BufferedReader {
+		public:
+			explicit BlockingReader(TransferGate& gate):
+				BufferedReader(StormByte::Safe::String{"test://blocking"},
+					StormByte::Buffer::IO::Location::Remote,
+					Parameters{StormByte::Buffer::IO::ReadAhead{ByteSize{0}},
+						StormByte::Buffer::IO::MaxMemory{ByteSize{0}}}),
+				m_gate(gate) {}
+
+			BlockingReader(BlockingReader&& other) noexcept:
+				BufferedReader(std::move(other)),
+				m_gate(other.m_gate),
+				m_sent(other.m_sent) {}
+
+			~BlockingReader() noexcept override {
+				static_cast<void>(Close());
+			}
+
+		protected:
+			StormByte::Buffer::IO::Result OriginOpen() override {
+				SetState(StormByte::Buffer::IO::State::Idle);
+				return { StormByte::Buffer::IO::Status::Ok, 0 };
+			}
+
+			StormByte::Buffer::IO::Result OriginClose() override {
+				SetState(StormByte::Buffer::IO::State::Unavailable);
+				return { StormByte::Buffer::IO::Status::Ok, 0 };
+			}
+
+			StormByte::Buffer::IO::Result OriginPull(ByteSize, FIFO& dest) override {
+				if (m_sent)
+					return { StormByte::Buffer::IO::Status::End, 0 };
+				m_gate.BlockFirst();
+				if (!dest.Write("Z"))
+					return { StormByte::Buffer::IO::Status::Error, 0 };
+				m_sent = true;
+				return { StormByte::Buffer::IO::Status::Ok, 1 };
+			}
+
+			bool OriginCanSeek() const noexcept override { return false; }
+
+			StormByte::Buffer::IO::Result OriginSeek(std::ptrdiff_t, StormByte::Buffer::Position) override {
+				return { StormByte::Buffer::IO::Status::Failed, 0 };
+			}
+
+			bool OriginHasSize() const noexcept override { return false; }
+
+			StormByte::Safe::Optional<ByteSize> OriginSize() const noexcept override { return {}; }
+
+		private:
+			TransferGate& m_gate;
+			bool m_sent {false};
+	};
+
 	StormByte::Safe::String Loc(const std::filesystem::path& path) {
 #ifdef WINDOWS
 		return StormByte::Safe::String(StormByte::Safe::WString(std::wstring_view(path.wstring())));
@@ -185,9 +329,94 @@ int test_pumper_cancel_telemetry_survives() {
 	RETURN_TEST(0);
 }
 
+int test_pumper_cancel_while_paused_is_terminal() {
+	Producer src;
+	FIFO out;
+	Consumer in = src.Consumer();
+	Pumper pump(Bridge(in, out), { Chunk{1} });
+	pump.Toggle();
+	const bool wrote = src.Write("must-not-copy");
+	pump.Cancel();
+	pump.Toggle();
+	src.Close();
+	ASSERT_TRUE(wrote);
+	ASSERT_TRUE(pump.Canceled());
+	ASSERT_FALSE(pump.Failed());
+	ASSERT_EQUAL(ByteSize{0}, pump.ReadTelemetry()->Delivered());
+	ASSERT_EQUAL(ByteSize{0}, out.Size());
+	RETURN_TEST(0);
+}
+
 // -------------------
 // Failed
 // -------------------
+
+int test_bridge_source_failure_during_eof_probe() {
+	GatedEofFIFO in(1);
+	FIFO out;
+	Bridge bridge(in, out);
+	ByteSize moved{0};
+	std::thread transfer([&] {
+		moved = bridge.Passthrough(1, Bridge::Operation::NonBlocking);
+	});
+	const bool entered = in.WaitForProbe(std::chrono::seconds(2));
+	if (entered)
+		in.SetError();
+	in.ReleaseProbe();
+	transfer.join();
+	ASSERT_TRUE(entered);
+	ASSERT_EQUAL(ByteSize{0}, moved);
+	ASSERT_TRUE(bridge.Failed());
+	ASSERT_TRUE(bridge.State() == Bridge::State::Failed);
+	RETURN_TEST(0);
+}
+
+int test_bridge_source_failure_after_transfer() {
+	GatedEofFIFO in(1);
+	FIFO out;
+	ASSERT_TRUE(in.Write("Z"));
+	Bridge bridge(in, out);
+	ByteSize moved{0};
+	std::thread transfer([&] {
+		moved = bridge.Passthrough(1, Bridge::Operation::NonBlocking);
+	});
+	const bool entered = in.WaitForProbe(std::chrono::seconds(2));
+	if (entered)
+		in.SetError();
+	in.ReleaseProbe();
+	transfer.join();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+	ASSERT_TRUE(entered);
+	ASSERT_EQUAL(ByteSize{1}, moved);
+	ASSERT_TRUE(bridge.Failed());
+	ASSERT_EQUAL(ByteSize{1}, bridge.ReadTelemetry()->Delivered());
+	ASSERT_EQUAL(ByteSize{1}, bridge.WriteTelemetry()->Accepted());
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(std::string("Z"), BytesToText(got));
+	RETURN_TEST(0);
+}
+
+int test_pumper_source_failure_during_eof_probe() {
+	GatedEofFIFO in(2);
+	FIFO out;
+	Pumper pump(Bridge(in, out), { Chunk{1} });
+	const bool entered = in.WaitForProbe(std::chrono::seconds(2));
+	if (entered)
+		in.SetError();
+	in.ReleaseProbe();
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	while (entered && !pump.Failed() && std::chrono::steady_clock::now() < deadline)
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	const bool failed = pump.Failed();
+	const bool canceled = pump.Canceled();
+	if (!failed)
+		pump.Cancel();
+	ASSERT_TRUE(entered);
+	ASSERT_TRUE(failed);
+	ASSERT_FALSE(canceled);
+	RETURN_TEST(0);
+}
 
 int test_pumper_failed_is_not_canceled() {
 	Producer src;
@@ -324,6 +553,62 @@ int test_pumper_highwater_zero_still_copies() {
 // IO
 // -------------------
 
+int test_pumper_basic_telemetry_during_transfer() {
+	Producer src;
+	FIFO out;
+	Consumer in = src.Consumer();
+	Bridge bridge(in, out);
+	const auto read = bridge.ReadTelemetry();
+	const auto write = bridge.WriteTelemetry();
+	ASSERT_TRUE(static_cast<bool>(read));
+	ASSERT_TRUE(static_cast<bool>(write));
+
+	std::atomic<bool> ready{false};
+	std::atomic<bool> stop{false};
+	bool valid_snapshots = true;
+	std::size_t snapshots = 0;
+	std::thread observer([&] {
+		ByteSize previous_read{0};
+		ByteSize previous_write{0};
+		while (!stop.load(std::memory_order_acquire)) {
+			const ByteSize current_read = read->Delivered();
+			const ByteSize current_write = write->Accepted();
+			if (current_read < previous_read || current_write < previous_write
+					|| static_cast<std::string>(*read).empty()
+					|| static_cast<std::string>(*write).empty())
+				valid_snapshots = false;
+			previous_read = current_read;
+			previous_write = current_write;
+			++snapshots;
+			if (snapshots == 1)
+				ready.store(true, std::memory_order_release);
+		}
+	});
+	while (!ready.load(std::memory_order_acquire))
+		std::this_thread::yield();
+	Pumper pump(std::move(bridge), { Chunk{4} });
+	const std::string payload(4096, 'z');
+	const bool wrote = src.Write(std::string_view(payload));
+	src.Close();
+	const bool finished = WaitFinish(pump, std::chrono::seconds(10));
+	if (!finished)
+		pump.Cancel();
+	stop.store(true, std::memory_order_release);
+	observer.join();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+
+	ASSERT_TRUE(wrote);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(valid_snapshots);
+	ASSERT_TRUE(snapshots > 0);
+	ASSERT_EQUAL(ByteSize{payload.size()}, read->Delivered());
+	ASSERT_EQUAL(ByteSize{payload.size()}, write->Accepted());
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(payload, BytesToText(got));
+	RETURN_TEST(0);
+}
+
 int test_pumper_io_to_io_then_remove() {
 	const auto in_path = std::filesystem::temp_directory_path() / "sbb_pump_in.tmp";
 	const auto out_path = std::filesystem::temp_directory_path() / "sbb_pump_out.tmp";
@@ -342,6 +627,74 @@ int test_pumper_io_to_io_then_remove() {
 	ASSERT_EQUAL(std::string("FILEPUMP"), Slurp(out_path));
 	ASSERT_TRUE(std::filesystem::remove(in_path));
 	ASSERT_TRUE(std::filesystem::remove(out_path));
+	RETURN_TEST(0);
+}
+
+int test_pumper_io_telemetry_during_transfer() {
+	const auto in_path = std::filesystem::temp_directory_path() / "sbb_pump_telemetry_in.tmp";
+	const auto out_path = std::filesystem::temp_directory_path() / "sbb_pump_telemetry_out.tmp";
+	std::filesystem::remove(in_path);
+	std::filesystem::remove(out_path);
+	const std::string payload(16 * 1024, 'x');
+	DumpText(in_path, payload);
+	bool finished = false;
+	bool valid_snapshots = true;
+	std::size_t snapshots = 0;
+	ByteSize delivered{0};
+	ByteSize accepted{0};
+	{
+		BufferedFileReader in(Loc(in_path), { ReadAhead{ByteSize{0}}, MaxMemory{ByteSize{0}} });
+		BufferedFileWriter out(Loc(out_path), { WriteChunk{ByteSize{0}}, MaxMemory{ByteSize{0}} });
+		ASSERT_TRUE(in.Open());
+		ASSERT_TRUE(out.Open());
+		const auto read = in.Telemetry();
+		const auto write = out.Telemetry();
+		const auto* io_read = dynamic_cast<const StormByte::Buffer::IO::ReadTelemetry*>(read.get());
+		const auto* io_write = dynamic_cast<const StormByte::Buffer::IO::WriteTelemetry*>(write.get());
+		ASSERT_TRUE(io_read != nullptr);
+		ASSERT_TRUE(io_write != nullptr);
+
+		std::atomic<bool> ready{false};
+		std::atomic<bool> stop{false};
+		std::thread observer([&] {
+			ByteSize previous_read{0};
+			ByteSize previous_write{0};
+			while (!stop.load(std::memory_order_acquire)) {
+				const ByteSize current_read = io_read->Delivered();
+				const ByteSize current_write = io_write->Accepted();
+				if (current_read < previous_read || current_write < previous_write
+						|| static_cast<std::string>(*io_read).empty()
+						|| static_cast<std::string>(*io_write).empty())
+					valid_snapshots = false;
+				previous_read = current_read;
+				previous_write = current_write;
+				++snapshots;
+				if (snapshots == 1)
+					ready.store(true, std::memory_order_release);
+			}
+		});
+		while (!ready.load(std::memory_order_acquire))
+			std::this_thread::yield();
+		Pumper pump(Bridge(std::move(in), std::move(out)), { Chunk{16} });
+		finished = WaitFinish(pump, std::chrono::seconds(10));
+		if (!finished)
+			pump.Cancel();
+		stop.store(true, std::memory_order_release);
+		observer.join();
+		delivered = io_read->Delivered();
+		accepted = io_write->Accepted();
+	}
+	const std::string contents = Slurp(out_path);
+	const bool removed_in = std::filesystem::remove(in_path);
+	const bool removed_out = std::filesystem::remove(out_path);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(valid_snapshots);
+	ASSERT_TRUE(snapshots > 0);
+	ASSERT_EQUAL(ByteSize{payload.size()}, delivered);
+	ASSERT_EQUAL(ByteSize{payload.size()}, accepted);
+	ASSERT_EQUAL(payload, contents);
+	ASSERT_TRUE(removed_in);
+	ASSERT_TRUE(removed_out);
 	RETURN_TEST(0);
 }
 
@@ -376,22 +729,202 @@ int test_pumper_toggle_pauses_and_resumes() {
 	Consumer in = src.Consumer();
 	Pumper pump(Bridge(in, out), { Chunk{1} });
 	src.Write("ABCD");
-	ASSERT_TRUE(WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2)));
+	const bool delivered = WaitDelivered(pump, ByteSize{1}, std::chrono::seconds(2));
+	if (!delivered)
+		pump.Cancel();
+	ASSERT_TRUE(delivered);
 	pump.Toggle();
 	const auto paused = pump.ReadTelemetry();
+	if (!paused)
+		pump.Cancel();
 	ASSERT_TRUE(static_cast<bool>(paused));
 	const ByteSize at_pause = paused->Delivered();
 	src.Write("EFGH");
 	std::this_thread::sleep_for(std::chrono::milliseconds(80));
 	const auto still = pump.ReadTelemetry();
+	if (!still)
+		pump.Cancel();
 	ASSERT_TRUE(static_cast<bool>(still));
-	ASSERT_EQUAL(at_pause, still->Delivered());
+	const ByteSize during_pause = still->Delivered();
+	if (at_pause != during_pause)
+		pump.Cancel();
+	ASSERT_EQUAL(at_pause, during_pause);
 	pump.Toggle();
 	src.Close();
-	ASSERT_TRUE(WaitFinish(pump, std::chrono::seconds(2)));
+	const bool finished = WaitFinish(pump, std::chrono::seconds(2));
+	if (!finished)
+		pump.Cancel();
+	ASSERT_TRUE(finished);
 	Binary got;
 	ASSERT_TRUE(out.Extract(0, got));
 	ASSERT_EQUAL(std::string("ABCDEFGH"), BytesToText(got));
+	RETURN_TEST(0);
+}
+
+int test_pumper_toggle_waits_for_inflight_transfer() {
+	Producer src;
+	GatedFIFO out;
+	Consumer in = src.Consumer();
+	src.Write("AB");
+	Pumper pump(Bridge(in, out), { Chunk{1} });
+	const bool entered = out.WaitForWrite(std::chrono::seconds(2));
+	if (!entered) {
+		out.ReleaseWrite();
+		pump.Cancel();
+		src.Close();
+	}
+	ASSERT_TRUE(entered);
+
+	std::atomic<bool> started{false};
+	std::atomic<bool> returned{false};
+	std::thread toggler([&] {
+		started.store(true, std::memory_order_release);
+		pump.Toggle();
+		returned.store(true, std::memory_order_release);
+	});
+	while (!started.load(std::memory_order_acquire))
+		std::this_thread::yield();
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	const bool returned_while_blocked = returned.load(std::memory_order_acquire);
+	out.ReleaseWrite();
+	toggler.join();
+
+	const auto read = pump.ReadTelemetry();
+	const ByteSize at_pause = read->Delivered();
+	src.Write("C");
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	const ByteSize during_pause = read->Delivered();
+	const bool paused = at_pause == during_pause;
+	if (paused)
+		pump.Toggle();
+	else
+		pump.Cancel();
+	src.Close();
+	const bool finished = paused && WaitFinish(pump, std::chrono::seconds(5));
+	if (!finished)
+		pump.Cancel();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+
+	ASSERT_FALSE(returned_while_blocked);
+	ASSERT_TRUE(paused);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(std::string("ABC"), BytesToText(got));
+	RETURN_TEST(0);
+}
+
+int test_pumper_toggle_waits_for_blocking_reader() {
+	TransferGate gate;
+	BlockingReader in(gate);
+	FIFO out;
+	ASSERT_TRUE(in.Open());
+	Bridge bridge(std::move(in), out);
+	ASSERT_TRUE(bridge.InputPullBlocking());
+	Pumper pump(std::move(bridge), { Chunk{1} });
+	const bool entered = gate.WaitForEntry(std::chrono::seconds(2));
+	if (!entered) {
+		gate.Release();
+		pump.Cancel();
+	}
+	ASSERT_TRUE(entered);
+
+	std::atomic<bool> started{false};
+	std::atomic<bool> returned{false};
+	std::thread toggler([&] {
+		started.store(true, std::memory_order_release);
+		pump.Toggle();
+		returned.store(true, std::memory_order_release);
+	});
+	while (!started.load(std::memory_order_acquire))
+		std::this_thread::yield();
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	const bool returned_while_blocked = returned.load(std::memory_order_acquire);
+	gate.Release();
+	toggler.join();
+
+	const auto read = pump.ReadTelemetry();
+	const ByteSize at_pause = read->Delivered();
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	const bool paused = at_pause == read->Delivered();
+	if (paused)
+		pump.Toggle();
+	else
+		pump.Cancel();
+	const bool finished = paused && WaitFinish(pump, std::chrono::seconds(5));
+	if (!finished)
+		pump.Cancel();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+	ASSERT_FALSE(returned_while_blocked);
+	ASSERT_EQUAL(ByteSize{1}, at_pause);
+	ASSERT_TRUE(paused);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(std::string("Z"), BytesToText(got));
+	RETURN_TEST(0);
+}
+
+int test_pumper_closed_source_while_paused() {
+	Producer src;
+	FIFO out;
+	Consumer in = src.Consumer();
+	Pumper pump(Bridge(in, out), { Chunk{1} });
+	pump.Toggle();
+	const bool wrote = src.Write("last");
+	src.Close();
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	const ByteSize while_paused = pump.ReadTelemetry()->Delivered();
+	if (while_paused == ByteSize{0})
+		pump.Toggle();
+	else
+		pump.Cancel();
+	const bool finished = while_paused == ByteSize{0} && WaitFinish(pump, std::chrono::seconds(5));
+	if (!finished)
+		pump.Cancel();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+	ASSERT_TRUE(wrote);
+	ASSERT_EQUAL(ByteSize{0}, while_paused);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(std::string("last"), BytesToText(got));
+	RETURN_TEST(0);
+}
+
+int test_pumper_repeated_pause_is_stable() {
+	Producer src;
+	FIFO out;
+	Consumer in = src.Consumer();
+	Pumper pump(Bridge(in, out), { Chunk{1} });
+	const auto read = pump.ReadTelemetry();
+	std::string expected;
+	bool stable = true;
+	bool wrote = true;
+	for (int i = 0; i < 128; ++i) {
+		pump.Toggle();
+		const ByteSize at_pause = read->Delivered();
+		wrote = src.Write("ABCD");
+		expected += "ABCD";
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		stable = at_pause == read->Delivered();
+		if (!stable || !wrote)
+			break;
+		pump.Toggle();
+	}
+	if (!stable || !wrote)
+		pump.Cancel();
+	src.Close();
+	const bool finished = stable && wrote && WaitFinish(pump, std::chrono::seconds(10));
+	if (!finished)
+		pump.Cancel();
+	Binary got;
+	const bool extracted = out.Extract(0, got);
+	ASSERT_TRUE(stable);
+	ASSERT_TRUE(wrote);
+	ASSERT_TRUE(finished);
+	ASSERT_TRUE(extracted);
+	ASSERT_EQUAL(expected, BytesToText(got));
 	RETURN_TEST(0);
 }
 
@@ -404,10 +937,14 @@ int main() {
 	result += test_pumper_cancel_before_close_does_not_drain();
 	result += test_pumper_cancel_is_terminal();
 	result += test_pumper_cancel_telemetry_survives();
+	result += test_pumper_cancel_while_paused_is_terminal();
 
 	// -------------------
 	// Failed
 	// -------------------
+	result += test_bridge_source_failure_during_eof_probe();
+	result += test_bridge_source_failure_after_transfer();
+	result += test_pumper_source_failure_during_eof_probe();
 	result += test_pumper_failed_is_not_canceled();
 
 	// -------------------
@@ -428,7 +965,9 @@ int main() {
 	// -------------------
 	// IO
 	// -------------------
+	result += test_pumper_basic_telemetry_during_transfer();
 	result += test_pumper_io_to_io_then_remove();
+	result += test_pumper_io_telemetry_during_transfer();
 
 	// -------------------
 	// Move
@@ -439,6 +978,10 @@ int main() {
 	// Toggle
 	// -------------------
 	result += test_pumper_toggle_pauses_and_resumes();
+	result += test_pumper_toggle_waits_for_inflight_transfer();
+	result += test_pumper_toggle_waits_for_blocking_reader();
+	result += test_pumper_closed_source_while_paused();
+	result += test_pumper_repeated_pause_is_stable();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

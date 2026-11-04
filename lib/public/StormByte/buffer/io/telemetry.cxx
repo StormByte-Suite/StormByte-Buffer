@@ -39,6 +39,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
+#include <StormByte/buffer/backend/telemetry_counter.hxx>
 #include <StormByte/buffer/io/telemetry.hxx>
 #include <StormByte/byte_size.hxx>
 
@@ -93,98 +94,98 @@ ReadTelemetry::ReadTelemetry() noexcept:
 ReadTelemetry::~ReadTelemetry() noexcept = default;
 
 StormByte::ByteSize ReadTelemetry::HitAhead() const noexcept {
-	return m_hit_ahead;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_hit_ahead);
 }
 
 StormByte::ByteSize ReadTelemetry::HitBack() const noexcept {
-	return m_hit_back;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_hit_back);
 }
 
 StormByte::ByteSize ReadTelemetry::Miss() const noexcept {
-	return m_miss;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_miss);
 }
 
 StormByte::ByteSize ReadTelemetry::Origin() const noexcept {
-	return m_origin;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_origin);
 }
 
 StormByte::ByteSize ReadTelemetry::Cached() const noexcept {
-	return m_cached;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_cached);
 }
 
 StormByte::ByteSize ReadTelemetry::CachedPeak() const noexcept {
-	return m_cached_peak;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_cached_peak);
 }
 
 StormByte::ByteSize ReadTelemetry::Cap() const noexcept {
-	return m_cap;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_cap);
 }
 
 std::size_t ReadTelemetry::SeekLogical() const noexcept {
-	return m_seek_logical;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_logical);
 }
 
 std::size_t ReadTelemetry::SeekOrigin() const noexcept {
-	return m_seek_origin;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_origin);
 }
 
 std::size_t ReadTelemetry::SeekSavedFull() const noexcept {
-	return m_seek_saved_full;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_saved_full);
 }
 
 std::size_t ReadTelemetry::SeekSavedPartial() const noexcept {
-	return m_seek_saved_partial;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_saved_partial);
 }
 
 std::size_t ReadTelemetry::TryAgain() const noexcept {
-	return m_try_again;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_try_again);
 }
 
 std::size_t ReadTelemetry::Saturated() const noexcept {
-	return m_saturated;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_saturated);
 }
 
 std::size_t ReadTelemetry::Evicted() const noexcept {
-	return m_evicted;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_evicted);
 }
 
 std::chrono::nanoseconds ReadTelemetry::WaitMin() const noexcept {
-	return m_wait_min;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_min);
 }
 
 std::chrono::nanoseconds ReadTelemetry::WaitMax() const noexcept {
-	return m_wait_max;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_max);
 }
 
 std::chrono::nanoseconds ReadTelemetry::WaitTotal() const noexcept {
-	return m_wait_total;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_total);
 }
 
 std::size_t ReadTelemetry::WaitSamples() const noexcept {
-	return m_wait_samples;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_samples);
 }
 
 ReadTelemetry::operator StormByte::Safe::String() const {
 	std::string text = static_cast<std::string>(
 		StormByte::Buffer::ReadTelemetry::operator StormByte::Safe::String());
-	Append(text, "HitAhead", m_hit_ahead);
-	Append(text, "HitBack", m_hit_back);
-	Append(text, "Miss", m_miss);
-	Append(text, "Origin", m_origin);
-	Append(text, "Cached", m_cached);
-	Append(text, "CachedPeak", m_cached_peak);
-	Append(text, "Cap", m_cap);
-	Append(text, "SeekLogical", static_cast<std::uint64_t>(m_seek_logical));
-	Append(text, "SeekOrigin", static_cast<std::uint64_t>(m_seek_origin));
-	Append(text, "SeekSavedFull", static_cast<std::uint64_t>(m_seek_saved_full));
-	Append(text, "SeekSavedPartial", static_cast<std::uint64_t>(m_seek_saved_partial));
-	Append(text, "TryAgain", static_cast<std::uint64_t>(m_try_again));
-	Append(text, "Saturated", static_cast<std::uint64_t>(m_saturated));
-	Append(text, "Evicted", static_cast<std::uint64_t>(m_evicted));
-	AppendNs(text, "WaitMin", m_wait_min);
-	AppendNs(text, "WaitMax", m_wait_max);
-	AppendNs(text, "WaitTotal", m_wait_total);
-	Append(text, "WaitSamples", static_cast<std::uint64_t>(m_wait_samples));
+	Append(text, "HitAhead", HitAhead());
+	Append(text, "HitBack", HitBack());
+	Append(text, "Miss", Miss());
+	Append(text, "Origin", Origin());
+	Append(text, "Cached", Cached());
+	Append(text, "CachedPeak", CachedPeak());
+	Append(text, "Cap", Cap());
+	Append(text, "SeekLogical", static_cast<std::uint64_t>(SeekLogical()));
+	Append(text, "SeekOrigin", static_cast<std::uint64_t>(SeekOrigin()));
+	Append(text, "SeekSavedFull", static_cast<std::uint64_t>(SeekSavedFull()));
+	Append(text, "SeekSavedPartial", static_cast<std::uint64_t>(SeekSavedPartial()));
+	Append(text, "TryAgain", static_cast<std::uint64_t>(TryAgain()));
+	Append(text, "Saturated", static_cast<std::uint64_t>(Saturated()));
+	Append(text, "Evicted", static_cast<std::uint64_t>(Evicted()));
+	AppendNs(text, "WaitMin", WaitMin());
+	AppendNs(text, "WaitMax", WaitMax());
+	AppendNs(text, "WaitTotal", WaitTotal());
+	Append(text, "WaitSamples", static_cast<std::uint64_t>(WaitSamples()));
 	return StormByte::Safe::String(std::string_view(text));
 }
 
@@ -215,117 +216,117 @@ WriteTelemetry::WriteTelemetry() noexcept:
 WriteTelemetry::~WriteTelemetry() noexcept = default;
 
 StormByte::ByteSize WriteTelemetry::Behind() const noexcept {
-	return m_behind;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_behind);
 }
 
 StormByte::ByteSize WriteTelemetry::Direct() const noexcept {
-	return m_direct;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_direct);
 }
 
 StormByte::ByteSize WriteTelemetry::Origin() const noexcept {
-	return m_origin;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_origin);
 }
 
 StormByte::ByteSize WriteTelemetry::Materialized() const noexcept {
-	return m_materialized;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_materialized);
 }
 
 StormByte::ByteSize WriteTelemetry::HighWater() const noexcept {
-	return m_high_water;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_high_water);
 }
 
 StormByte::ByteSize WriteTelemetry::HitAhead() const noexcept {
-	return m_hit_ahead;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_hit_ahead);
 }
 
 StormByte::ByteSize WriteTelemetry::HitBack() const noexcept {
-	return m_hit_back;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_hit_back);
 }
 
 StormByte::ByteSize WriteTelemetry::Miss() const noexcept {
-	return m_miss;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_miss);
 }
 
 StormByte::ByteSize WriteTelemetry::Dirty() const noexcept {
-	return m_dirty;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_dirty);
 }
 
 StormByte::ByteSize WriteTelemetry::DirtyPeak() const noexcept {
-	return m_dirty_peak;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_dirty_peak);
 }
 
 StormByte::ByteSize WriteTelemetry::Cap() const noexcept {
-	return m_cap;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_cap);
 }
 
 std::size_t WriteTelemetry::SeekLogical() const noexcept {
-	return m_seek_logical;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_logical);
 }
 
 std::size_t WriteTelemetry::SeekOrigin() const noexcept {
-	return m_seek_origin;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_origin);
 }
 
 std::size_t WriteTelemetry::SeekSavedFull() const noexcept {
-	return m_seek_saved_full;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_saved_full);
 }
 
 std::size_t WriteTelemetry::SeekSavedPartial() const noexcept {
-	return m_seek_saved_partial;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_seek_saved_partial);
 }
 
 std::size_t WriteTelemetry::TryAgain() const noexcept {
-	return m_try_again;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_try_again);
 }
 
 std::size_t WriteTelemetry::Saturated() const noexcept {
-	return m_saturated;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_saturated);
 }
 
 std::size_t WriteTelemetry::Evicted() const noexcept {
-	return m_evicted;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_evicted);
 }
 
 std::chrono::nanoseconds WriteTelemetry::WaitMin() const noexcept {
-	return m_wait_min;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_min);
 }
 
 std::chrono::nanoseconds WriteTelemetry::WaitMax() const noexcept {
-	return m_wait_max;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_max);
 }
 
 std::chrono::nanoseconds WriteTelemetry::WaitTotal() const noexcept {
-	return m_wait_total;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_total);
 }
 
 std::size_t WriteTelemetry::WaitSamples() const noexcept {
-	return m_wait_samples;
+	return StormByte::Buffer::Backend::LoadTelemetryCounter(m_wait_samples);
 }
 
 WriteTelemetry::operator StormByte::Safe::String() const {
 	std::string text = static_cast<std::string>(
 		StormByte::Buffer::WriteTelemetry::operator StormByte::Safe::String());
-	Append(text, "Behind", m_behind);
-	Append(text, "Direct", m_direct);
-	Append(text, "Origin", m_origin);
-	Append(text, "Materialized", m_materialized);
-	Append(text, "HighWater", m_high_water);
-	Append(text, "HitAhead", m_hit_ahead);
-	Append(text, "HitBack", m_hit_back);
-	Append(text, "Miss", m_miss);
-	Append(text, "Dirty", m_dirty);
-	Append(text, "DirtyPeak", m_dirty_peak);
-	Append(text, "Cap", m_cap);
-	Append(text, "SeekLogical", static_cast<std::uint64_t>(m_seek_logical));
-	Append(text, "SeekOrigin", static_cast<std::uint64_t>(m_seek_origin));
-	Append(text, "SeekSavedFull", static_cast<std::uint64_t>(m_seek_saved_full));
-	Append(text, "SeekSavedPartial", static_cast<std::uint64_t>(m_seek_saved_partial));
-	Append(text, "TryAgain", static_cast<std::uint64_t>(m_try_again));
-	Append(text, "Saturated", static_cast<std::uint64_t>(m_saturated));
-	Append(text, "Evicted", static_cast<std::uint64_t>(m_evicted));
-	AppendNs(text, "WaitMin", m_wait_min);
-	AppendNs(text, "WaitMax", m_wait_max);
-	AppendNs(text, "WaitTotal", m_wait_total);
-	Append(text, "WaitSamples", static_cast<std::uint64_t>(m_wait_samples));
+	Append(text, "Behind", Behind());
+	Append(text, "Direct", Direct());
+	Append(text, "Origin", Origin());
+	Append(text, "Materialized", Materialized());
+	Append(text, "HighWater", HighWater());
+	Append(text, "HitAhead", HitAhead());
+	Append(text, "HitBack", HitBack());
+	Append(text, "Miss", Miss());
+	Append(text, "Dirty", Dirty());
+	Append(text, "DirtyPeak", DirtyPeak());
+	Append(text, "Cap", Cap());
+	Append(text, "SeekLogical", static_cast<std::uint64_t>(SeekLogical()));
+	Append(text, "SeekOrigin", static_cast<std::uint64_t>(SeekOrigin()));
+	Append(text, "SeekSavedFull", static_cast<std::uint64_t>(SeekSavedFull()));
+	Append(text, "SeekSavedPartial", static_cast<std::uint64_t>(SeekSavedPartial()));
+	Append(text, "TryAgain", static_cast<std::uint64_t>(TryAgain()));
+	Append(text, "Saturated", static_cast<std::uint64_t>(Saturated()));
+	Append(text, "Evicted", static_cast<std::uint64_t>(Evicted()));
+	AppendNs(text, "WaitMin", WaitMin());
+	AppendNs(text, "WaitMax", WaitMax());
+	AppendNs(text, "WaitTotal", WaitTotal());
+	Append(text, "WaitSamples", static_cast<std::uint64_t>(WaitSamples()));
 	return StormByte::Safe::String(std::string_view(text));
 }

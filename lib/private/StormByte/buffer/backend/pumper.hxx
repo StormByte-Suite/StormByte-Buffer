@@ -180,6 +180,7 @@ namespace StormByte {
 					bool m_io_in_blocking {false};					///< Bridge::InputPullBlocking at take-over.
 					bool m_canceled {false};						///< Cancel ran.
 					bool m_paused {false};							///< Toggle park.
+					bool m_in_flight {false};						///< A worker transfer has been admitted.
 					mutable StormByte::Safe::Mutex m_mutex;			///< Session.
 					StormByte::Safe::ConditionVariable m_cv;		///< Pause / cancel.
 					StormByte::Safe::Thread m_worker;				///< Pump thread. Not a std::thread.

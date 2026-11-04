@@ -40,6 +40,7 @@
  */
 
 #include <StormByte/buffer/backend/io/buffered_writer.hxx>
+#include <StormByte/buffer/backend/telemetry_counter.hxx>
 #include <StormByte/buffer/lockfree_ring.hxx>
 #include <StormByte/safe/unique_lock.hxx>
 
@@ -120,7 +121,7 @@ void BufferedWriter::SetTell(const StormByte::ByteSize offset) noexcept {
 	if (m_tell > m_high_water)
 		m_high_water = m_tell;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
-		io->m_high_water = m_high_water;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
 }
 
 bool BufferedWriter::BufferedMode() const noexcept {
@@ -181,8 +182,8 @@ void BufferedWriter::CloseSeekEpoch() noexcept {
 	}
 	m_epoch_open = false;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_seek_saved_full = m_seek_saved_full;
-		io->m_seek_saved_partial = m_seek_saved_partial;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_saved_full, m_seek_saved_full);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_saved_partial, m_seek_saved_partial);
 	}
 }
 
@@ -200,10 +201,10 @@ void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noex
 	m_wait_total += elapsed;
 	++m_wait_samples;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_wait_min = m_wait_min;
-		io->m_wait_max = m_wait_max;
-		io->m_wait_total = m_wait_total;
-		io->m_wait_samples = m_wait_samples;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_min, m_wait_min);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_max, m_wait_max);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_total, m_wait_total);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_wait_samples, m_wait_samples);
 	}
 }
 
@@ -214,10 +215,10 @@ void BufferedWriter::NoteDirty() const noexcept {
 	if (m_max_memory > StormByte::ByteSize{0} && PageDirty() >= m_max_memory)
 		++m_saturated;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_dirty = now;
-		io->m_dirty_peak = m_dirty_peak;
-		io->m_cap = PendingCap();
-		io->m_saturated = m_saturated;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_dirty, now);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_dirty_peak, m_dirty_peak);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_cap, PendingCap());
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_saturated, m_saturated);
 	}
 }
 
@@ -358,7 +359,7 @@ Result BufferedWriter::EnsureOrigin(const StormByte::ByteSize absolute) {
 	if (m_epoch_open)
 		m_epoch_origin = true;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
-		io->m_seek_origin = m_seek_origin;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_origin, m_seek_origin);
 	return { Status::Ok, 0 };
 }
 
@@ -508,8 +509,8 @@ Result BufferedWriter::MaterializeFrom(StormByte::Safe::UniqueLock& lock,
 	if (end > m_materialized)
 		m_materialized = end;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_origin = m_origin_bytes;
-		io->m_materialized = m_materialized;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_origin, m_origin_bytes);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_materialized, m_materialized);
 	}
 	return { Status::Ok, n };
 }
@@ -533,7 +534,7 @@ Result BufferedWriter::CollectGarbage() {
 
 		++m_evicted;
 		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
-			io->m_evicted = m_evicted;
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_evicted, m_evicted);
 		const Result evicted = MaterializeFrom(lock, victim);
 		if (evicted.status != Status::Ok)
 			return evicted;
@@ -643,9 +644,9 @@ Result BufferedWriter::Truncate() {
 	m_origin_cursor_dirty = true;
 	m_materialized = StormByte::ByteSize{0};
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_high_water = m_high_water;
-		io->m_materialized = m_materialized;
-		io->m_dirty = StormByte::ByteSize{0};
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_materialized, m_materialized);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_dirty, StormByte::ByteSize{0});
 	}
 	return { Status::Ok, 0 };
 }
@@ -677,8 +678,8 @@ Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
 	m_epoch_origin = false;
 	++m_seek_logical;
 	if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-		io->m_seek_logical = m_seek_logical;
-		io->m_high_water = m_high_water;
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_seek_logical, m_seek_logical);
+		StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
 	}
 	return { Status::Ok, 0 };
 }
@@ -694,7 +695,7 @@ Result BufferedWriter::Write(const FIFO& src) {
 		if (!WouldAccept(need)) {
 			++m_try_again;
 			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
-				io->m_try_again = m_try_again;
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_try_again, m_try_again);
 			return { Status::TryAgain, 0 };
 		}
 	}
@@ -718,7 +719,7 @@ Result BufferedWriter::Write(const std::span<const std::byte> src) {
 		if (!WouldAccept(StormByte::ByteSize{src.size()})) {
 			++m_try_again;
 			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry())
-				io->m_try_again = m_try_again;
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_try_again, m_try_again);
 			return { Status::TryAgain, 0 };
 		}
 	}
@@ -750,12 +751,12 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			NoteDirty();
 			NoteWait(std::chrono::steady_clock::now() - started);
 			if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-				io->m_accepted = m_accepted;
-				io->m_behind = m_behind;
-				io->m_hit_ahead = m_hit_ahead;
-				io->m_hit_back = m_hit_back;
-				io->m_miss = m_miss;
-				io->m_high_water = m_high_water;
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_accepted, m_accepted);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_behind, m_behind);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_ahead, m_hit_ahead);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_hit_back, m_hit_back);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_miss, m_miss);
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
 				if (telemetry_sample)
 					telemetry_sample->Commit(n);
 			}
@@ -810,11 +811,11 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		NoteDirty();
 		NoteWait(std::chrono::steady_clock::now() - started);
 		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-			io->m_accepted = m_accepted;
-			io->m_direct = m_direct;
-			io->m_origin = m_origin_bytes;
-			io->m_materialized = m_materialized;
-			io->m_high_water = m_high_water;
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_accepted, m_accepted);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_direct, m_direct);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_origin, m_origin_bytes);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_materialized, m_materialized);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
 			if (telemetry_sample)
 				telemetry_sample->Commit(n);
 		}
@@ -858,9 +859,9 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		NoteDirty();
 		NoteWait(std::chrono::steady_clock::now() - started);
 		if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-			io->m_accepted = m_accepted;
-			io->m_behind = m_behind;
-			io->m_high_water = m_high_water;
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_accepted, m_accepted);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_behind, m_behind);
+			StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_high_water, m_high_water);
 			if (telemetry_sample)
 				telemetry_sample->Commit(n);
 		}
@@ -1069,8 +1070,8 @@ void BufferedWriter::Worker() {
 				if (m_origin_pos > m_materialized)
 					m_materialized = m_origin_pos;
 				if (StormByte::Buffer::IO::WriteTelemetry* io = IoTelemetry()) {
-					io->m_origin = m_origin_bytes;
-					io->m_materialized = m_materialized;
+					StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_origin, m_origin_bytes);
+					StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_materialized, m_materialized);
 				}
 			}
 		}

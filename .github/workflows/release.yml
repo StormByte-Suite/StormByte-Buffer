@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-26.04, ubuntu-26.04-arm, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     name: checkout-bootstrap (${{ matrix.os }})
     steps:
@@ -57,8 +57,12 @@ jobs:
 
   apt-bootstrap:
     needs: guard
-    runs-on: ubuntu-latest
-    name: apt-bootstrap
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
+    name: apt-bootstrap (${{ matrix.runner }})
     steps:
       - name: Warm APT lists cache
         uses: stormbytepp/githubactions/.github/actions/update-apt-cached@master
@@ -67,23 +71,27 @@ jobs:
 
   ###########################################################################
   # Linux
-  # Name: <component>-<tag>-<os>-<arch>-<stdlib>.zip
+  # Name: <component>-<tag>-<os>-<arch>-<libc>-<stdlib>.zip
   # libstdc++ and libc++ are both in the filename. Windows has one ABI and no suffix.
   ###########################################################################
   build-linux:
     needs: [checkout-bootstrap, apt-bootstrap]
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - compiler: clang
+        platform:
+          - runner: ubuntu-26.04
+            arch: amd64
+          - runner: ubuntu-26.04-arm
+            arch: arm64
+        libc: [glibc, musl]
+        toolchain:
+          - compiler: gcc
             stdlib: libstdc++
-            asset: linux-x64-libstdc++
-          - compiler: clang-libc++
+          - compiler: clang
             stdlib: libc++
-            asset: linux-x64-libc++
-    name: linux-${{ matrix.stdlib }}
+    runs-on: ${{ matrix.platform.runner }}
+    name: linux-${{ matrix.platform.arch }}-${{ matrix.libc }}-${{ matrix.toolchain.stdlib }}
     steps:
       - name: Checkout repository and submodules
         uses: stormbytepp/githubactions/.github/actions/checkout-cached@master
@@ -97,10 +105,10 @@ jobs:
           set -euo pipefail
           # Prepend. A job-level assignment replaces the variable and
           # drops whatever the runner or a previous step already set.
-          # /usr/lib/llvm-20/lib holds LLVM libunwind. libc++ needs it
+          # /usr/lib/llvm-22/lib holds LLVM libunwind. libc++ needs it
           # and the default loader does not search that directory.
           # The toolchain creates it later; tests only need the entry.
-          extra="/usr/lib/llvm-20/lib:${{ github.workspace }}/build/lib:${{ github.workspace }}/build/buildmaster/install/lib:${{ github.workspace }}/build/buildmaster/install/lib64"
+          extra="/usr/lib/llvm-22/lib:${{ github.workspace }}/build/pgo-instr/lib:${{ github.workspace }}/build/pgo-instr/buildmaster/install/lib:${{ github.workspace }}/build/pgo-instr/buildmaster/install/lib64:${{ github.workspace }}/build/lib:${{ github.workspace }}/build/buildmaster/install/lib:${{ github.workspace }}/build/buildmaster/install/lib64"
           for name in LD_LIBRARY_PATH DYLD_LIBRARY_PATH; do
             current="$(printenv "$name" 2>/dev/null || true)"
             if [[ -n "${current}" ]]; then
@@ -113,27 +121,29 @@ jobs:
       - name: Build with toolchain
         uses: stormbytepp/githubactions/.github/actions/build-with-toolchain@master
         with:
-          toolchain: ${{ matrix.compiler }}
-          ccache-key: v1-release-${{ matrix.compiler }}
-          buildmaster-datadir-cache-key: bm-datadir-${{ runner.os }}-${{ matrix.compiler }}
+          compiler: ${{ matrix.toolchain.compiler }}
+          cxx-stdlib: ${{ matrix.toolchain.stdlib }}
+          libc: ${{ matrix.libc }}
+          compiler-cache-key: buffer-v1
+          compiler-cache-scope: release-${{ matrix.platform.arch }}-${{ matrix.libc }}-${{ matrix.toolchain.compiler }}-${{ matrix.toolchain.stdlib }}
+          buildmaster-cache-key: bm-buffer-release-${{ matrix.platform.arch }}-${{ matrix.libc }}-${{ matrix.toolchain.compiler }}-${{ matrix.toolchain.stdlib }}
           build-type: ${{ env.BUILD_TYPE }}
-          configure-options: >-
-            -DENABLE_LTO=ON
-            -DENABLE_PGO=ON
+          pgo: true
+          lto: true
+          cpu-baseline: auto
+          cmake-options: >-
             -DWITH_STORMBYTE=BUNDLED
             -DBUILD_SHARED_LIBS=ON
-            -DCMAKE_CXX_FLAGS=-stdlib=${{ matrix.stdlib }}
-            -DCMAKE_CXX_STANDARD_LIBRARIES=-stdlib=${{ matrix.stdlib }}
-          run-tests: false
+          ctest: false
           install: true
-          install-location: package
+          install-prefix: package
 
       - name: Zip the install prefix
         id: zip
         shell: bash
         run: |
           set -euo pipefail
-          name="${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.asset }}.zip"
+          name="${{ github.event.repository.name }}-${{ github.ref_name }}-linux-${{ matrix.platform.arch }}-${{ matrix.libc }}-${{ matrix.toolchain.stdlib }}.zip"
           for notice in LICENSE COPYING.* THIRD-PARTY; do
             if [[ -f "${notice}" ]]; then
               cp "${notice}" package/
@@ -194,18 +204,19 @@ jobs:
       - name: Build with toolchain
         uses: stormbytepp/githubactions/.github/actions/build-with-toolchain@master
         with:
-          toolchain: ${{ matrix.compiler }}
-          ccache-key: v1-release-${{ matrix.compiler }}
-          buildmaster-datadir-cache-key: bm-datadir-${{ runner.os }}-${{ matrix.compiler }}
+          compiler: ${{ matrix.compiler }}
+          compiler-cache-key: buffer-v1
+          buildmaster-cache-key: bm-buffer-release-macos-${{ matrix.compiler }}
           build-type: ${{ env.BUILD_TYPE }}
-          configure-options: >-
-            -DENABLE_LTO=ON
-            -DENABLE_PGO=ON
+          pgo: true
+          lto: true
+          cpu-baseline: auto
+          cmake-options: >-
             -DWITH_STORMBYTE=BUNDLED
             -DBUILD_SHARED_LIBS=ON
-          run-tests: false
+          ctest: false
           install: true
-          install-location: package
+          install-prefix: package
 
       - name: Zip the install prefix
         id: zip
@@ -257,18 +268,19 @@ jobs:
       - name: Build with toolchain
         uses: stormbytepp/githubactions/.github/actions/build-with-toolchain@master
         with:
-          toolchain: clang-cl
-          ccache-key: v1-release-clang-cl
-          buildmaster-datadir-cache-key: bm-datadir-${{ runner.os }}-clang-cl
+          compiler: clang-cl
+          compiler-cache-key: buffer-v1
+          buildmaster-cache-key: bm-buffer-release-windows-clang-cl
           build-type: ${{ env.BUILD_TYPE }}
-          configure-options: >-
-            -DENABLE_LTO=ON
-            -DENABLE_PGO=ON
+          pgo: true
+          lto: true
+          cpu-baseline: auto
+          cmake-options: >-
             -DWITH_STORMBYTE=BUNDLED
             -DBUILD_SHARED_LIBS=ON
-          run-tests: false
+          ctest: false
           install: true
-          install-location: package
+          install-prefix: package
 
       - name: Zip the install prefix
         id: zip
