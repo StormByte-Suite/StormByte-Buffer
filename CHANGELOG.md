@@ -40,6 +40,7 @@ If you landed here from a release link and have not read the tree:
 - Reconfigure automatically when `VERSION` changes.
 - Preserve compiler optimization defaults in manual Release builds; CPU selection comes from the toolchain and `ENABLE_LTO` remains independently configurable.
 - Synchronize Pumper pause and cancellation with active transfers, distinguish source failure from EOF, and make live basic and IO telemetry counter reads race-free.
+- Synchronize the shared FIFO extraction test and verify the extracted bytes, eliminating a timing-dependent CI failure without relaxing its expectations.
 
 [3.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/2.0.6...3.0.0
 

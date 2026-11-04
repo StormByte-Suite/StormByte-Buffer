@@ -425,35 +425,48 @@ int test_shared_fifo_concurrent_seek_and_read() {
 
 int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	SharedFIFO fifo;
-	(void)fifo.Write(std::string("ABCDEFGH"));
-	std::string r_before, r_after;
-	std::atomic<bool> reader_failed{false};
+	ASSERT_TRUE(fifo.Write(std::string("ABCDEFGH")));
+	std::string r_before, r_extracted, r_after;
+	std::atomic<bool> operation_failed{false};
 	std::atomic<bool> first_read_done{false};
+	std::atomic<bool> extraction_done{false};
 	std::thread reader([&] {
 		Binary before, after;
 		if (!fifo.Read(3, before)) {
-			reader_failed.store(true);
+			operation_failed.store(true);
+			first_read_done.store(true);
+			first_read_done.notify_one();
 			return;
 		}
 		r_before = BytesToText(before);
 		first_read_done.store(true);
-		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		first_read_done.notify_one();
+		extraction_done.wait(false);
+		if (operation_failed.load())
+			return;
 		if (!fifo.Read(2, after)) {
-			reader_failed.store(true);
+			operation_failed.store(true);
 			return;
 		}
 		r_after = BytesToText(after);
 	});
 	std::thread extractor([&] {
-		while (!first_read_done.load())
-			std::this_thread::sleep_for(std::chrono::microseconds(100));
-		Binary e;
-		(void)fifo.Extract(2, e);
+		first_read_done.wait(false);
+		if (!operation_failed.load()) {
+			Binary e;
+			if (!fifo.Extract(2, e))
+				operation_failed.store(true);
+			else
+				r_extracted = BytesToText(e);
+		}
+		extraction_done.store(true);
+		extraction_done.notify_one();
 	});
 	reader.join();
 	extractor.join();
-	ASSERT_FALSE(reader_failed.load());
+	ASSERT_FALSE(operation_failed.load());
 	ASSERT_EQUAL(r_before, std::string("ABC"));
+	ASSERT_EQUAL(r_extracted, std::string("DE"));
 	ASSERT_EQUAL(r_after, std::string("FG"));
 	RETURN_TEST(0);
 }
