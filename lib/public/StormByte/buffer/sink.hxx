@@ -155,6 +155,75 @@ namespace StormByte {
 				void Push(int key, T item) noexcept;
 
 				/**
+				 * @brief Attempt a weighted admission to an existing bucket.
+				 * @param key Bucket key; no implicit wiring wait.
+				 * @param item Moved only on success.
+				 * @param bytes Caller-defined logical weight.
+				 * @return Explicit admission result; Missing for an unwired key.
+				 */
+				QueueStatus TryPush(int key, T& item, StormByte::ByteSize bytes) noexcept;
+
+				/**
+				 * @brief Admit using a shared payload charge without charging twice.
+				 * @param key Existing bucket key.
+				 * @param item Moved only on success.
+				 * @param lease Charge belonging to the configured budget.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus TryPush(int key, T& item, const ByteBudget::Lease& lease) noexcept;
+
+				/**
+				 * @brief Weighted admission with a bounded wait, cancellable by this Sink's closure.
+				 * @param key Existing bucket key.
+				 * @param item Moved only on success.
+				 * @param bytes Caller-defined weight.
+				 * @param timeout Nonnegative wait bound; zero is immediate.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept;
+
+				/**
+				 * @brief Shared-charge admission with a bounded wait.
+				 * @param key Existing bucket key.
+				 * @param item Moved only on success.
+				 * @param lease Shared payload charge.
+				 * @param timeout Nonnegative wait bound; zero is immediate.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus PushFor(int key, T& item, const ByteBudget::Lease& lease,
+					std::chrono::milliseconds timeout) noexcept;
+
+				/**
+				 * @brief Configure independent local limits on an existing shared hopper.
+				 * @param key Bucket key.
+				 * @param limits Optional local ceilings; zero is an active zero limit.
+				 * @return Ok or Missing.
+				 */
+				QueueStatus Limits(int key, QueueLimits limits) noexcept;
+
+				/**
+				 * @brief Attach local limits and aggregate accounting to an empty, idle bucket.
+				 * @param key Existing bucket key.
+				 * @param limits Local ceilings.
+				 * @param budget Shared queue/work budget.
+				 * @return Ok, Missing or Invalid without partial changes.
+				 */
+				QueueStatus Configure(int key, QueueLimits limits, const ByteBudget& budget) noexcept;
+
+				/**
+				 * @brief Read shared-hopper counters without waiting for capacity or doing I/O.
+				 * @param key Bucket key.
+				 * @return Snapshot; Exists is false when missing.
+				 */
+				QueueSnapshot Snapshot(int key) const noexcept;
+
+				/**
+				 * @brief Cancel weighted admissions currently waiting on a shared hopper.
+				 * @param key Existing bucket key.
+				 */
+				void CancelPending(int key) noexcept;
+
+				/**
 				 * @brief Closes the Sink and releases writer holds on its hoppers.
 				 *
 				 * Hoppers this Sink created (or attached to as a co-writer) decrement
@@ -211,6 +280,7 @@ namespace StormByte {
 						 * @param key Bucket identifier.
 						 */
 						Lane(Sink& from, int key) noexcept;
+
 						/**
 						 * @brief Borrowed producer.
 						 */
@@ -480,7 +550,6 @@ namespace StormByte {
 				 * @brief Private coordinator borrowed from m_owner.
 				 */
 				Implementation* m_io;
-
 				/**
 				 * @brief Base-allocated coordinator released by its creator-module callback.
 				 */

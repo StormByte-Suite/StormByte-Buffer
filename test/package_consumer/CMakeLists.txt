@@ -35,10 +35,20 @@ foreach(path IN ITEMS
 	endif()
 endforeach()
 
+add_library(buffer_budget_provider SHARED consumer.cxx)
+target_compile_definitions(buffer_budget_provider PRIVATE BUFFER_BUDGET_PROVIDER)
+target_link_libraries(buffer_budget_provider PRIVATE StormByte::Buffer)
+set_target_properties(buffer_budget_provider PROPERTIES
+	CXX_VISIBILITY_PRESET hidden
+	VISIBILITY_INLINES_HIDDEN ON
+	RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"
+)
+
 add_executable(buffer_package_consumer consumer.cxx)
-target_link_libraries(buffer_package_consumer PRIVATE StormByte::Buffer)
+target_link_libraries(buffer_package_consumer PRIVATE StormByte::Buffer buffer_budget_provider)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	target_compile_options(buffer_package_consumer PRIVATE -Wno-changes-meaning)
+	target_compile_options(buffer_budget_provider PRIVATE -Wno-changes-meaning)
 endif()
 set_target_properties(buffer_package_consumer PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>"

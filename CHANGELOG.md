@@ -34,6 +34,22 @@ If you landed here from a release link and have not read the tree:
 - `WriteThreshold` optionally drains contiguous bounded pages in the caller's
   thread to half the effective high watermark. Memory pressure, Flush, Close
   and reconfiguration override the watermark and flush residual data.
+- Generic `QueueLimits`, weighted `TryPush` / bounded `PushFor`, `QueueStatus`,
+  `Snapshot`, `CancelPending` and hopper `Abort`, usable through `Hopper<T>`
+  and existing `Sink<T>` buckets. Optional item and byte limits apply
+  independently; engaged zero is an active zero limit, absence is unlimited.
+- Shared `ByteBudget` with immediate/bounded reservation, close/cancellation
+  and RAII `Lease` charges for queues and concurrent work. Explicit lease
+  copies share one aggregate charge across payload references; individual
+  queues still count their own logical entry weights.
+- Queue and budget snapshots distinguish current logical bytes/reservations
+  from limits, peaks and backpressure statistics. Queries perform no I/O or
+  capacity waits; these weights are not physical-memory or RSS measurements.
+- Tests for shared budgets across buckets, co-writers and work; independent
+  limits, live reduction/wakeup, oversize rejection even under local pressure,
+  cancellation, EOF/Abort, destruction and
+  allocation-failure rollback. Installed and extracted-ZIP consumers exercise
+  the exported APIs through a separate shared-library provider.
 
 ### Removed
 
@@ -46,8 +62,8 @@ If you landed here from a release link and have not read the tree:
   and `MaxWait`, and writer `WriteChunk`, `BackPressure`, `MaxMemory` and
   `MaxWait`. Their getters/setters remain available as nonvirtual operations;
   configuration always goes through the coordinator's coherent policy.
-- **Breaking:** removed binary compatibility with previous IO parameter-bag
-  and location-knob layouts.
+- **Breaking:** removed binary compatibility with previous IO parameter-bag,
+  location-knob and Hopper/Sink template layouts.
 
 ### Changed
 
@@ -56,11 +72,18 @@ If you landed here from a release link and have not read the tree:
   policy installed but cannot roll back origin I/O. Void setters throw
   `Buffer::Exception` on failure; `Configure` returns an explicit result.
 - New IO policy/snapshot fields follow PascalCase. Complete policies transport
-  wait limits as scalar `MaxWaitMilliseconds`, keeping clock types and
-  deadlines provider-local.
+  wait limits as scalar `MaxWaitMilliseconds`; new budget DLL calls likewise
+  transport scalar durations, keeping clock types and deadlines provider-local.
 - Page mode no longer allocates a dormant ring. Ring snapshots distinguish
   logical admission capacity from actual power-of-two storage including a
   spare slot; transactional replacement temporarily accounts for both rings.
+- Preserve `Capacity(key, 0)` as unlimited and legacy `Push` as an unweighted,
+  nonthrowing operation. New weighted admissions preserve the item on failure
+  and report oversize weights without enqueuing or waiting indefinitely.
+- Queue EOF preserves entries and charges until Pop/destruction; Abort discards
+  them. A shared lease stays charged until its last copy is released, including
+  copies intentionally retained by a caller or concurrent job. Bounded waits
+  and wake-all notifications do not promise strict FIFO producer fairness.
 
 ### Fixed
 
@@ -69,6 +92,9 @@ If you landed here from a release link and have not read the tree:
   block-writing copies. See README for memory accounting and policy semantics.
 - Prevent ring storage growth while its worker borrows a drain span; retain
   partial-transfer progress on errors and avoid duplicate origin-byte counts.
+- Release queue payloads/charges outside queue locks, reserve before weighted
+  insertion, and roll back both storage and charge on recoverable allocation
+  failure without consuming the caller's item.
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...HEAD
 

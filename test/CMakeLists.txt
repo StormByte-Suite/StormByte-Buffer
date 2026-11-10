@@ -29,6 +29,11 @@ if(ENABLE_TEST)
 	add_test(NAME IOTransferTests COMMAND IOTransferTests)
 	set_tests_properties(IOTransferTests PROPERTIES TIMEOUT 45)
 
+	add_executable(ByteBudgetTests byte_budget_test.cxx)
+	target_link_libraries(ByteBudgetTests StormByte-Buffer)
+	add_test(NAME ByteBudgetTests COMMAND ByteBudgetTests)
+	set_tests_properties(ByteBudgetTests PROPERTIES TIMEOUT 30)
+
 	add_executable(ExceptionTests exception_test.cxx)
 	target_link_libraries(ExceptionTests StormByte-Buffer)
 	add_test(NAME ExceptionTests COMMAND ExceptionTests)

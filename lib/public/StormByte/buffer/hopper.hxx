@@ -41,14 +41,14 @@
 
 #pragma once
 
-#include <StormByte/type_traits/safe.hxx>
-
+#include <StormByte/buffer/byte_budget.hxx>
 #include <StormByte/safe/atomic.hxx>
 #include <StormByte/safe/condition_variable.hxx>
 #include <StormByte/safe/owner.hxx>
 #include <StormByte/safe/pointers.hxx>
 #include <StormByte/size.hxx>
 #include <StormByte/type_traits.hxx>
+#include <StormByte/type_traits/safe.hxx>
 
 #include <concepts>
 #include <cstddef>
@@ -85,6 +85,44 @@ namespace StormByte {
 				std::is_nothrow_default_constructible_v<T> && std::is_nothrow_move_constructible_v<T> &&
 				std::is_nothrow_move_assignable_v<T> && std::is_nothrow_destructible_v<T> &&
 				(alignof(T) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+
+			/**
+			 * @brief Safe entry owned by its template provider; payload retains its SafeValue contract.
+			 * @tparam T Nonthrowing supported payload.
+			 */
+			template<HopperValue T>
+			struct HopperEntry {
+				/**
+				 * @brief Construct an empty entry before moving the caller's payload.
+				 */
+				HopperEntry() noexcept = default;
+
+				HopperEntry(const HopperEntry&) = delete;
+
+				/**
+				 * @brief Transfer payload and accounting.
+				 * @param other Source.
+				 */
+				HopperEntry(HopperEntry&& other) noexcept = default;
+
+				/**
+				 * @brief Release the payload and its shared charge in their providers.
+				 */
+				~HopperEntry() noexcept = default;
+
+				HopperEntry& operator=(const HopperEntry&) = delete;
+
+				/**
+				 * @brief Transfer payload and accounting.
+				 * @param other Source.
+				 * @return This entry.
+				 */
+				HopperEntry& operator=(HopperEntry&& other) noexcept = default;
+
+				T Item {};						///< Caller payload.
+				StormByte::ByteSize Bytes {0};	///< Caller-defined logical weight.
+				ByteBudget::Lease Charge;		///< Shared aggregate charge.
+			};
 		}
 
 		/**
@@ -96,10 +134,10 @@ namespace StormByte {
 
 		/**
 		 * @class Hopper
-		 * @brief Single-producer single-consumer (SPSC) typed item queue.
+		 * @brief Synchronized typed item queue with shared-writer support.
 		 *
-		 * Hopper is a typed bucket queue for passing items between a single producer
-		 * and a single consumer. Unlike byte-oriented FIFOs, Hopper operates on discrete
+		 * Hopper is a typed bucket queue for passing items between producers
+		 * and consumers. Unlike byte-oriented FIFOs, Hopper operates on discrete
 		 * typed elements.
 		 *
 		 * Key characteristics:
@@ -189,8 +227,8 @@ namespace StormByte {
 				StormByte::Size Size() const noexcept;
 
 				/**
-				 * @brief Checks whether a bounded bucket cannot accept another Push without waiting.
-				 * @return true if Capacity > 0 and Size >= Capacity.
+				 * @brief Check whether an active local bound has been reached.
+				 * @return True when the item or byte ceiling is reached; ignores shared budget pressure.
 				 */
 				bool Full() const noexcept;
 
@@ -218,6 +256,70 @@ namespace StormByte {
 				 * blocked producers before destroying the Hopper.
 				 */
 				void Push(T item) noexcept;
+
+				/**
+				 * @brief Attempt a weighted admission without waiting for capacity.
+				 * @param item Moved only on success.
+				 * @param bytes Caller-defined logical weight.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus TryPush(T& item, StormByte::ByteSize bytes) noexcept;
+
+				/**
+				 * @brief Attempt admission sharing an existing charge.
+				 * @param item Moved only on success.
+				 * @param lease Charge belonging to this hopper's budget.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus TryPush(T& item, const ByteBudget::Lease& lease) noexcept;
+
+				/**
+				 * @brief Admit with a bounded wait; zero attempts immediately.
+				 * @param item Moved only on success.
+				 * @param bytes Caller-defined logical weight.
+				 * @param timeout Maximum nonnegative wait.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus PushFor(T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept;
+
+				/**
+				 * @brief Admit with a shared charge and bounded wait.
+				 * @param item Moved only on success.
+				 * @param lease Existing charge retained by the caller.
+				 * @param timeout Maximum nonnegative wait.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus PushFor(T& item, const ByteBudget::Lease& lease, std::chrono::milliseconds timeout) noexcept;
+
+				/**
+				 * @brief Set independent local limits without discarding existing entries.
+				 * @param limits Engaged zero is a zero ceiling, absent is unlimited.
+				 */
+				void Limits(QueueLimits limits) noexcept;
+
+				/**
+				 * @brief Attach aggregate accounting and local bounds to an empty hopper.
+				 * @param limits Independent local ceilings.
+				 * @param budget Shared queue/work accounting.
+				 * @return Invalid if entries or admissions are active; no partial change.
+				 */
+				QueueStatus Configure(QueueLimits limits, const ByteBudget& budget) noexcept;
+
+				/**
+				 * @brief Coherent counters under a short lock, without capacity waits or I/O.
+				 * @return Current logical weights, bounds, peaks and waits.
+				 */
+				QueueSnapshot Snapshot() const noexcept;
+
+				/**
+				 * @brief Cancel admissions already waiting; future calls remain permitted.
+				 */
+				void CancelPending() noexcept;
+
+				/**
+				 * @brief Close and discard entries, releasing charges outside the queue lock.
+				 */
+				void Abort() noexcept;
 
 				/**
 				 * @brief Write: @p item flows into this Hopper.
@@ -376,6 +478,23 @@ namespace StormByte {
 				void CloseWriter() noexcept;
 
 				/**
+				 * @brief Wake weighted admissions after a connected Sink closes.
+				 */
+				void WakePending() noexcept;
+
+				/**
+				 * @brief Weighted admission with a borrowed Sink cancellation flag.
+				 * @param item Moved only on success.
+				 * @param bytes Logical entry weight.
+				 * @param lease Optional shared charge.
+				 * @param timeout Bounded wait.
+				 * @param closed Borrowed Sink closure flag for this synchronous call.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus Admit(T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
+					std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed) noexcept;
+
+				/**
 				 * @brief Registers a borrowed observer for a distinct Sink owner.
 				 * @param wake Borrowed condition variable.
 				 * @param owner Registration owner identity; never dereferenced.
@@ -399,7 +518,6 @@ namespace StormByte {
 				 * @brief Private coordinator borrowed from m_owner.
 				 */
 				Implementation* m_io;
-
 				/**
 				 * @brief Base-allocated coordinator released by its creator-module callback.
 				 */
@@ -429,4 +547,3 @@ namespace StormByte {
 		struct IsMaybeSafe<Buffer::Hopper<T>>: std::true_type {};
 	}
 }
-

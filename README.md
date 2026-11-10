@@ -534,7 +534,7 @@ bases and the old scalar constructor symbols of the file leaves are removed.
 Derived classes use `Parameters` or complete configurations; location leaves
 resolve knobs in the caller. Policy getters/setters are now nonvirtual so
 they cannot bypass coherent configuration through overrides. IO parameter
-bags and location knobs also change.
+bags, location knobs and Hopper/Sink template layouts also change.
 Ownership still uses the existing provider/Safe mechanisms.
 Neither aggregation nor these knobs eliminates read/write contention on a
 shared disk. No timers, fsync policy or cross-file scheduling are provided.
@@ -725,6 +725,139 @@ int main() {
 	reader.join();
 }
 ```
+
+### Weighted queues and shared byte budgets
+
+`Hopper<T>` and existing `Sink<T>` buckets add generic weighted admission.
+Buffer never inspects `T`, estimates a frame size or runs a weight callback.
+The caller supplies each entry's logical byte weight.
+
+- `QueueLimits{optional<Size>, optional<ByteSize>}` uses
+  `Safe::Optional`: absent (`{}` or `std::nullopt`) is unlimited; an engaged
+  zero is an active zero limit. Both bounds apply independently.
+- `Limits(limits)` / `Limits(key, limits)` replace local ceilings without
+  dropping entries. Lowering a ceiling below current usage prevents further
+  positive admission until enough entries are popped. `Capacity(key, 0)`
+  **still removes the item limit**, not the byte limit. The legacy getter
+  cannot distinguish explicit zero from unlimited; use `Snapshot().Limits`.
+- `Configure(limits, budget)` / `Configure(key, limits, budget)` attach one
+  shared budget atomically to an **empty, idle** hopper. Active admissions or
+  queued entries return `Invalid`, leaving both limits and budget unchanged.
+  Sink keys must already be wired; no implicit bucket creation occurs.
+- `TryPush(item, bytes)` and `PushFor(item, bytes, timeout)` (with `key` first
+  on Sink) accept a mutable **lvalue reference**. They move it only on `Ok`.
+  Oversize weights or zero item ceilings return `TooLarge` immediately.
+  Local/aggregate pressure returns `WouldBlock` for the immediate operation,
+  or waits until capacity, closure, cancellation or the bounded timeout.
+  Other explicit results are `Closed`, `Cancelled`, `Timeout`, `Missing`,
+  `Empty` for empty nullable payloads, `Invalid` and recoverable storage `Error`.
+  Negative/overflowing timeouts are invalid; zero is an immediate attempt.
+- Legacy `Push` stays `void noexcept`, waits for the legacy item ceiling and
+  treats its entry as **weight zero**. It cannot infer byte usage. Convert
+  producers to weighted admission wherever byte-accounting guarantees matter;
+  mixing unweighted entries understates payload bytes by design.
+
+```cpp
+#include <StormByte/buffer/sink.hxx>
+
+using namespace StormByte::Buffer;
+using StormByte::ByteSize;
+using StormByte::Size;
+using StormByte::Safe::Optional;
+
+ByteBudget shared(ByteSize{64 * 1024 * 1024});
+Sink<int> producer, consumer;
+producer.To(1) >> consumer;
+const QueueLimits local{
+	Optional<Size>{Size{8}}, Optional<ByteSize>{ByteSize{16 * 1024 * 1024}}};
+const auto configured = producer.Configure(1, local, shared);
+if (configured == QueueStatus::Ok) {
+	int item = 42;
+	const auto admitted = producer.PushFor(1, item, ByteSize{2 * 1024 * 1024},
+		std::chrono::milliseconds{100});
+	if (admitted == QueueStatus::Ok)
+		(void)consumer.Pop(1); // returns this entry's aggregate charge
+	// On any non-Ok result item remains owned by this caller.
+}
+```
+
+`ByteBudget{}` / `ByteBudget{std::nullopt}` are unlimited; `ByteBudget{ByteSize{0}}`
+allows only zero-byte reservations. Copies share the same provider-owned state,
+not independent per-bucket limits. `TryReserve(bytes, lease)` /
+`ReserveFor(bytes, lease, timeout)` reserve **before** work/queue insertion.
+Their output lease changes only on success. A lease is RAII: final release,
+`Reset`, rollback, Abort or destruction returns its charge and wakes waiters.
+
+For jobs outside queues, retain a lease while the job retains its accounted
+payload. To share one payload across queues, reserve once, then use
+`TryPush(item, lease)` / `PushFor(item, lease, timeout)` with copies of that
+lease. Its budget must match the hopper's configured budget. Each entry counts
+`lease.Bytes()` against its **local** byte limit, while the aggregate budget
+charges that lease just once:
+
+```cpp
+ByteBudget::Lease payload_charge;
+if (shared.TryReserve(ByteSize{4096}, payload_charge) == QueueStatus::Ok) {
+	// Copy this lease to every queue entry/job referencing the SAME payload.
+	// Queue shared-charge overloads retain a copy; they do not consume this one.
+	payload_charge.Reset(); // charge persists if other copies still retain it
+}
+```
+
+No automatic physical-allocation deduplication is promised: caller-supplied
+weights and explicitly shared leases define accounting. Independently reserved
+leases are separate logical charges, even if payload pointers happen to match.
+Queued payload/entry storage, owner control blocks, allocator overhead, stacks,
+unweighted entries and unaccounted external work are not an RSS guarantee.
+Normal Pop releases the queue's lease before returning `T`; processing is not
+charged unless the caller deliberately keeps a shared lease alongside it.
+EOF preserves queued entries and their charges until Pop/destruction; final
+writer EOF semantics remain unchanged. Abort discards entries and releases
+queue-owned charges, but cannot release a lease retained elsewhere.
+
+`CancelPending` cancels existing weighted waits, not future admissions:
+on a hopper/key it affects that shared hopper; on a budget it affects all
+currently waiting participating queues/jobs. `ByteBudget::Close` wakes
+waiters and rejects further weighted reservations/admissions, leaving live
+charges valid. Closing one Sink cancels its own weighted waits even if another
+co-writer keeps the hopper open. Unlike weighted calls, a legacy Push already
+handed to a shared hopper retains its original last-writer EOF behavior.
+
+**Concurrency:** the lock order is Sink registration, then hopper state,
+then budget state; waiting releases all of them. Budget code never calls back
+into a hopper. A stored generation is captured before admission predicates are
+checked, preventing lost wakeups across queue Pop, limit changes, EOF,
+cancellation and aggregate release. Payload processing and I/O are outside
+locks; no user-supplied callback is added. Queue entry allocation and short
+nonthrowing Safe payload moves still serialize admission. Topology changes
+(rewiring) must be finished before concurrent admission/Abort. Stop/close or
+cancel, then **join all users before destruction**; handle destruction is not
+concurrent-call cancellation.
+
+All bounded waiters are notified when capacity changes. There is **no strict
+FIFO fairness guarantee** among variable-weight producers; a larger admission
+may time out while smaller ones fit. Bounded deadlines and explicit results
+avoid an indefinite wait for an impossible admission. Timeout is not a
+real-time scheduling guarantee.
+
+`Snapshot(key)` / `Hopper::Snapshot()` return independent local limits,
+current entries/weighted bytes, lifetime peaks, pressure attempts, waits and
+`WaitNanoseconds`. `ByteBudget::Snapshot()` reports its single aggregate
+`Reserved`, limit, peak, pressure and reservation-wait counters. Queue waits
+are reported on the queue; external ReserveFor waits on the budget. A shared
+lease can therefore yield larger summed queue bytes than aggregate Reserved.
+Queries perform no I/O, callbacks or capacity waits, but take short mutexes:
+they are **not lock-free** and do not promise zero scheduling latency.
+
+**DLL compatibility:** budget state, mutexes and charge destructors stay in
+Buffer; handles use Base `Safe::Shared` provider callbacks. Budget exported
+wait functions take scalar durations, not `steady_clock::time_point` or STL
+owners. Chrono convenience wrappers execute in the caller and pass scalar
+counts. All involved modules must remain loaded with compatible C++/STL ABI;
+this is conditional Safe ownership, not arbitrary compiler compatibility.
+The new private Hopper state layout is a **Breaking** ABI change.
+The installed-prefix and extracted-ZIP consumer tests also use a separate
+shared-library budget/hopper provider to exercise cross-DLL handles.
 
 ## Support
 

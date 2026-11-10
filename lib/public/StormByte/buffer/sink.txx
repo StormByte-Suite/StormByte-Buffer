@@ -136,6 +136,71 @@ namespace StormByte {
 				}
 
 				/**
+				 * @brief Weighted admission; never holds the Sink registration mutex during waiting.
+				 * @param key Existing bucket key.
+				 * @param item Moved only on success.
+				 * @param bytes Logical entry weight.
+				 * @param lease Optional shared charge.
+				 * @param timeout Bounded wait.
+				 * @return Explicit admission result.
+				 */
+				QueueStatus Admit(int key, T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
+						std::chrono::milliseconds timeout) noexcept {
+					if (m_closed.load(Safe::MemoryOrder::Acquire))
+						return QueueStatus::Closed;
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return QueueStatus::Missing;
+					return hopper->Admit(item, bytes, lease, timeout, &m_closed);
+				}
+
+				/**
+				 * @brief Change local ceilings on the shared queue.
+				 * @param key Existing bucket key.
+				 * @param limits Local limits.
+				 * @return Ok or Missing.
+				 */
+				QueueStatus Limits(int key, QueueLimits limits) noexcept {
+					const auto hopper = Bucket(key);
+					if (!hopper)
+						return QueueStatus::Missing;
+					hopper->Limits(limits);
+					return QueueStatus::Ok;
+				}
+
+				/**
+				 * @brief Attach shared accounting to an empty, idle hopper.
+				 * @param key Existing bucket key.
+				 * @param limits Local ceilings.
+				 * @param budget Shared accounting.
+				 * @return Explicit configuration result.
+				 */
+				QueueStatus Configure(int key, QueueLimits limits, const ByteBudget& budget) noexcept {
+					const auto hopper = Bucket(key);
+					return hopper ? hopper->Configure(limits, budget) : QueueStatus::Missing;
+				}
+
+				/**
+				 * @brief Read current queue accounting.
+				 * @param key Existing bucket key.
+				 * @return Coherent snapshot, or Exists false if missing.
+				 */
+				QueueSnapshot Snapshot(int key) const noexcept {
+					const auto hopper = Bucket(key);
+					return hopper ? hopper->Snapshot() : QueueSnapshot{};
+				}
+
+				/**
+				 * @brief Cancel weighted waiters on one shared hopper.
+				 * @param key Existing bucket key.
+				 */
+				void CancelPending(int key) noexcept {
+					const auto hopper = Bucket(key);
+					if (hopper)
+						hopper->CancelPending();
+				}
+
+				/**
 				 * @brief Closes this Sink and releases its tracked writer holds.
 				 * @note Notifies the borrowed consumer while holding its registration lock.
 				 * @note Does not allocate.
@@ -148,21 +213,30 @@ namespace StormByte {
 					for (auto it = m_writers.begin(); it != m_writers.end(); ++it)
 						(*it)->CloseWriter();
 					m_writers.clear();
+					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it)
+						(*it).second->WakePending();
 				}
 
 				/**
 				 * @brief Closes and drains every connected hopper without allocating.
 				 */
 				void Abort() noexcept {
-					Safe::UniqueLock lock(m_mutex);
-					m_closed.store(true, Safe::MemoryOrder::Release);
-					m_wired.notify_all();
-					SignalConsumer();
-					for (auto it = m_buckets.begin(); it != m_buckets.end(); ++it) {
-						const auto& hopper = (*it).second;
-						hopper->Eof();
-						while (hopper->Size() > 0)
-							static_cast<void>(hopper->Pop());
+					{
+						Safe::UniqueLock lock(m_mutex);
+						m_closed.store(true, Safe::MemoryOrder::Release);
+						m_wired.notify_all();
+						SignalConsumer();
+					}
+					std::size_t index = 0;
+					for (;;) {
+						HopperOwner hopper;
+						{
+							Safe::UniqueLock lock(m_mutex);
+							if (index >= static_cast<std::size_t>(m_order.size()))
+								break;
+							hopper = m_order[index++];
+						}
+						hopper->Abort();
 					}
 				}
 
@@ -623,47 +697,38 @@ namespace StormByte {
 				 * @brief Guards buckets, order, observer registration and direct notification.
 				 */
 				mutable Safe::Mutex m_mutex;
-
 				/**
 				 * @brief Waits for bucket binding or closure.
 				 */
 				Safe::ConditionVariable m_wired;
-
 				/**
 				 * @brief Base-owned map of keys to Base-owned hoppers.
 				 */
 				HopperBuckets m_buckets;
-
 				/**
 				 * @brief Base-owned set of hoppers this Sink writes.
 				 */
 				HopperWriters m_writers;
-
 				/**
 				 * @brief Base-owned hopper order for Pop.
 				 */
 				HopperOwners m_order;
-
 				/**
 				 * @brief Round-robin counter.
 				 */
 				Safe::Atomic<std::size_t> m_rr;
-
 				/**
 				 * @brief Borrowed consumer condition variable guarded by m_mutex.
 				 */
 				Safe::ConditionVariable* m_consumer;
-
 				/**
 				 * @brief Borrowed event counter guarded by m_mutex.
 				 */
 				Safe::Atomic<std::size_t>* m_generation;
-
 				/**
 				 * @brief Closed flag.
 				 */
 				Safe::Atomic<bool> m_closed;
-
 				/**
 				 * @brief Drain mode flag.
 				 */
@@ -689,6 +754,47 @@ namespace StormByte {
 		template<Detail::HopperValue T>
 		void Sink<T>::Push(int key, T item) noexcept {
 			m_io->Push(key, std::move(item));
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::TryPush(int key, T& item, StormByte::ByteSize bytes) noexcept {
+			return m_io->Admit(key, item, bytes, nullptr, std::chrono::milliseconds{0});
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::TryPush(int key, T& item, const ByteBudget::Lease& lease) noexcept {
+			return m_io->Admit(key, item, lease.Bytes(), &lease, std::chrono::milliseconds{0});
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept {
+			return m_io->Admit(key, item, bytes, nullptr, timeout);
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::PushFor(int key, T& item, const ByteBudget::Lease& lease,
+				std::chrono::milliseconds timeout) noexcept {
+			return m_io->Admit(key, item, lease.Bytes(), &lease, timeout);
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::Limits(int key, QueueLimits limits) noexcept {
+			return m_io->Limits(key, limits);
+		}
+
+		template<Detail::HopperValue T>
+		QueueStatus Sink<T>::Configure(int key, QueueLimits limits, const ByteBudget& budget) noexcept {
+			return m_io->Configure(key, limits, budget);
+		}
+
+		template<Detail::HopperValue T>
+		QueueSnapshot Sink<T>::Snapshot(int key) const noexcept {
+			return m_io->Snapshot(key);
+		}
+
+		template<Detail::HopperValue T>
+		void Sink<T>::CancelPending(int key) noexcept {
+			m_io->CancelPending(key);
 		}
 
 		template<Detail::HopperValue T>

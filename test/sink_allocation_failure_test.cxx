@@ -5,6 +5,7 @@
  */
 
 #include <StormByte/buffer/sink.hxx>
+#include <StormByte/safe/string.hxx>
 
 #include <cerrno>
 #include <cstddef>
@@ -19,6 +20,14 @@
 namespace {
 	bool fail_allocations = false;
 	std::size_t allocation_attempts = 0;
+	std::size_t fail_on_attempt = 0;
+
+	bool FailAllocation() noexcept {
+		if (!fail_allocations)
+			return false;
+		++allocation_attempts;
+		return fail_on_attempt == 0 || allocation_attempts == fail_on_attempt;
+	}
 }
 
 extern "C" void* __libc_malloc(std::size_t) noexcept;
@@ -27,8 +36,7 @@ extern "C" void* __libc_realloc(void*, std::size_t) noexcept;
 extern "C" void* __libc_memalign(std::size_t, std::size_t) noexcept;
 
 extern "C" void* malloc(std::size_t size) noexcept {
-	if (fail_allocations) {
-		++allocation_attempts;
+	if (FailAllocation()) {
 		errno = ENOMEM;
 		return nullptr;
 	}
@@ -36,8 +44,7 @@ extern "C" void* malloc(std::size_t size) noexcept {
 }
 
 extern "C" void* calloc(std::size_t count, std::size_t size) noexcept {
-	if (fail_allocations) {
-		++allocation_attempts;
+	if (FailAllocation()) {
 		errno = ENOMEM;
 		return nullptr;
 	}
@@ -45,8 +52,7 @@ extern "C" void* calloc(std::size_t count, std::size_t size) noexcept {
 }
 
 extern "C" void* realloc(void* pointer, std::size_t size) noexcept {
-	if (fail_allocations) {
-		++allocation_attempts;
+	if (FailAllocation()) {
 		errno = ENOMEM;
 		return nullptr;
 	}
@@ -57,8 +63,7 @@ extern "C" int posix_memalign(void** pointer, std::size_t alignment, std::size_t
 	if (alignment < sizeof(void*) || alignment % sizeof(void*) != 0
 		|| (alignment & (alignment - 1)) != 0)
 		return EINVAL;
-	if (fail_allocations) {
-		++allocation_attempts;
+	if (FailAllocation()) {
 		return ENOMEM;
 	}
 	void* allocation = __libc_memalign(alignment, size);
@@ -69,8 +74,7 @@ extern "C" int posix_memalign(void** pointer, std::size_t alignment, std::size_t
 }
 
 extern "C" void* aligned_alloc(std::size_t alignment, std::size_t size) noexcept {
-	if (fail_allocations) {
-		++allocation_attempts;
+	if (FailAllocation()) {
 		errno = ENOMEM;
 		return nullptr;
 	}
@@ -118,6 +122,41 @@ int main() {
 	}
 	if (!abort_consumer.EoF(8) || abort_consumer.Size(8) != StormByte::Size{0}) {
 		std::fputs("Sink::Abort did not close and drain the hopper\n", stderr);
+		return 1;
+	}
+
+	using namespace StormByte::Buffer;
+	using Payload = StormByte::Safe::Shared<StormByte::Safe::String>;
+	bool observed_rollback = false;
+	for (std::size_t failure = 1; failure < 12; ++failure) {
+		ByteBudget budget(StormByte::ByteSize{8});
+		Hopper<Payload> hopper;
+		if (hopper.Configure({}, budget) != QueueStatus::Ok)
+			return 1;
+		auto item = Payload::MakePointer<StormByte::Safe::String>("retained");
+		const auto original = item;
+		allocation_attempts = 0;
+		fail_on_attempt = failure;
+		fail_allocations = true;
+		const auto result = hopper.TryPush(item, StormByte::ByteSize{4});
+		fail_allocations = false;
+		if (result == QueueStatus::Error) {
+			observed_rollback = true;
+			if (item != original || !hopper.Empty() || budget.Snapshot().Reserved != StormByte::ByteSize{0}) {
+				std::fputs("Weighted admission failed to roll back charge and item\n", stderr);
+				return 1;
+			}
+		}
+		else if (result != QueueStatus::Ok) {
+			std::fputs("Unexpected weighted admission failure\n", stderr);
+			return 1;
+		}
+		hopper.Abort();
+		if (budget.Snapshot().Reserved != StormByte::ByteSize{0})
+			return 1;
+	}
+	if (!observed_rollback) {
+		std::fputs("Allocation failure did not exercise reservation rollback\n", stderr);
 		return 1;
 	}
 	return 0;
