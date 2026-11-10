@@ -412,18 +412,13 @@ namespace StormByte {
 				StormByte::Safe::Vector<std::byte> m_storage;	///< Power-of-two circular storage on Base's heap.
 				std::size_t m_capacity = 0;						///< Current capacity, a power of two.
 				std::size_t m_mask = 0;							///< m_capacity - 1, used as a fast modulo.
-
 				StormByte::Safe::Atomic<std::size_t> m_head;	///< Consumer index. The word is on Base's heap.
 				StormByte::Safe::Atomic<std::size_t> m_tail;	///< Producer index. The word is on Base's heap.
-
 				mutable StormByte::Safe::Atomic<std::size_t> m_logical;	///< Logical cursor for Read and Peek.
-
 				StormByte::Safe::Atomic<bool> m_closed;			///< Closed-for-writes flag.
 				StormByte::Safe::Atomic<bool> m_error;			///< Permanent error flag.
-
 				mutable StormByte::Safe::Mutex m_wait_mtx;		///< Mutex for blocking waits, Grow and FrontSpan.
 				mutable StormByte::Safe::ConditionVariable m_cv;	///< Signalled on data, close or error.
-
 				mutable StormByte::Safe::Binary m_data_cache;	///< Cache used by Data().
 				mutable StormByte::Safe::Vector<std::byte> m_front_cache;	///< Snapshot backing FrontSpan.
 

@@ -28,7 +28,7 @@ else {
 
 `*` and `&` bind to the type: `const char* text`, `String& other`. Not `char *text`.
 
-One statement per line. One empty line between members. No anonymous namespace in a public header.
+One statement per line. One empty line between functions. Data members stay together without empty lines, in both classes and structs. No anonymous namespace in a public header.
 
 ## Names
 
