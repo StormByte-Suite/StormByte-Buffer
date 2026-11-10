@@ -20,6 +20,20 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Added
+
+- Configurable `ReadChunk`, universal `WriteTransfer`, optional page
+  `WriteThreshold`, atomic live IO configuration and non-I/O effective-transfer
+  snapshots. Instrumented tests verify real origin requests, aggregation,
+  bounded page payload, partial transfers and concurrent reconfiguration.
+
+### Fixed
+
+- Resize writer rings on reconfiguration, propagate flush failures, preserve
+  nonseekable Peek/retry bytes, check queue arithmetic, and avoid whole-page
+  block-writing copies. Consumers must rebuild parameter bags and location
+  leaves with matching headers; see README for memory and compatibility limits.
+
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...HEAD
 
 ## [3.0.0] - 2026-11-04

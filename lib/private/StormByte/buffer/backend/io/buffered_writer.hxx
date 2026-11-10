@@ -61,6 +61,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 #include <span>
 
 /**
@@ -105,6 +106,13 @@ namespace StormByte {
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedWriter {
 					public:
+						StormByte::ByteSize WriteTransfer() const noexcept;
+						void WriteTransfer(StormByte::ByteSize bytes);
+						StormByte::ByteSize WriteThreshold() const noexcept;
+						void WriteThreshold(StormByte::ByteSize bytes);
+						StormByte::Buffer::IO::WriterConfiguration Configuration() const noexcept;
+						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::WriterConfiguration configuration);
+						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 						/**
 						 * @name Lifecycle
 						 * @{
@@ -446,7 +454,7 @@ namespace StormByte {
 						 *
 						 * Caller already holds @c m_origin_io.
 						 */
-						StormByte::Buffer::IO::Result PushAll(std::span<const std::byte> data) const;
+						StormByte::Buffer::IO::Result PushAll(std::span<const std::byte> data);
 
 						/**
 						 * @brief Shared implementation of the public Write overloads.
@@ -461,12 +469,6 @@ namespace StormByte {
 						 * @return Ok or Failed.
 						 */
 						StormByte::Buffer::IO::Result StorePages(std::span<const std::byte> src);
-
-						/**
-						 * @brief Merge overlap / abut around @p offset.
-						 * @param offset Page start to repair from.
-						 */
-						void Coalesce(StormByte::ByteSize offset);
 
 						/**
 						 * @brief Materialise pages until PageDirty <= MaxMemory.
@@ -538,6 +540,11 @@ namespace StormByte {
 						mutable StormByte::Safe::Mutex m_origin_io;											///< Serialises every Origin hook.
 						mutable StormByte::Safe::ConditionVariable m_cv;									///< Coordinates worker and flush waits.
 
+						mutable std::recursive_mutex m_operations;
+						StormByte::ByteSize m_write_transfer {0};
+						StormByte::ByteSize m_write_threshold {0};
+						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;
+						mutable StormByte::ByteSize m_in_flight {0};
 						StormByte::ByteSize m_write_chunk {0};												///< Origin push unit.
 						std::size_t m_back_pressure {0};													///< Cap in WriteChunk units.
 						StormByte::ByteSize m_max_memory {0};												///< Page-map budget.

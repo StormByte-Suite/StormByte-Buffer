@@ -56,7 +56,10 @@ namespace {
 BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const Unpacked knobs):
 	BufferedWriter(std::move(path), location, knobs.write_chunk, knobs.back_pressure, knobs.max_wait, knobs.max_memory),
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(knobs.probe)) {}
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(knobs.probe)) {
+	WriteTransfer(knobs.write_transfer);
+	WriteThreshold(knobs.write_threshold);
+}
 
 BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,

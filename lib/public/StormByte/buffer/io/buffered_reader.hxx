@@ -532,6 +532,16 @@ namespace StormByte {
 					 */
 					virtual StormByte::ByteSize ReadAhead() const noexcept;
 
+					/** @brief Maximum origin request; zero selects 64 KiB. Setter waits for active reads. */
+					StormByte::ByteSize ReadChunk() const noexcept;
+					void ReadChunk(StormByte::ByteSize bytes);
+					/** @brief Atomic policy snapshot, without I/O. */
+					ReaderConfiguration Configuration() const noexcept;
+					/** @brief Cancel prefetch, then apply a complete policy. Invalid values leave it unchanged. */
+					Result Configure(ReaderConfiguration configuration);
+					/** @brief Effective limits and real origin activity, without I/O. */
+					TransferSnapshot Transfers() const noexcept;
+
 					/**
 					 * @brief Set prefetch length. Takes effect immediately.
 					 * @param bytes Bytes to hold ahead of the cursor after a Read.
@@ -588,7 +598,9 @@ namespace StormByte {
 						BufferedReader(std::move(path), location,
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)}) {}
+							std::chrono::milliseconds{parameters.MaxWait().value_or(0)}) {
+						ReadChunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}));
+					}
 
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).

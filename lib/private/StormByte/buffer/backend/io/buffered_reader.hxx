@@ -58,6 +58,7 @@
 #include <StormByte/safe/thread.hxx>
 
 #include <chrono>
+#include <mutex>
 
 /**
  * @namespace StormByte
@@ -94,6 +95,11 @@ namespace StormByte {
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedReader {
 					public:
+						StormByte::ByteSize ReadChunk() const noexcept;
+						void ReadChunk(StormByte::ByteSize bytes);
+						StormByte::Buffer::IO::ReaderConfiguration Configuration() const noexcept;
+						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::ReaderConfiguration configuration);
+						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 						/**
 						 * @name Lifecycle
 						 * @{
@@ -534,6 +540,11 @@ namespace StormByte {
 						mutable StormByte::Safe::Mutex m_origin_io;									///< Serialises origin hooks with Close.
 						mutable StormByte::Safe::ConditionVariable m_cv;							///< Worker and flush waits.
 
+						mutable std::recursive_mutex m_operations;
+						StormByte::ByteSize m_read_chunk {64 * 1024};
+						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;
+						mutable FIFO m_replay;
+						mutable StormByte::ByteSize m_replay_start {0};
 						StormByte::ByteSize m_read_ahead {0};										///< Prefetch target length.
 						StormByte::ByteSize m_max_memory {0};										///< Approximate cache cap.
 						std::chrono::milliseconds m_max_wait {0};									///< Read wait cap. Zero waits forever.

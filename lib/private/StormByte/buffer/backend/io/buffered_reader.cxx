@@ -41,6 +41,7 @@
 
 #include <StormByte/buffer/backend/io/buffered_reader.hxx>
 #include <StormByte/buffer/backend/telemetry_counter.hxx>
+#include <StormByte/buffer/exception.hxx>
 #include <StormByte/safe/unique_lock.hxx>
 
 #include <limits>
@@ -55,8 +56,6 @@ using FIFO = StormByte::Buffer::FIFO;
 using Position = StormByte::Buffer::Position;
 
 namespace {
-	constexpr StormByte::ByteSize PullBatch{64 * 1024};
-
 	template<typename Call>
 	Result InvokeOrigin(Call&& call) noexcept {
 		try {
@@ -176,6 +175,7 @@ void BufferedReader::SetState(const StormByte::Buffer::IO::State state) noexcept
 }
 
 bool BufferedReader::Open() {
+	std::lock_guard operation(m_operations);
 	if (!m_owner)
 		return false;
 
@@ -206,10 +206,12 @@ bool BufferedReader::Open() {
 	m_origin_valid = true;
 	m_hold_prefetch = false;
 	DropCache();
+	m_replay = FIFO{};
 	return m_state == StormByte::Buffer::IO::State::Idle;
 }
 
 Result BufferedReader::Close() {
+	std::lock_guard operation(m_operations);
 	FlushPrefetch();
 
 	bool was_open = false;
@@ -236,10 +238,12 @@ Result BufferedReader::Close() {
 	m_hold_prefetch = false;
 	m_state = StormByte::Buffer::IO::State::Unavailable;
 	DropCache();
+	m_replay = FIFO{};
 	return { closed.status, 0 };
 }
 
 void BufferedReader::Shutdown() {
+	std::lock_guard operation(m_operations);
 	FlushPrefetch();
 	StopWorker();
 	StormByte::Safe::UniqueLock lock(m_mutex);
@@ -250,9 +254,11 @@ void BufferedReader::Shutdown() {
 	m_origin_valid = false;
 	m_hold_prefetch = false;
 	DropCache();
+	m_replay = FIFO{};
 }
 
 bool BufferedReader::Rewind() {
+	std::lock_guard operation(m_operations);
 	bool seekable = false;
 	{
 		StormByte::Safe::UniqueLock lock(m_mutex);
@@ -305,6 +311,7 @@ Result BufferedReader::Peek(const StormByte::ByteSize n, FIFO& dest) const {
 }
 
 Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) const {
+	std::lock_guard operation(m_operations);
 	FlushPrefetch();
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
@@ -321,13 +328,17 @@ Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) co
 	}
 	else {
 		if (offset < 0) {
-			const StormByte::ByteSize back{static_cast<std::size_t>(-offset)};
+			const StormByte::ByteSize back{static_cast<std::size_t>(-(offset + 1)) + 1};
 			if (back > m_tell)
 				return { Status::Failed, 0 };
 			target = m_tell - back;
 		}
 		else {
-			target = m_tell + StormByte::ByteSize{static_cast<std::size_t>(offset)};
+			const auto step = StormByte::ByteSize{static_cast<std::size_t>(offset)};
+			const auto limit = StormByte::ByteSize{static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max())};
+			if (step > limit - m_tell)
+				return {Status::Failed, 0};
+			target = m_tell + step;
 		}
 	}
 
@@ -441,10 +452,11 @@ StormByte::ByteSize BufferedReader::ReadAhead() const noexcept {
 }
 
 void BufferedReader::ReadAhead(const StormByte::ByteSize bytes) {
-	FlushPrefetch();
-	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_read_ahead = bytes;
-	CollectGarbage();
+	std::lock_guard operation(m_operations);
+	auto configuration = Configuration();
+	configuration.read_ahead = bytes;
+	if (Configure(configuration).status != Status::Ok)
+		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
 
 StormByte::ByteSize BufferedReader::MaxMemory() const noexcept {
@@ -453,10 +465,11 @@ StormByte::ByteSize BufferedReader::MaxMemory() const noexcept {
 }
 
 void BufferedReader::MaxMemory(const StormByte::ByteSize bytes) {
-	FlushPrefetch();
-	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_max_memory = bytes;
-	CollectGarbage();
+	std::lock_guard operation(m_operations);
+	auto configuration = Configuration();
+	configuration.max_memory = bytes;
+	if (Configure(configuration).status != Status::Ok)
+		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
 
 std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
@@ -465,8 +478,60 @@ std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
 }
 
 void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
+	std::lock_guard operation(m_operations);
+	auto configuration = Configuration();
+	configuration.max_wait = wait;
+	if (Configure(configuration).status != Status::Ok)
+		throw StormByte::Buffer::Exception("Invalid reader configuration");
+}
+
+StormByte::ByteSize BufferedReader::ReadChunk() const noexcept {
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_max_wait = wait;
+	return m_read_chunk;
+}
+
+void BufferedReader::ReadChunk(const StormByte::ByteSize bytes) {
+	std::lock_guard operation(m_operations);
+	auto configuration = Configuration();
+	configuration.read_chunk = bytes;
+	if (Configure(configuration).status != Status::Ok)
+		throw StormByte::Buffer::Exception("Invalid reader configuration");
+}
+
+StormByte::Buffer::IO::ReaderConfiguration BufferedReader::Configuration() const noexcept {
+	StormByte::Safe::UniqueLock lock(m_mutex);
+	return {m_read_chunk, m_read_ahead, m_max_memory, m_max_wait};
+}
+
+Result BufferedReader::Configure(StormByte::Buffer::IO::ReaderConfiguration configuration) {
+	std::lock_guard operation(m_operations);
+	if (configuration.read_chunk == StormByte::ByteSize{0})
+		configuration.read_chunk = StormByte::ByteSize{64 * 1024};
+	if (!OffsetFits(configuration.read_chunk) || !OffsetFits(configuration.read_ahead)
+			|| !OffsetFits(configuration.max_memory) || configuration.max_wait.count() < 0
+			|| configuration.max_wait > std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::steady_clock::time_point::max() - std::chrono::steady_clock::now()))
+		return {Status::Failed, 0};
+	FlushPrefetch();
+	StormByte::Safe::UniqueLock lock(m_mutex);
+	m_read_chunk = configuration.read_chunk;
+	m_read_ahead = configuration.read_ahead;
+	m_max_memory = configuration.max_memory;
+	m_max_wait = configuration.max_wait;
+	CollectGarbage();
+	NoteResident();
+	return {Status::Ok, 0};
+}
+
+StormByte::Buffer::IO::TransferSnapshot BufferedReader::Transfers() const noexcept {
+	StormByte::Safe::UniqueLock lock(m_mutex);
+	auto snapshot = m_transfers;
+	snapshot.transfer_limit = m_max_memory > StormByte::ByteSize{0}
+		? std::min(m_read_chunk, m_max_memory) : m_read_chunk;
+	snapshot.page_capacity = m_max_memory;
+	snapshot.pending = CachedBytes();
+	snapshot.retained = m_replay.Available();
+	return snapshot;
 }
 
 void BufferedReader::StartWorker() {
@@ -541,8 +606,8 @@ void BufferedReader::Worker() {
 					break;
 				pull_at = m_tell + covered;
 				need = target - covered;
-				if (need > PullBatch)
-					need = PullBatch;
+				if (need > m_read_chunk)
+					need = m_read_chunk;
 				if (m_max_memory > StormByte::ByteSize{0}) {
 					const StormByte::ByteSize used = CachedBytes();
 					if (used >= m_max_memory) {
@@ -595,6 +660,8 @@ StormByte::ByteSize BufferedReader::CachedBytes() const noexcept {
 }
 
 StormByte::ByteSize BufferedReader::CoverageFrom(const StormByte::ByteSize pos) const noexcept {
+	if (pos >= m_replay_start && pos < m_replay_start + m_replay.Available())
+		return m_replay_start + m_replay.Available() - pos;
 	const auto it = FindSpan(pos);
 	if (it == m_spans.end())
 		return StormByte::ByteSize{0};
@@ -612,6 +679,8 @@ StormByte::Safe::Map<StormByte::ByteSize, FIFO>::iterator BufferedReader::FindSp
 }
 
 bool BufferedReader::CopyFromCache(const StormByte::ByteSize pos, const StormByte::ByteSize n, FIFO& dest) const {
+	if (pos >= m_replay_start && pos < m_replay_start + m_replay.Available())
+		return SliceSpan(m_replay, pos - m_replay_start, n, dest);
 	const auto it = FindSpan(pos);
 	if (it == m_spans.end())
 		return false;
@@ -827,10 +896,14 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 		return { Status::Ok, 0 };
 
 	StormByte::Safe::UniqueLock origin(m_origin_io);
+	StormByte::ByteSize request = n;
 	{
 		StormByte::Safe::UniqueLock lock(m_mutex);
 		if (!m_open || m_failed)
 			return { Status::Failed, 0 };
+		request = std::min(request, m_read_chunk);
+		if (m_max_memory > StormByte::ByteSize{0})
+			request = std::min(request, m_max_memory);
 	}
 
 	const Result aligned = EnsureOrigin(at);
@@ -838,11 +911,22 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 		return aligned;
 
 	FIFO chunk;
-	const Result pulled = InvokeOrigin([this, n, &chunk] { return m_owner->OriginPull(n, chunk); });
-	if (pulled.status == Status::Failed || pulled.status == Status::Error)
-		return { pulled.status, 0 };
+	{
+		StormByte::Safe::UniqueLock lock(m_mutex);
+		++m_transfers.calls;
+		m_transfers.last_request = request;
+		m_transfers.max_request = std::max(m_transfers.max_request, request);
+		m_transfers.in_flight = request;
+	}
+	const Result pulled = InvokeOrigin([this, request, &chunk] { return m_owner->OriginPull(request, chunk); });
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
+	m_transfers.in_flight = StormByte::ByteSize{0};
+	if (pulled.count > request || pulled.count > chunk.Available())
+		return {Status::Error, 0};
+	m_transfers.bytes = m_transfers.bytes + pulled.count;
+	if (pulled.status == Status::Failed || pulled.status == Status::Error)
+		return { pulled.status, 0 };
 	if (pulled.count > StormByte::ByteSize{0}) {
 		m_origin = m_origin + pulled.count;
 		m_origin_pos = at + pulled.count;
@@ -860,6 +944,7 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 }
 
 Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool consume) const {
+	std::lock_guard operation(m_operations);
 	const auto started = std::chrono::steady_clock::now();
 	std::optional<StormByte::Buffer::Telemetry::OperationSample> telemetry_sample;
 	if (consume) {
@@ -892,6 +977,8 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 				StormByte::ByteSize back{0};
 				SplitHit(m_tell, count, m_max_tell, ahead, back);
 				m_tell = m_tell + count;
+				if (m_tell >= m_replay_start + m_replay.Available())
+					m_replay = FIFO{};
 				if (m_tell > m_max_tell)
 					m_max_tell = m_tell;
 				if (DeviceSynced())
@@ -1021,6 +1108,19 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		}
 		miss_bytes = miss_bytes + pulled.count;
 		AppendFifo(assembled, piece);
+		if (pulled.status == Status::TryAgain || (pulled.status == Status::Ok
+				&& pulled.count == StormByte::ByteSize{0})) {
+			StormByte::Safe::UniqueLock lock(m_mutex);
+			if (!m_owner->OriginCanSeek() && assembled.Available() > m_replay.Available()) {
+				m_replay_start = m_tell;
+				m_replay = std::move(assembled);
+			}
+			++m_try_again;
+			NoteWait(std::chrono::steady_clock::now() - started);
+			if (StormByte::Buffer::IO::ReadTelemetry* io = IoTelemetry())
+				StormByte::Buffer::Backend::StoreTelemetryCounter(io->m_try_again, m_try_again);
+			return {Status::TryAgain, 0};
+		}
 		if (pulled.count == StormByte::ByteSize{0})
 			break;
 	}
@@ -1036,6 +1136,12 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 			return { Status::Failed, 0 };
 		if (consume && take > StormByte::ByteSize{0}) {
 			m_tell = m_tell + take;
+			if (m_tell >= m_replay_start + m_replay.Available())
+				m_replay = FIFO{};
+			else if (m_tell > m_replay_start) {
+				TrimFront(m_replay, m_tell - m_replay_start);
+				m_replay_start = m_tell;
+			}
 			if (m_tell > m_max_tell)
 				m_max_tell = m_tell;
 			if (DeviceSynced())
@@ -1056,6 +1162,11 @@ Result BufferedReader::Serve(const StormByte::ByteSize n, FIFO& dest, const bool
 		}
 		if (take > StormByte::ByteSize{0} || consume)
 			NoteWait(std::chrono::steady_clock::now() - started);
+		if (!consume && !m_owner->OriginCanSeek() && take > m_replay.Available()) {
+			m_replay_start = m_tell;
+			m_replay = FIFO{};
+			static_cast<void>(assembled.Peek(take, m_replay));
+		}
 	}
 
 	if (take > StormByte::ByteSize{0})

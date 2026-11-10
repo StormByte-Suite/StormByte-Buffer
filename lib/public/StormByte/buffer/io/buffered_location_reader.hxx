@@ -213,6 +213,7 @@ namespace StormByte {
 					 * in the caller because it owns @c Safe::Optional.
 					 */
 					struct Unpacked {
+						StormByte::ByteSize read_chunk;
 						StormByte::ByteSize read_ahead;
 						StormByte::ByteSize max_memory;
 						std::chrono::milliseconds max_wait;
@@ -224,6 +225,7 @@ namespace StormByte {
 						 *        @ref MaxMemory / @ref MaxWait → 0 / 0 ms.
 						 */
 						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters):
+							read_chunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024})),
 							read_ahead(parameters.ReadAhead().value_or(StormByte::ByteSize{0})),
 							max_memory(parameters.MaxMemory().value_or(StormByte::ByteSize{0})),
 							max_wait(std::chrono::milliseconds{parameters.MaxWait().value_or(0)}),

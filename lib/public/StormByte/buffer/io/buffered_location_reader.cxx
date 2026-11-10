@@ -51,7 +51,9 @@ using namespace StormByte::Buffer::IO;
 BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
 		const Unpacked knobs):
 	BufferedReader(std::move(path), location, knobs.read_ahead, knobs.max_memory, knobs.max_wait),
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationReader>(knobs.probe)) {}
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationReader>(knobs.probe)) {
+	ReadChunk(knobs.read_chunk);
+}
 
 BufferedLocationReader::BufferedLocationReader(StormByte::Safe::String path, const enum Location location,
 		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,

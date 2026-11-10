@@ -428,7 +428,110 @@ BufferedFileReader::Parameters p{ ReadAhead{1 << 20}, MaxMemory{8 << 20} };
 BufferedFileReader in3("in.bin", p);
 ```
 
-Explicit `0` is `0`. It does not probe.
+Explicit knobs do not request a device probe (except that `ReadChunk` alone
+does not disable the existing `ReadAhead` probe). `ReadChunk{0}` selects its
+64 KiB default; the other zero meanings are listed below.
+
+#### Transfer limits and live configuration
+
+These are Buffer origin-hook request sizes, **not physical disk operations**.
+No device profiles or new detection are involved.
+
+| Knob | Omitted / zero | Meaning |
+|---|---|---|
+| `ReadChunk` | 64 KiB / 64 KiB | Maximum `OriginPull` request, including direct reads and prefetch. With a nonzero page budget the effective limit is `min(ReadChunk, MaxMemory)`. |
+| `ReadAhead` | Existing base/location/file defaults / disables prefetch | Bytes to anticipate, independent of transfer size. |
+| `WriteTransfer` | Unlimited / unlimited | Maximum `OriginPush` request in direct, ring, page, eviction, Flush and Close paths. Short writes are retried using requests no larger than this maximum. |
+| `WriteChunk` | Existing defaults / disables ring | Legacy ring unit and drain trigger, **not** a universal transfer maximum. |
+| `BackPressure` | Existing defaults / disables ring | Logical ring admission capacity is `WriteChunk * BackPressure`, checked for overflow. |
+| `WriteThreshold` | 0 / memory-pressure drains only | Page high watermark, clamped to `MaxMemory`. At or above it, drain in offset order to at most half that watermark. |
+| `MaxMemory` | Existing defaults / no page cache | Payload-byte budget of reader pages or writer dirty pages, not an RSS limit. Pages take priority over the ring. |
+| `MaxWait` | 0 ms / unlimited | Wait limit; negative or overflowing durations are rejected by configuration. A blocking origin hook must implement its own timeout/cancellation. |
+
+Writer pages accumulate contiguous small writes up to
+`min(MaxMemory, WriteTransfer)` (64 KiB in place of unlimited
+`WriteTransfer`). They are bounded segments rather than an ever-growing
+contiguous allocation. Drain pages in the **calling thread**, with the state
+mutex released during origin I/O. Only the legacy ring uses a background
+writer. A request larger than the page budget is processed incrementally;
+it never waits for the entire request to fit. Memory pressure drains without
+waiting for the threshold; Flush, Close and reconfiguration drain all tails.
+Sparse offsets and overlapping writes retain their exact byte contents.
+Fragmented or short contiguous ranges can produce transfers smaller than the
+maximum; the maximum is not a promise of full-sized transfers.
+
+```cpp
+using namespace StormByte::Buffer::IO;
+BufferedFileReader in("input.bin",
+    {ReadChunk{256 * 1024}, ReadAhead{1024 * 1024}, MaxMemory{4 * 1024 * 1024}});
+BufferedFileWriter out("output.bin",
+    {WriteTransfer{256 * 1024}, WriteThreshold{1024 * 1024},
+     MaxMemory{4 * 1024 * 1024}});
+// These numbers are caller policy, not an NVMe/SATA/HDD profile.
+auto policy = out.Configuration();
+policy.write_transfer = StormByte::ByteSize{128 * 1024};
+policy.max_memory = StormByte::ByteSize{2 * 1024 * 1024};
+const auto changed = out.Configure(policy);
+if (changed.status != Status::Ok) {
+    // Handle the error: policy is unchanged, but completed origin I/O is not rolled back.
+}
+const auto effective = out.Transfers(); // no origin I/O
+```
+
+`ReaderConfiguration` / `WriterConfiguration` are complete, non-owning,
+by-value policies; `Configuration()` returns a coherent requested-policy
+snapshot. `Configure()` validates first, waits for active session operations,
+cancels reader prefetch or flushes writer data with the **old** policy, and
+publishes all fields together. A replacement ring really adopts the new
+capacity. Allocation or flush failure leaves the old policy installed (the
+origin may already contain part of the old pending data). An I/O failure
+faults the session; it is not reported as a successful configuration.
+Legacy void setters and the new scalar setters use this operation and throw
+`Buffer::Exception` on failure. They may block; use `Configure()` for an
+explicit result and multi-field changes. Writer changes, including `MaxWait`,
+flush the old policy. Reader configuration does not pull.
+
+Session-mutating calls on one coordinator are serialized; a per-session
+operation gate can wait across I/O, but the state mutex is never held across
+origin hooks. `Configuration()`, `Transfers()`, cursor/dirty queries and
+existing counters do not take that gate or perform I/O. Do not reenter session
+operations from an origin hook. Moving/destroying an instance concurrently
+with its users remains unsupported.
+
+`Transfers()` reports real hook calls (including zero-byte retries), actual
+returned/transferred bytes, last and maximum requested size, effective
+transfer limit, page budget, physical ring storage capacity, logical queue
+admission capacity, effective page watermark, pending bytes, and requested
+bytes in an origin operation. Counters are lifetime cumulative; maxima can
+therefore exceed a subsequently reduced configuration. They are distinct
+from consumer-delivered and writer-accepted bytes. Existing wait/try-again
+telemetry remains available.
+
+**Memory accounting:** writer dirty payload, including a moved page being
+materialized, never exceeds its page budget; no whole-page block-writing
+copy is made. Page container metadata, allocator spare capacity, Safe
+ownership allocations, caller buffers and origin/library buffers are extra.
+Page mode allocates no dormant ring. Ring mode has a separate logical cap;
+its storage includes a spare slot and rounds up to a power of two (minimum
+16 bytes), exposed separately.
+Draining borrows its storage without a second snapshot allocation. During
+transactional ring replacement both rings may coexist; `reconfiguration`
+reports the replacement reservation until publication. FIFO writes use a
+bounded scratch window (page budget / transfer limit, or 64 KiB fallback).
+Reader assembly and span adapters may allocate up to the **public request**
+size in addition to pages and a transfer temporary; nonseekable Peek or a
+partially completed TryAgain retains unread data outside the page budget,
+reported as `retained`. Prefetch only requests the remaining window, never
+the entire configured chunk unnecessarily. These are payload accounting
+limits, **not a hard total-allocation, physical-memory or RSS guarantee**.
+
+The additions preserve existing virtual slots and raw scalar constructor
+symbols, but change parameter-bag and location-unpacking layouts. Rebuild
+Buffer, then all consumers/derived classes against the matching installed
+headers and libraries; mixing old bags with new headers/binaries is not
+supported. Ownership still uses the existing provider/Safe mechanisms.
+Neither aggregation nor these knobs eliminates read/write contention on a
+shared disk. No timers, fsync policy or cross-file scheduling are provided.
 
 ### Telemetry
 

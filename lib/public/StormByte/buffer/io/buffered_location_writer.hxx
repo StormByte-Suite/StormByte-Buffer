@@ -230,6 +230,8 @@ namespace StormByte {
 					 * in the caller because it owns @c Safe::Optional.
 					 */
 					struct Unpacked {
+						StormByte::ByteSize write_transfer;
+						StormByte::ByteSize write_threshold;
 						StormByte::ByteSize write_chunk;
 						std::size_t back_pressure;
 						std::chrono::milliseconds max_wait;
@@ -242,13 +244,17 @@ namespace StormByte {
 						 *        @ref MaxMemory → probe. Omitted @ref MaxWait → 0 ms.
 						 */
 						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters):
+							write_transfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0})),
+							write_threshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0})),
 							write_chunk(parameters.WriteChunk().value_or(StormByte::ByteSize{0})),
 							back_pressure(parameters.BackPressure().value_or(0)),
 							max_wait(std::chrono::milliseconds{parameters.MaxWait().value_or(0)}),
 							max_memory(parameters.MaxMemory().value_or(StormByte::ByteSize{0})),
 							probe(!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
-								&& !parameters.MaxMemory().has_value()) {}
+								&& !parameters.MaxMemory().has_value()
+								&& !parameters.WriteTransfer().has_value()
+								&& !parameters.WriteThreshold().has_value()) {}
 					};
 
 					/**

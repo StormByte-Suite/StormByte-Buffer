@@ -187,6 +187,10 @@ namespace StormByte {
 				 */
 				std::span<const std::byte> FrontSpan() const noexcept;
 
+				/** @brief Borrow storage without copying. Caller must prevent Grow/Clear until Consume. */
+				std::span<const std::byte> BorrowFrontSpan() const noexcept;
+				StormByte::ByteSize Capacity() const noexcept;
+
 				/**
 				 * @}
 				 */

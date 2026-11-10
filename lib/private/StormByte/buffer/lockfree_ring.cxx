@@ -172,6 +172,17 @@ std::span<const std::byte> LockFreeRing::FrontSpan() const noexcept {
 	return std::span<const std::byte>(m_front_cache.data(), m_front_cache.size());
 }
 
+std::span<const std::byte> LockFreeRing::BorrowFrontSpan() const noexcept {
+	const auto logical = m_logical.load(StormByte::Safe::MemoryOrder::Acquire);
+	const auto tail = m_tail.load(StormByte::Safe::MemoryOrder::Acquire);
+	const auto pos = logical & m_mask;
+	return {m_storage.data() + pos, std::min(tail - logical, m_capacity - pos)};
+}
+
+StormByte::ByteSize LockFreeRing::Capacity() const noexcept {
+	return StormByte::ByteSize{m_capacity};
+}
+
 void LockFreeRing::Clean() noexcept {
 	{
 		StormByte::Safe::UniqueLock lock(m_wait_mtx);

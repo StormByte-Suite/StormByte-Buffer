@@ -172,7 +172,12 @@ namespace StormByte {
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
 							!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
-								&& !parameters.MaxMemory().has_value()) {}
+								&& !parameters.MaxMemory().has_value()
+								&& !parameters.WriteTransfer().has_value()
+								&& !parameters.WriteThreshold().has_value()) {
+						WriteTransfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0}));
+						WriteThreshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0}));
+					}
 
 					/**
 					 * @brief Copy constructor is deleted.

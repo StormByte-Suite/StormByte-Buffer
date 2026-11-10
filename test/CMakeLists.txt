@@ -24,6 +24,11 @@ if(ENABLE_TEST)
 	add_test(NAME BufferedLocationDeviceTests COMMAND BufferedLocationDeviceTests)
 	set_tests_properties(BufferedLocationDeviceTests PROPERTIES TIMEOUT 20)
 
+	add_executable(IOTransferTests io_transfer_test.cxx)
+	target_link_libraries(IOTransferTests StormByte-Buffer)
+	add_test(NAME IOTransferTests COMMAND IOTransferTests)
+	set_tests_properties(IOTransferTests PROPERTIES TIMEOUT 45)
+
 	add_executable(ExceptionTests exception_test.cxx)
 	target_link_libraries(ExceptionTests StormByte-Buffer)
 	add_test(NAME ExceptionTests COMMAND ExceptionTests)

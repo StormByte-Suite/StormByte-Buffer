@@ -243,3 +243,33 @@ void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 bool BufferedWriter::WillWrite(const StormByte::ByteSize n) const {
 	return m_io && m_io->WillWrite(n);
 }
+
+StormByte::ByteSize BufferedWriter::WriteTransfer() const noexcept {
+	return m_io ? m_io->WriteTransfer() : StormByte::ByteSize{0};
+}
+
+void BufferedWriter::WriteTransfer(const StormByte::ByteSize bytes) {
+	if (m_io)
+		m_io->WriteTransfer(bytes);
+}
+
+StormByte::ByteSize BufferedWriter::WriteThreshold() const noexcept {
+	return m_io ? m_io->WriteThreshold() : StormByte::ByteSize{0};
+}
+
+void BufferedWriter::WriteThreshold(const StormByte::ByteSize bytes) {
+	if (m_io)
+		m_io->WriteThreshold(bytes);
+}
+
+WriterConfiguration BufferedWriter::Configuration() const noexcept {
+	return m_io ? m_io->Configuration() : WriterConfiguration{};
+}
+
+Result BufferedWriter::Configure(const WriterConfiguration configuration) {
+	return m_io ? m_io->Configure(configuration) : Result{Status::Failed, 0};
+}
+
+TransferSnapshot BufferedWriter::Transfers() const noexcept {
+	return m_io ? m_io->Transfers() : TransferSnapshot{};
+}

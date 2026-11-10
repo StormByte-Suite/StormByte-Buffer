@@ -71,6 +71,67 @@ namespace StormByte {
 		 * knobs into byte counts, chunk counts and millisecond durations.
 		 */
 		namespace IO {
+			/** @brief Maximum OriginPull request. Zero selects the 64 KiB default. */
+			class ReadChunk {
+				public:
+					explicit ReadChunk(StormByte::ByteSize value) noexcept: m_value(value) {}
+					StormByte::ByteSize Value() const noexcept { return m_value; }
+				private:
+					StormByte::ByteSize m_value;
+			};
+
+			/** @brief Maximum OriginPush request in every mode. Zero is unlimited. */
+			class WriteTransfer {
+				public:
+					explicit WriteTransfer(StormByte::ByteSize value) noexcept: m_value(value) {}
+					StormByte::ByteSize Value() const noexcept { return m_value; }
+				private:
+					StormByte::ByteSize m_value;
+			};
+
+			/** @brief Page drain high watermark. Zero drains only under memory pressure. */
+			class WriteThreshold {
+				public:
+					explicit WriteThreshold(StormByte::ByteSize value) noexcept: m_value(value) {}
+					StormByte::ByteSize Value() const noexcept { return m_value; }
+				private:
+					StormByte::ByteSize m_value;
+			};
+
+			/** @brief Complete reader policy, passed by value without owning allocations. */
+			struct ReaderConfiguration {
+				StormByte::ByteSize read_chunk {64 * 1024};
+				StormByte::ByteSize read_ahead {0};
+				StormByte::ByteSize max_memory {0};
+				std::chrono::milliseconds max_wait {0};
+			};
+
+			/** @brief Complete writer policy. Configure applies all fields together. */
+			struct WriterConfiguration {
+				StormByte::ByteSize write_chunk {0};
+				std::size_t back_pressure {0};
+				std::chrono::milliseconds max_wait {0};
+				StormByte::ByteSize max_memory {0};
+				StormByte::ByteSize write_transfer {0};
+				StormByte::ByteSize write_threshold {0};
+			};
+
+			/** @brief Non-I/O snapshot. Counts refer to origin hooks, not public operations. */
+			struct TransferSnapshot {
+				std::size_t calls {0};
+				StormByte::ByteSize bytes {0};
+				StormByte::ByteSize last_request {0};
+				StormByte::ByteSize max_request {0};
+				StormByte::ByteSize transfer_limit {0};
+				StormByte::ByteSize page_capacity {0};
+				StormByte::ByteSize ring_capacity {0};
+				StormByte::ByteSize queue_capacity {0};
+				StormByte::ByteSize threshold {0};
+				StormByte::ByteSize pending {0};
+				StormByte::ByteSize in_flight {0};
+				StormByte::ByteSize retained {0};
+				StormByte::ByteSize reconfiguration {0};
+			};
 			/**
 			 * @class ReadAhead
 			 * @brief Prefetch length knob. 0 disables prefetch.
@@ -157,7 +218,7 @@ namespace StormByte {
 
 			/**
 			 * @class WriteChunk
-			 * @brief Origin push unit. 0 disables the writer ring (with BackPressure 0).
+			 * @brief Ring unit and drain trigger. 0 disables the writer ring.
 			 */
 			class WriteChunk {
 				public:
@@ -221,6 +282,9 @@ namespace StormByte {
 			 */
 			class ReaderParameters {
 				public:
+					const StormByte::Safe::Optional<StormByte::ByteSize>& ReadChunk() const noexcept {
+						return m_read_chunk;
+					}
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
@@ -259,7 +323,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Engage the listed knobs. Unknown types do not compile.
-					 * @tparam Knobs @ref ReadAhead, @ref MaxMemory and/or @ref MaxWait.
+					 * @tparam Knobs ReadChunk, ReadAhead, MaxMemory and/or MaxWait.
 					 * @param knobs Values to store.
 					 */
 					template<typename... Knobs>
@@ -292,6 +356,8 @@ namespace StormByte {
 					}
 
 				private:
+					void Apply(class ReadChunk knob) { m_read_chunk = knob.Value(); }
+					StormByte::Safe::Optional<StormByte::ByteSize> m_read_chunk;
 					/**
 					 * @brief Engage the prefetch length.
 					 * @param knob Caller-provided prefetch knob.
@@ -347,6 +413,12 @@ namespace StormByte {
 			 */
 			class WriterParameters {
 				public:
+					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteTransfer() const noexcept {
+						return m_write_transfer;
+					}
+					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteThreshold() const noexcept {
+						return m_write_threshold;
+					}
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
@@ -385,7 +457,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Engage the listed knobs. Unknown types do not compile.
-					 * @tparam Knobs @ref WriteChunk, @ref BackPressure, @ref MaxMemory and/or @ref MaxWait.
+					 * @tparam Knobs WriteChunk, BackPressure, MaxMemory, MaxWait, WriteTransfer or WriteThreshold.
 					 * @param knobs Values to store.
 					 */
 					template<typename... Knobs>
@@ -426,6 +498,10 @@ namespace StormByte {
 					}
 
 				private:
+					void Apply(class WriteTransfer knob) { m_write_transfer = knob.Value(); }
+					void Apply(class WriteThreshold knob) { m_write_threshold = knob.Value(); }
+					StormByte::Safe::Optional<StormByte::ByteSize> m_write_transfer;
+					StormByte::Safe::Optional<StormByte::ByteSize> m_write_threshold;
 					/**
 					 * @brief Engage the push unit.
 					 * @param knob Caller-provided chunk knob.
@@ -487,6 +563,12 @@ namespace StormByte {
 }
 
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReadAhead);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReadChunk);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteTransfer);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteThreshold);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::ReaderConfiguration);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriterConfiguration);
+STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::TransferSnapshot);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxMemory);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::MaxWait);
 STORMBYTE_DECLARE_MAYBE_SAFE(StormByte::Buffer::IO::WriteChunk);

@@ -258,3 +258,24 @@ void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
 	if (m_io)
 		m_io->MaxWait(wait);
 }
+
+StormByte::ByteSize BufferedReader::ReadChunk() const noexcept {
+	return m_io ? m_io->ReadChunk() : StormByte::ByteSize{0};
+}
+
+void BufferedReader::ReadChunk(const StormByte::ByteSize bytes) {
+	if (m_io)
+		m_io->ReadChunk(bytes);
+}
+
+ReaderConfiguration BufferedReader::Configuration() const noexcept {
+	return m_io ? m_io->Configuration() : ReaderConfiguration{};
+}
+
+Result BufferedReader::Configure(const ReaderConfiguration configuration) {
+	return m_io ? m_io->Configure(configuration) : Result{Status::Failed, 0};
+}
+
+TransferSnapshot BufferedReader::Transfers() const noexcept {
+	return m_io ? m_io->Transfers() : TransferSnapshot{};
+}

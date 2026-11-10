@@ -164,7 +164,9 @@ namespace StormByte {
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
 							parameters.MaxMemory().value_or(StormByte::ByteSize{1024ull * 1024ull}),
 							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							!parameters.ReadAhead().has_value()) {}
+							!parameters.ReadAhead().has_value()) {
+						ReadChunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}));
+					}
 
 					/**
 					 * @brief Copy constructor is deleted.

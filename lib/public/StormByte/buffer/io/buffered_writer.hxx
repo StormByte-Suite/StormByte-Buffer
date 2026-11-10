@@ -125,16 +125,18 @@ namespace StormByte {
 			 * @c operator bool is true when @ref State is Idle.
 			 *
 			 * @par Write
-			 * @c Write consumes the whole visible source or nothing
-			 * (atomic). @c FIFO is read from the current read position
+			 * On success @c Write consumes the whole visible source.
+			 * @c FIFO is read from the current read position
 			 * (@c FIFO::Read is const; the cursor is mutable). The FIFO
 			 * / span is left untouched on @ref Status::TryAgain,
 			 * @ref Status::Failed and @ref Status::Error.
+			 * An I/O error cannot undo accepted pages or origin progress:
+			 * count can describe a partially accepted prefix and the session faults.
 			 *
 			 * @par Lazy write / MaxMemory
 			 * Every @c Write is lazy until @ref MaxMemory.
-			 * The origin is touched only when dirty pages exceed
-			 * @ref MaxMemory (GC), or on @ref Flush / @ref Close.
+			 * The origin is touched on memory pressure, WriteThreshold,
+			 * live reconfiguration, or @ref Flush / @ref Close.
 			 * @c MaxMemory == 0 stores no pages: each @c Write goes to
 			 * the origin (and to the ring when both ring knobs are on).
 			 *
@@ -163,17 +165,15 @@ namespace StormByte {
 			 *
 			 * @par WriteChunk / BackPressure
 			 * Either ring knob @c 0 disables the drain pipe.
-			 * Both @c > 0 enable an internal SPSC ring used only to
-			 * push a GC / Flush / Close run. Capacity is
+			 * With no page budget, both @c > 0 enable an internal SPSC
+			 * ring. Page mode does not allocate a ring. Admission capacity is
 			 * @c BackPressure * WriteChunk bytes. A @c Write that would
 			 * exceed that cap returns @ref Status::TryAgain.
 			 * The worker does not empty the page map just because the
 			 * origin cursor is aligned.
 			 *
-			 * Setters take effect immediately. Turning the ring off or
-			 * lowering the cap below @ref Dirty flushes dirty bytes
-			 * first and may block. Setting @ref MaxMemory does not
-			 * Flush and does not resize the ring.
+			 * Setters apply a complete configuration and may block on Flush.
+			 * Failure throws; Configure instead returns an explicit result.
 			 *
 			 * @par Flush / Truncate
 			 * @ref Flush blocks, materialises every dirty page in
@@ -509,10 +509,27 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Configured origin push unit.
+					 * @brief Configured ring unit and drain trigger, not a transfer maximum.
 					 * @return Bytes. 0 disables the ring (with BackPressure 0).
 					 */
 					virtual StormByte::ByteSize WriteChunk() const noexcept;
+
+					/** @brief Maximum origin request in every mode. Zero is unlimited. */
+					StormByte::ByteSize WriteTransfer() const noexcept;
+					void WriteTransfer(StormByte::ByteSize bytes);
+					/** @brief Page drain high watermark. Zero means memory pressure only. */
+					StormByte::ByteSize WriteThreshold() const noexcept;
+					void WriteThreshold(StormByte::ByteSize bytes);
+					/** @brief Atomic policy snapshot, without I/O. */
+					WriterConfiguration Configuration() const noexcept;
+					/**
+					 * @brief Flush old policy and atomically replace it, including ring capacity.
+					 * @return Non-Ok leaves policy unchanged; origin progress cannot be rolled back.
+					 * May block on active operations and I/O. Legacy setters throw on failure.
+					 */
+					Result Configure(WriterConfiguration configuration);
+					/** @brief Effective limits and real origin activity, without I/O. */
+					TransferSnapshot Transfers() const noexcept;
 
 					/**
 					 * @brief Set origin push unit. Takes effect immediately.
@@ -551,8 +568,8 @@ namespace StormByte {
 					 * @brief Set the dirty-page budget. Takes effect immediately.
 					 * @param bytes 0 disables the page map.
 					 *
-					 * Does not Flush. Does not resize the ring. A value below
-					 * current dirty pages trips GC and may block.
+					 * Flushes using the old configuration, then replaces the policy
+					 * and ring together. May block; failure throws.
 					 */
 					virtual void MaxMemory(StormByte::ByteSize bytes);
 
@@ -566,7 +583,8 @@ namespace StormByte {
 					 * @brief Set wait cap for OriginPush. Takes effect on the next push.
 					 * @param wait @c 0ms = unlimited.
 					 *
-					 * Does not cancel an in-flight @ref OriginPush. Does not Flush.
+					 * Waits for active operations and Flushes with the old policy.
+					 * Does not cancel an in-flight origin hook.
 					 */
 					virtual void MaxWait(std::chrono::milliseconds wait);
 
@@ -587,7 +605,10 @@ namespace StormByte {
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
 							parameters.BackPressure().value_or(0),
 							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							parameters.MaxMemory().value_or(StormByte::ByteSize{0})) {}
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0})) {
+						WriteTransfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0}));
+						WriteThreshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0}));
+					}
 
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
