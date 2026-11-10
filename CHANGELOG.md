@@ -19,6 +19,9 @@ If you landed here from a release link and have not read the tree:
 - License: GNU Lesser General Public License version 3 or later, [LICENSE](https://github.com/StormByte-Suite/StormByte-Buffer/blob/master/LICENSE)
 
 ## [Unreleased]
+[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/4.0.0...HEAD
+
+## [4.0.0] - 2026-11-10
 
 ### Added
 
@@ -96,7 +99,7 @@ If you landed here from a release link and have not read the tree:
   insertion, and roll back both storage and charge on recoverable allocation
   failure without consuming the caller's item.
 
-[Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...HEAD
+[4.0.0]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...4.0.0
 
 ## [3.0.0] - 2026-11-04
 
