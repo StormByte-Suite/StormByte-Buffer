@@ -50,6 +50,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 /**
@@ -71,67 +72,203 @@ namespace StormByte {
 		 * knobs into byte counts, chunk counts and millisecond durations.
 		 */
 		namespace IO {
-			/** @brief Maximum OriginPull request. Zero selects the 64 KiB default. */
+			/**
+			 * @brief Maximum OriginPull request. Zero selects the 64 KiB default.
+			 */
 			class ReadChunk {
 				public:
+					/**
+					 * @brief Store the requested transfer limit.
+					 * @param value Bytes; zero selects 64 KiB.
+					 */
 					explicit ReadChunk(StormByte::ByteSize value) noexcept: m_value(value) {}
+
+					/**
+					 * @brief Copy the limit.
+					 * @param other Source.
+					 */
+					ReadChunk(const ReadChunk& other) noexcept = default;
+
+					/**
+					 * @brief Move the limit.
+					 * @param other Source.
+					 */
+					ReadChunk(ReadChunk&& other) noexcept = default;
+
+					/**
+					 * @brief Destroy the non-owning limit.
+					 */
+					~ReadChunk() noexcept = default;
+
+					/**
+					 * @brief Replace the limit.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					ReadChunk& operator=(const ReadChunk& other) noexcept = default;
+
+					/**
+					 * @brief Move-assign the limit.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					ReadChunk& operator=(ReadChunk&& other) noexcept = default;
+
+					/**
+					 * @brief Requested transfer maximum.
+					 * @return Bytes, or zero for the default.
+					 */
 					StormByte::ByteSize Value() const noexcept { return m_value; }
+
 				private:
-					StormByte::ByteSize m_value;
+					StormByte::ByteSize m_value;	///< Requested transfer maximum.
 			};
 
-			/** @brief Maximum OriginPush request in every mode. Zero is unlimited. */
+			/**
+			 * @brief Maximum OriginPush request in every mode. Zero is unlimited.
+			 */
 			class WriteTransfer {
 				public:
+					/**
+					 * @brief Store the transfer maximum.
+					 * @param value Bytes, or zero for unlimited.
+					 */
 					explicit WriteTransfer(StormByte::ByteSize value) noexcept: m_value(value) {}
+
+					/**
+					 * @brief Copy the limit.
+					 * @param other Source.
+					 */
+					WriteTransfer(const WriteTransfer& other) noexcept = default;
+
+					/**
+					 * @brief Move the limit.
+					 * @param other Source.
+					 */
+					WriteTransfer(WriteTransfer&& other) noexcept = default;
+
+					/**
+					 * @brief Destroy the non-owning limit.
+					 */
+					~WriteTransfer() noexcept = default;
+
+					/**
+					 * @brief Replace the limit.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					WriteTransfer& operator=(const WriteTransfer& other) noexcept = default;
+
+					/**
+					 * @brief Move-assign the limit.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					WriteTransfer& operator=(WriteTransfer&& other) noexcept = default;
+
+					/**
+					 * @brief Requested transfer maximum.
+					 * @return Bytes, or zero for unlimited.
+					 */
 					StormByte::ByteSize Value() const noexcept { return m_value; }
+
 				private:
-					StormByte::ByteSize m_value;
+					StormByte::ByteSize m_value;	///< Requested transfer maximum.
 			};
 
-			/** @brief Page drain high watermark. Zero drains only under memory pressure. */
+			/**
+			 * @brief Page drain high watermark. Zero drains only under memory pressure.
+			 */
 			class WriteThreshold {
 				public:
+					/**
+					 * @brief Store the drain high watermark.
+					 * @param value Pending bytes; zero means memory pressure only.
+					 */
 					explicit WriteThreshold(StormByte::ByteSize value) noexcept: m_value(value) {}
+
+					/**
+					 * @brief Copy the watermark.
+					 * @param other Source.
+					 */
+					WriteThreshold(const WriteThreshold& other) noexcept = default;
+
+					/**
+					 * @brief Move the watermark.
+					 * @param other Source.
+					 */
+					WriteThreshold(WriteThreshold&& other) noexcept = default;
+
+					/**
+					 * @brief Destroy the non-owning watermark.
+					 */
+					~WriteThreshold() noexcept = default;
+
+					/**
+					 * @brief Replace the watermark.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					WriteThreshold& operator=(const WriteThreshold& other) noexcept = default;
+
+					/**
+					 * @brief Move-assign the watermark.
+					 * @param other Source.
+					 * @return This knob.
+					 */
+					WriteThreshold& operator=(WriteThreshold&& other) noexcept = default;
+
+					/**
+					 * @brief Requested high watermark.
+					 * @return Bytes, or zero for memory pressure only.
+					 */
 					StormByte::ByteSize Value() const noexcept { return m_value; }
+
 				private:
-					StormByte::ByteSize m_value;
+					StormByte::ByteSize m_value;	///< Requested drain high watermark.
 			};
 
-			/** @brief Complete reader policy, passed by value without owning allocations. */
+			/**
+			 * @brief Complete non-owning reader policy; scalar time crosses the DLL.
+			 */
 			struct ReaderConfiguration {
-				StormByte::ByteSize read_chunk {64 * 1024};
-				StormByte::ByteSize read_ahead {0};
-				StormByte::ByteSize max_memory {0};
-				std::chrono::milliseconds max_wait {0};
+				StormByte::ByteSize ReadChunk {64 * 1024};	///< Origin request maximum; zero selects 64 KiB.
+				StormByte::ByteSize ReadAhead {0};			///< Prefetch target; zero disables.
+				StormByte::ByteSize MaxMemory {0};			///< Page payload budget.
+				std::int64_t MaxWaitMilliseconds {0};		///< Wait cap; zero is unlimited.
 			};
 
-			/** @brief Complete writer policy. Configure applies all fields together. */
+			/**
+			 * @brief Complete non-owning writer policy; Configure applies all fields together.
+			 */
 			struct WriterConfiguration {
-				StormByte::ByteSize write_chunk {0};
-				std::size_t back_pressure {0};
-				std::chrono::milliseconds max_wait {0};
-				StormByte::ByteSize max_memory {0};
-				StormByte::ByteSize write_transfer {0};
-				StormByte::ByteSize write_threshold {0};
+				StormByte::ByteSize WriteChunk {0};		///< Ring unit and drain trigger.
+				std::size_t BackPressure {0};			///< Ring capacity in chunk units.
+				std::int64_t MaxWaitMilliseconds {0};	///< Wait cap; zero is unlimited.
+				StormByte::ByteSize MaxMemory {0};		///< Dirty page payload budget.
+				StormByte::ByteSize WriteTransfer {0};	///< Universal push maximum; zero is unlimited.
+				StormByte::ByteSize WriteThreshold {0};	///< Drain high watermark; zero is pressure only.
 			};
 
-			/** @brief Non-I/O snapshot. Counts refer to origin hooks, not public operations. */
+			/**
+			 * @brief Non-I/O snapshot. Counts refer to origin hooks, not public operations.
+			 */
 			struct TransferSnapshot {
-				std::size_t calls {0};
-				StormByte::ByteSize bytes {0};
-				StormByte::ByteSize last_request {0};
-				StormByte::ByteSize max_request {0};
-				StormByte::ByteSize transfer_limit {0};
-				StormByte::ByteSize page_capacity {0};
-				StormByte::ByteSize ring_capacity {0};
-				StormByte::ByteSize queue_capacity {0};
-				StormByte::ByteSize threshold {0};
-				StormByte::ByteSize pending {0};
-				StormByte::ByteSize in_flight {0};
-				StormByte::ByteSize retained {0};
-				StormByte::ByteSize reconfiguration {0};
+				std::size_t Calls {0};						///< Lifetime real hook calls.
+				StormByte::ByteSize Bytes {0};				///< Lifetime origin bytes.
+				StormByte::ByteSize LastRequest {0};			///< Last hook request size.
+				StormByte::ByteSize MaxRequest {0};			///< Lifetime maximum request.
+				StormByte::ByteSize TransferLimit {0};		///< Effective maximum; zero means unlimited.
+				StormByte::ByteSize PageCapacity {0};		///< Page payload budget.
+				StormByte::ByteSize RingCapacity {0};		///< Actual ring allocation.
+				StormByte::ByteSize QueueCapacity {0};		///< Logical ring admission capacity.
+				StormByte::ByteSize Threshold {0};			///< Effective page drain watermark.
+				StormByte::ByteSize Pending {0};				///< Queued/in-materialization payload.
+				StormByte::ByteSize InFlight {0};			///< Bytes requested in a current hook.
+				StormByte::ByteSize Retained {0};			///< Nonseekable reader replay outside pages.
+				StormByte::ByteSize Reconfiguration {0};	///< Temporary replacement ring reservation.
 			};
+
 			/**
 			 * @class ReadAhead
 			 * @brief Prefetch length knob. 0 disables prefetch.
@@ -282,13 +419,20 @@ namespace StormByte {
 			 */
 			class ReaderParameters {
 				public:
-					const StormByte::Safe::Optional<StormByte::ByteSize>& ReadChunk() const noexcept {
-						return m_read_chunk;
-					}
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
 					ReaderParameters() = default;
+
+					/**
+					 * @brief Engage the listed knobs. Unknown types do not compile.
+					 * @tparam Knobs ReadChunk, ReadAhead, MaxMemory and/or MaxWait.
+					 * @param knobs Values to store.
+					 */
+					template<typename... Knobs>
+					ReaderParameters(Knobs... knobs) {
+						(Apply(std::move(knobs)), ...);
+					}
 
 					/**
 					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
@@ -322,13 +466,11 @@ namespace StormByte {
 					ReaderParameters& operator=(ReaderParameters&& other) noexcept = default;
 
 					/**
-					 * @brief Engage the listed knobs. Unknown types do not compile.
-					 * @tparam Knobs ReadChunk, ReadAhead, MaxMemory and/or MaxWait.
-					 * @param knobs Values to store.
+					 * @brief Origin request maximum when the caller supplied it.
+					 * @return Empty when the caller omitted @ref ReadChunk.
 					 */
-					template<typename... Knobs>
-					ReaderParameters(Knobs... knobs) {
-						(Apply(std::move(knobs)), ...);
+					const StormByte::Safe::Optional<StormByte::ByteSize>& ReadChunk() const noexcept {
+						return m_read_chunk;
 					}
 
 					/**
@@ -356,8 +498,14 @@ namespace StormByte {
 					}
 
 				private:
-					void Apply(class ReadChunk knob) { m_read_chunk = knob.Value(); }
-					StormByte::Safe::Optional<StormByte::ByteSize> m_read_chunk;
+					/**
+					 * @brief Engage the origin request maximum.
+					 * @param knob Caller-provided read knob.
+					 */
+					void Apply(class ReadChunk knob) {
+						m_read_chunk = knob.Value();
+					}
+
 					/**
 					 * @brief Engage the prefetch length.
 					 * @param knob Caller-provided prefetch knob.
@@ -389,6 +537,7 @@ namespace StormByte {
 					template<typename Knob>
 					void Apply(Knob&&) = delete;
 
+					StormByte::Safe::Optional<StormByte::ByteSize> m_read_chunk;	///< Optional origin read maximum.
 					/**
 					 * @brief Safe-owned prefetch length; absent keeps the default.
 					 */
@@ -413,16 +562,20 @@ namespace StormByte {
 			 */
 			class WriterParameters {
 				public:
-					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteTransfer() const noexcept {
-						return m_write_transfer;
-					}
-					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteThreshold() const noexcept {
-						return m_write_threshold;
-					}
 					/**
 					 * @brief No knobs. Every field is absent.
 					 */
 					WriterParameters() = default;
+
+					/**
+					 * @brief Engage the listed knobs. Unknown types do not compile.
+					 * @tparam Knobs WriteChunk, BackPressure, MaxMemory, MaxWait, WriteTransfer or WriteThreshold.
+					 * @param knobs Values to store.
+					 */
+					template<typename... Knobs>
+					WriterParameters(Knobs... knobs) {
+						(Apply(std::move(knobs)), ...);
+					}
 
 					/**
 					 * @brief Copy Safe-owned optional knobs; may allocate and throw.
@@ -456,13 +609,19 @@ namespace StormByte {
 					WriterParameters& operator=(WriterParameters&& other) noexcept = default;
 
 					/**
-					 * @brief Engage the listed knobs. Unknown types do not compile.
-					 * @tparam Knobs WriteChunk, BackPressure, MaxMemory, MaxWait, WriteTransfer or WriteThreshold.
-					 * @param knobs Values to store.
+					 * @brief Universal push maximum when the caller supplied it.
+					 * @return Empty when the caller omitted @ref WriteTransfer.
 					 */
-					template<typename... Knobs>
-					WriterParameters(Knobs... knobs) {
-						(Apply(std::move(knobs)), ...);
+					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteTransfer() const noexcept {
+						return m_write_transfer;
+					}
+
+					/**
+					 * @brief Page-drain watermark when the caller supplied it.
+					 * @return Empty when the caller omitted @ref WriteThreshold.
+					 */
+					const StormByte::Safe::Optional<StormByte::ByteSize>& WriteThreshold() const noexcept {
+						return m_write_threshold;
 					}
 
 					/**
@@ -498,10 +657,22 @@ namespace StormByte {
 					}
 
 				private:
-					void Apply(class WriteTransfer knob) { m_write_transfer = knob.Value(); }
-					void Apply(class WriteThreshold knob) { m_write_threshold = knob.Value(); }
-					StormByte::Safe::Optional<StormByte::ByteSize> m_write_transfer;
-					StormByte::Safe::Optional<StormByte::ByteSize> m_write_threshold;
+					/**
+					 * @brief Engage the universal push maximum.
+					 * @param knob Caller-provided transfer knob.
+					 */
+					void Apply(class WriteTransfer knob) {
+						m_write_transfer = knob.Value();
+					}
+
+					/**
+					 * @brief Engage the page-drain watermark.
+					 * @param knob Caller-provided threshold knob.
+					 */
+					void Apply(class WriteThreshold knob) {
+						m_write_threshold = knob.Value();
+					}
+
 					/**
 					 * @brief Engage the push unit.
 					 * @param knob Caller-provided chunk knob.
@@ -541,6 +712,8 @@ namespace StormByte {
 					template<typename Knob>
 					void Apply(Knob&&) = delete;
 
+					StormByte::Safe::Optional<StormByte::ByteSize> m_write_transfer;	///< Optional origin push maximum.
+					StormByte::Safe::Optional<StormByte::ByteSize> m_write_threshold;	///< Optional page watermark.
 					/**
 					 * @brief Safe-owned push unit; absent keeps the default.
 					 */

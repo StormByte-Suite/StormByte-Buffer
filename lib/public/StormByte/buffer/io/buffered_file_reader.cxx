@@ -62,9 +62,8 @@ namespace {
 }
 
 BufferedFileReader::BufferedFileReader(StormByte::Safe::String path,
-		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
-		const std::chrono::milliseconds max_wait, const bool probe):
-	BufferedLocationReader(std::move(path), Location::Local, read_ahead, max_memory, max_wait, probe) {}
+		const Unpacked knobs):
+	BufferedLocationReader(std::move(path), Location::Local, knobs) {}
 
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	BufferedLocationReader(std::move(other)),

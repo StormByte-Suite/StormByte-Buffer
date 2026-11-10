@@ -106,13 +106,6 @@ namespace StormByte {
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedWriter {
 					public:
-						StormByte::ByteSize WriteTransfer() const noexcept;
-						void WriteTransfer(StormByte::ByteSize bytes);
-						StormByte::ByteSize WriteThreshold() const noexcept;
-						void WriteThreshold(StormByte::ByteSize bytes);
-						StormByte::Buffer::IO::WriterConfiguration Configuration() const noexcept;
-						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::WriterConfiguration configuration);
-						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 						/**
 						 * @name Lifecycle
 						 * @{
@@ -123,17 +116,12 @@ namespace StormByte {
 						 * @param owner Public instance (the most-derived object).
 						 * @param path Locator. Not changed afterwards.
 						 * @param location Local or remote. Not changed afterwards.
-						 * @param write_chunk Initial WriteChunk in bytes.
-						 * @param back_pressure Initial BackPressure in chunks.
-						 * @param max_wait Initial MaxWait.
-						 * @param max_memory Initial MaxMemory in bytes.
+						 * @param configuration Complete initial writer policy.
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
 						BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::Safe::String path,
-							StormByte::Buffer::IO::Location location, StormByte::ByteSize write_chunk,
-							std::size_t back_pressure, std::chrono::milliseconds max_wait,
-							StormByte::ByteSize max_memory);
+							StormByte::Buffer::IO::Location location, StormByte::Buffer::IO::WriterConfiguration configuration);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -161,6 +149,51 @@ namespace StormByte {
 						 * @return *this.
 						 */
 						BufferedWriter& operator=(BufferedWriter&&) = delete;
+
+						/**
+						 * @brief Report the universal origin request maximum.
+						 * @return Configured maximum; zero is unlimited.
+						 */
+						StormByte::ByteSize WriteTransfer() const noexcept;
+
+						/**
+						 * @brief Flush and replace the origin request maximum.
+						 * @param bytes Maximum request; zero is unlimited.
+						 * @throws Exception Flush or configuration failed.
+						 */
+						void WriteTransfer(StormByte::ByteSize bytes);
+
+						/**
+						 * @brief Report the page-drain high watermark.
+						 * @return Configured threshold.
+						 */
+						StormByte::ByteSize WriteThreshold() const noexcept;
+
+						/**
+						 * @brief Flush and replace the page-drain high watermark.
+						 * @param bytes Threshold; zero means memory pressure only.
+						 * @throws Exception Flush or configuration failed.
+						 */
+						void WriteThreshold(StormByte::ByteSize bytes);
+
+						/**
+						 * @brief Snapshot the complete writer policy.
+						 * @return Current configuration.
+						 */
+						StormByte::Buffer::IO::WriterConfiguration Configuration() const noexcept;
+
+						/**
+						 * @brief Flush the old policy and replace it atomically.
+						 * @param configuration Replacement writer policy.
+						 * @return Ok, or failure retaining the previous policy.
+						 */
+						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::WriterConfiguration configuration);
+
+						/**
+						 * @brief Read effective capacity and origin counters.
+						 * @return Transfer snapshot without I/O.
+						 */
+						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 
 						/**
 						 * @}
@@ -535,21 +568,18 @@ namespace StormByte {
 						StormByte::Buffer::IO::BufferedWriter* m_owner;										///< Public leaf supplying origin hooks.
 						StormByte::Safe::String m_path;														///< Immutable locator.
 						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};	///< Local or remote location kind.
-
 						mutable StormByte::Safe::Mutex m_mutex;												///< Protects session state and policy knobs.
 						mutable StormByte::Safe::Mutex m_origin_io;											///< Serialises every Origin hook.
 						mutable StormByte::Safe::ConditionVariable m_cv;									///< Coordinates worker and flush waits.
-
-						mutable std::recursive_mutex m_operations;
-						StormByte::ByteSize m_write_transfer {0};
-						StormByte::ByteSize m_write_threshold {0};
-						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;
-						mutable StormByte::ByteSize m_in_flight {0};
+						mutable std::recursive_mutex m_operations;	///< Serializes session operations without holding state across I/O.
+						StormByte::ByteSize m_write_transfer {0};	///< Maximum request in every writing mode.
+						StormByte::ByteSize m_write_threshold {0};	///< Requested dirty-page drain watermark.
+						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;	///< Real origin calls and effective capacities.
+						mutable StormByte::ByteSize m_in_flight {0};	///< Moved dirty-page payload still being materialized.
 						StormByte::ByteSize m_write_chunk {0};												///< Origin push unit.
 						std::size_t m_back_pressure {0};													///< Cap in WriteChunk units.
 						StormByte::ByteSize m_max_memory {0};												///< Page-map budget.
 						std::chrono::milliseconds m_max_wait {0};											///< OriginPush wait cap.
-
 						enum StormByte::Buffer::IO::State m_state {StormByte::Buffer::IO::State::Unavailable};	///< Session state.
 						bool m_open {false};																///< Session armed.
 						mutable bool m_failed {false};														///< Permanent failure.
@@ -558,16 +588,12 @@ namespace StormByte {
 						bool m_origin_cursor_dirty {false};													///< OriginFlush may desynchronise the device cursor.
 						StormByte::ByteSize m_origin_pos {0};												///< Device cursor.
 						StormByte::ByteSize m_materialized {0};												///< Durable origin length.
-
 						StormByte::Safe::Map<std::size_t, Page> m_pages;									///< Dirty pages by offset. Not a std::map.
 						StormByte::Safe::Unique<LockFreeRing> m_ring;										///< Drain ring; empty when disabled.
-
 						bool m_epoch_open {false};															///< Logical seek pending close.
 						bool m_epoch_hit {false};															///< Epoch wrote into a resident page.
 						bool m_epoch_origin {false};														///< Epoch already called OriginSeek.
-
 						mutable StormByte::Safe::Shared<StormByte::Buffer::WriteTelemetry> m_telemetry;		///< Session counters.
-
 						mutable StormByte::ByteSize m_accepted {0};											///< Telemetry.Accepted.
 						mutable StormByte::ByteSize m_behind {0};											///< Telemetry.Behind.
 						mutable StormByte::ByteSize m_direct {0};											///< Telemetry.Direct.
@@ -587,7 +613,6 @@ namespace StormByte {
 						mutable std::chrono::nanoseconds m_wait_max {0};									///< Telemetry.WaitMax.
 						mutable std::chrono::nanoseconds m_wait_total {0};									///< Telemetry.WaitTotal.
 						mutable std::size_t m_wait_samples {0};												///< Telemetry.WaitSamples.
-
 						mutable StormByte::Safe::Atomic<bool> m_stop {false};								///< Worker teardown requested.
 						mutable StormByte::Safe::Atomic<bool> m_flush {false};								///< Drain the entire ring.
 						mutable bool m_drain_run {false};													///< Worker has work.

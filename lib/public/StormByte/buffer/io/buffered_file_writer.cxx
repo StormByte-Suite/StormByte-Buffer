@@ -116,11 +116,8 @@ namespace {
 }
 
 BufferedFileWriter::BufferedFileWriter(StormByte::Safe::String path,
-		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory,
-		const bool probe):
-	BufferedLocationWriter(std::move(path), Location::Local, write_chunk,
-		back_pressure, max_wait, max_memory, probe) {}
+		const Unpacked knobs):
+	BufferedLocationWriter(std::move(path), Location::Local, knobs) {}
 
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedLocationWriter(std::move(other)),

@@ -14,11 +14,11 @@ int main() {
 	using namespace StormByte::Buffer::IO;
 	BufferedFileReader reader("unused", {ReadChunk(4096), ReadAhead(0), MaxMemory(0)});
 	BufferedFileWriter writer("unused", {WriteTransfer(8192), WriteThreshold(16384), MaxMemory(32768)});
-	if (reader.Transfers().transfer_limit != StormByte::ByteSize{4096}
-			|| writer.Transfers().transfer_limit != StormByte::ByteSize{8192})
+	if (reader.Transfers().TransferLimit != StormByte::ByteSize{4096}
+			|| writer.Transfers().TransferLimit != StormByte::ByteSize{8192})
 		return 5;
 	auto configuration = writer.Configuration();
-	configuration.write_transfer = StormByte::ByteSize{4096};
+	configuration.WriteTransfer = StormByte::ByteSize{4096};
 	if (writer.Configure(configuration).status != Status::Ok)
 		return 6;
 	StormByte::Buffer::FIFO fifo;

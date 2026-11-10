@@ -132,6 +132,7 @@ namespace StormByte {
 							 * @brief Construct an empty Safe-owned parameter bag.
 							 */
 							Parameters() = default;
+
 							/**
 							 * @brief Store reader knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported reader knobs.
@@ -139,26 +140,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): BufferedReader::Parameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -213,23 +219,56 @@ namespace StormByte {
 					 * in the caller because it owns @c Safe::Optional.
 					 */
 					struct Unpacked {
-						StormByte::ByteSize read_chunk;
-						StormByte::ByteSize read_ahead;
-						StormByte::ByteSize max_memory;
-						std::chrono::milliseconds max_wait;
-						bool probe;
-
 						/**
 						 * @brief Unpack a bag in the caller.
 						 * @param parameters Omitted @ref ReadAhead → probe. Omitted
-						 *        @ref MaxMemory / @ref MaxWait → 0 / 0 ms.
+						 *        @ref MaxWait → 0 ms.
+						 * @param default_memory Budget when @ref MaxMemory is omitted.
+						 * @note Implicit conversion resolves Parameters in the caller before
+						 * invoking the provider's nondelegating location constructor.
 						 */
-						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters):
-							read_chunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024})),
-							read_ahead(parameters.ReadAhead().value_or(StormByte::ByteSize{0})),
-							max_memory(parameters.MaxMemory().value_or(StormByte::ByteSize{0})),
-							max_wait(std::chrono::milliseconds{parameters.MaxWait().value_or(0)}),
-							probe(!parameters.ReadAhead().has_value()) {}
+						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters,
+								StormByte::ByteSize default_memory = StormByte::ByteSize{0}):
+							m_configuration{
+								parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}),
+								parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
+								parameters.MaxMemory().value_or(default_memory),
+								parameters.MaxWait().value_or(0)},
+							m_probe(!parameters.ReadAhead().has_value()) {}
+
+						/**
+						 * @brief Copy resolved knobs.
+						 * @param other Source.
+						 */
+						Unpacked(const Unpacked& other) noexcept = default;
+
+						/**
+						 * @brief Move resolved knobs.
+						 * @param other Source.
+						 */
+						Unpacked(Unpacked&& other) noexcept = default;
+
+						/**
+						 * @brief Destroy non-owning knobs.
+						 */
+						~Unpacked() noexcept = default;
+
+						/**
+						 * @brief Copy resolved knobs.
+						 * @param other Source.
+						 * @return This value.
+						 */
+						Unpacked& operator=(const Unpacked& other) noexcept = default;
+
+						/**
+						 * @brief Move resolved knobs.
+						 * @param other Source.
+						 * @return This value.
+						 */
+						Unpacked& operator=(Unpacked&& other) noexcept = default;
+
+						ReaderConfiguration m_configuration;	///< Complete resolved reader policy.
+						bool m_probe;	///< Probe the read window during Setup.
 					};
 
 					/**
@@ -243,21 +282,6 @@ namespace StormByte {
 					 * does not emit that symbol. @c m_io is created in this module.
 					 */
 					BufferedLocationReader(StormByte::Safe::String path, enum Location location, Unpacked knobs);
-
-					/**
-					 * @brief Store the locator and forward the cache knobs.
-					 * @param path Locator. Forwarded. Stored once on @ref BufferedReader.
-					 * @param location @ref Location::Local or @ref Location::Remote. Forwarded.
-					 * @param read_ahead Initial @ref ReadAhead. Ignored when @p probe is true.
-					 * @param max_memory Initial @ref MaxMemory.
-					 * @param max_wait Initial @ref MaxWait.
-					 * @param probe When true, @ref Setup replaces @ref ReadAhead from @ref Device.
-					 *
-					 * DLL boundary. @c m_io is created here.
-					 */
-					BufferedLocationReader(StormByte::Safe::String path, enum Location location,
-						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
-						std::chrono::milliseconds max_wait, bool probe);
 
 					/**
 					 * @brief Leaf measurement. Not necessarily a filesystem type.

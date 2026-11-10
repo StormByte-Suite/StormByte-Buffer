@@ -69,9 +69,8 @@ namespace {
 }
 
 BufferedReader::BufferedReader(StormByte::Safe::String path, const enum Location location,
-		const StormByte::ByteSize read_ahead, const StormByte::ByteSize max_memory,
-		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedReader>(*this, std::move(path), location, read_ahead, max_memory, max_wait)) {}
+		const ReaderConfiguration configuration):
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedReader>(*this, std::move(path), location, configuration)) {}
 
 BufferedReader::BufferedReader(BufferedReader&& other) noexcept:
 	m_io(std::move(other.m_io)) {

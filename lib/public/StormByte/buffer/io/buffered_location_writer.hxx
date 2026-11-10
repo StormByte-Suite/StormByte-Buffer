@@ -131,6 +131,7 @@ namespace StormByte {
 							 * @brief Construct an empty Safe-owned parameter bag.
 							 */
 							Parameters() = default;
+
 							/**
 							 * @brief Store writer knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported writer knobs.
@@ -138,26 +139,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): BufferedWriter::Parameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -230,31 +236,60 @@ namespace StormByte {
 					 * in the caller because it owns @c Safe::Optional.
 					 */
 					struct Unpacked {
-						StormByte::ByteSize write_transfer;
-						StormByte::ByteSize write_threshold;
-						StormByte::ByteSize write_chunk;
-						std::size_t back_pressure;
-						std::chrono::milliseconds max_wait;
-						StormByte::ByteSize max_memory;
-						bool probe;
-
 						/**
 						 * @brief Unpack a bag in the caller.
 						 * @param parameters Omitted @ref WriteChunk, @ref BackPressure and
 						 *        @ref MaxMemory → probe. Omitted @ref MaxWait → 0 ms.
+						 * @note Implicit conversion resolves Parameters in the caller before
+						 * invoking the provider's nondelegating location constructor.
 						 */
 						STORMBYTE_FORCE_INLINE Unpacked(const Parameters& parameters):
-							write_transfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0})),
-							write_threshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0})),
-							write_chunk(parameters.WriteChunk().value_or(StormByte::ByteSize{0})),
-							back_pressure(parameters.BackPressure().value_or(0)),
-							max_wait(std::chrono::milliseconds{parameters.MaxWait().value_or(0)}),
-							max_memory(parameters.MaxMemory().value_or(StormByte::ByteSize{0})),
-							probe(!parameters.WriteChunk().has_value()
+							m_configuration{
+								parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
+								parameters.BackPressure().value_or(0),
+								parameters.MaxWait().value_or(0),
+								parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+								parameters.WriteTransfer().value_or(StormByte::ByteSize{0}),
+								parameters.WriteThreshold().value_or(StormByte::ByteSize{0})},
+							m_probe(!parameters.WriteChunk().has_value()
 								&& !parameters.BackPressure().has_value()
 								&& !parameters.MaxMemory().has_value()
 								&& !parameters.WriteTransfer().has_value()
 								&& !parameters.WriteThreshold().has_value()) {}
+
+						/**
+						 * @brief Copy resolved knobs.
+						 * @param other Source.
+						 */
+						Unpacked(const Unpacked& other) noexcept = default;
+
+						/**
+						 * @brief Move resolved knobs.
+						 * @param other Source.
+						 */
+						Unpacked(Unpacked&& other) noexcept = default;
+
+						/**
+						 * @brief Destroy non-owning knobs.
+						 */
+						~Unpacked() noexcept = default;
+
+						/**
+						 * @brief Copy resolved knobs.
+						 * @param other Source.
+						 * @return This value.
+						 */
+						Unpacked& operator=(const Unpacked& other) noexcept = default;
+
+						/**
+						 * @brief Move resolved knobs.
+						 * @param other Source.
+						 * @return This value.
+						 */
+						Unpacked& operator=(Unpacked&& other) noexcept = default;
+
+						WriterConfiguration m_configuration;	///< Complete resolved writer policy.
+						bool m_probe;	///< Probe device defaults during Setup.
 					};
 
 					/**
@@ -268,22 +303,6 @@ namespace StormByte {
 					 * does not emit that symbol. @c m_io is created in this module.
 					 */
 					BufferedLocationWriter(StormByte::Safe::String path, enum Location location, Unpacked knobs);
-
-					/**
-					 * @brief Forward the locator and the sink knobs.
-					 * @param path Locator. Stored once on @ref BufferedWriter.
-					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
-					 * @param write_chunk Initial @ref WriteChunk. Ignored when @p probe is true.
-					 * @param back_pressure Initial @ref BackPressure.
-					 * @param max_wait Initial @ref MaxWait.
-					 * @param max_memory Initial @ref MaxMemory. Ignored when @p probe is true.
-					 * @param probe When true, @ref Setup replaces chunk, backpressure and MaxMemory.
-					 *
-					 * DLL boundary. @c m_io is created here.
-					 */
-					BufferedLocationWriter(StormByte::Safe::String path, enum Location location,
-						StormByte::ByteSize write_chunk, std::size_t back_pressure,
-						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory, bool probe);
 
 					/**
 					 * @brief Leaf measurement. Not necessarily a filesystem type.

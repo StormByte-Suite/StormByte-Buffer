@@ -463,24 +463,28 @@ maximum; the maximum is not a promise of full-sized transfers.
 ```cpp
 using namespace StormByte::Buffer::IO;
 BufferedFileReader in("input.bin",
-    {ReadChunk{256 * 1024}, ReadAhead{1024 * 1024}, MaxMemory{4 * 1024 * 1024}});
+	{ReadChunk{256 * 1024}, ReadAhead{1024 * 1024}, MaxMemory{4 * 1024 * 1024}});
 BufferedFileWriter out("output.bin",
-    {WriteTransfer{256 * 1024}, WriteThreshold{1024 * 1024},
-     MaxMemory{4 * 1024 * 1024}});
+	{WriteTransfer{256 * 1024}, WriteThreshold{1024 * 1024},
+	MaxMemory{4 * 1024 * 1024}});
 // These numbers are caller policy, not an NVMe/SATA/HDD profile.
 auto policy = out.Configuration();
-policy.write_transfer = StormByte::ByteSize{128 * 1024};
-policy.max_memory = StormByte::ByteSize{2 * 1024 * 1024};
+policy.WriteTransfer = StormByte::ByteSize{128 * 1024};
+policy.MaxMemory = StormByte::ByteSize{2 * 1024 * 1024};
 const auto changed = out.Configure(policy);
 if (changed.status != Status::Ok) {
-    // Handle the error: policy is unchanged, but completed origin I/O is not rolled back.
+	// Handle the error: policy is unchanged, but completed origin I/O is not rolled back.
 }
 const auto effective = out.Transfers(); // no origin I/O
 ```
 
 `ReaderConfiguration` / `WriterConfiguration` are complete, non-owning,
 by-value policies; `Configuration()` returns a coherent requested-policy
-snapshot. `Configure()` validates first, waits for active session operations,
+snapshot. `MaxWaitMilliseconds` is a scalar millisecond count, not a clock
+time point or an owning STL value crossing the DLL. Start from `Configuration()`
+when preserving unspecified fields: a default-constructed complete policy
+does not inherit a file/location's constructor defaults.
+`Configure()` validates first, waits for active session operations,
 cancels reader prefetch or flushes writer data with the **old** policy, and
 publishes all fields together. A replacement ring really adopts the new
 capacity. Allocation or flush failure leaves the old policy installed (the
@@ -515,21 +519,23 @@ Page mode allocates no dormant ring. Ring mode has a separate logical cap;
 its storage includes a spare slot and rounds up to a power of two (minimum
 16 bytes), exposed separately.
 Draining borrows its storage without a second snapshot allocation. During
-transactional ring replacement both rings may coexist; `reconfiguration`
+transactional ring replacement both rings may coexist; `Reconfiguration`
 reports the replacement reservation until publication. FIFO writes use a
 bounded scratch window (page budget / transfer limit, or 64 KiB fallback).
 Reader assembly and span adapters may allocate up to the **public request**
 size in addition to pages and a transfer temporary; nonseekable Peek or a
 partially completed TryAgain retains unread data outside the page budget,
-reported as `retained`. Prefetch only requests the remaining window, never
+reported as `Retained`. Prefetch only requests the remaining window, never
 the entire configured chunk unnecessarily. These are payload accounting
 limits, **not a hard total-allocation, physical-memory or RSS guarantee**.
 
-The additions preserve existing virtual slots and raw scalar constructor
-symbols, but change parameter-bag and location-unpacking layouts. Rebuild
-Buffer, then all consumers/derived classes against the matching installed
-headers and libraries; mixing old bags with new headers/binaries is not
-supported. Ownership still uses the existing provider/Safe mechanisms.
+**Breaking:** scalar-policy constructors of the buffered IO bases/location
+bases and the old scalar constructor symbols of the file leaves are removed.
+Derived classes use `Parameters` or complete configurations; location leaves
+resolve knobs in the caller. Policy getters/setters are now nonvirtual so
+they cannot bypass coherent configuration through overrides. IO parameter
+bags and location knobs also change.
+Ownership still uses the existing provider/Safe mechanisms.
 Neither aggregation nor these knobs eliminates read/write contention on a
 shared disk. No timers, fsync policy or cross-file scheduling are provided.
 

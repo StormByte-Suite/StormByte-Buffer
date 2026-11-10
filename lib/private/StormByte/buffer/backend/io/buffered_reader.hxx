@@ -95,11 +95,6 @@ namespace StormByte {
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedReader {
 					public:
-						StormByte::ByteSize ReadChunk() const noexcept;
-						void ReadChunk(StormByte::ByteSize bytes);
-						StormByte::Buffer::IO::ReaderConfiguration Configuration() const noexcept;
-						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::ReaderConfiguration configuration);
-						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 						/**
 						 * @name Lifecycle
 						 * @{
@@ -110,15 +105,12 @@ namespace StormByte {
 						 * @param owner Public instance (the most-derived object).
 						 * @param path Locator. Not changed afterwards.
 						 * @param location Local or remote. Not changed afterwards.
-						 * @param read_ahead Initial @ref ReadAhead in bytes.
-						 * @param max_memory Initial @ref MaxMemory in bytes.
-						 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
+						 * @param configuration Complete initial reader policy.
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
 						BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::Safe::String path,
-							StormByte::Buffer::IO::Location location, StormByte::ByteSize read_ahead,
-							StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait);
+							StormByte::Buffer::IO::Location location, StormByte::Buffer::IO::ReaderConfiguration configuration);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -144,6 +136,38 @@ namespace StormByte {
 						 * @brief Move assignment is deleted.
 						 */
 						BufferedReader& operator=(BufferedReader&&) = delete;
+
+						/**
+						 * @brief Report the origin request maximum.
+						 * @return Configured read limit.
+						 */
+						StormByte::ByteSize ReadChunk() const noexcept;
+
+						/**
+						 * @brief Apply a read maximum after cancelling prefetch.
+						 * @param bytes Maximum request; zero selects 64 KiB.
+						 * @throws Exception Invalid configuration.
+						 */
+						void ReadChunk(StormByte::ByteSize bytes);
+
+						/**
+						 * @brief Snapshot the complete reader policy.
+						 * @return Current configuration.
+						 */
+						StormByte::Buffer::IO::ReaderConfiguration Configuration() const noexcept;
+
+						/**
+						 * @brief Serialize active reads and apply a complete policy.
+						 * @param configuration Replacement reader policy.
+						 * @return Ok, or failure without changing the policy.
+						 */
+						StormByte::Buffer::IO::Result Configure(StormByte::Buffer::IO::ReaderConfiguration configuration);
+
+						/**
+						 * @brief Read effective capacity and origin counters.
+						 * @return Transfer snapshot without I/O.
+						 */
+						StormByte::Buffer::IO::TransferSnapshot Transfers() const noexcept;
 
 						/**
 						 * @}
@@ -535,20 +559,17 @@ namespace StormByte {
 						StormByte::Buffer::IO::BufferedReader* m_owner;								///< Public leaf supplying origin hooks.
 						StormByte::Safe::String m_path;												///< Immutable locator.
 						StormByte::Buffer::IO::Location m_location {StormByte::Buffer::IO::Location::Local};	///< Local or remote. Not changed afterwards.
-
 						mutable StormByte::Safe::Mutex m_mutex;										///< Session state and the cache map.
 						mutable StormByte::Safe::Mutex m_origin_io;									///< Serialises origin hooks with Close.
 						mutable StormByte::Safe::ConditionVariable m_cv;							///< Worker and flush waits.
-
-						mutable std::recursive_mutex m_operations;
-						StormByte::ByteSize m_read_chunk {64 * 1024};
-						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;
-						mutable FIFO m_replay;
-						mutable StormByte::ByteSize m_replay_start {0};
+						mutable std::recursive_mutex m_operations;	///< Serializes session operations without holding state across I/O.
+						StormByte::ByteSize m_read_chunk {64 * 1024};	///< Maximum origin request.
+						mutable StormByte::Buffer::IO::TransferSnapshot m_transfers;	///< Real origin calls and effective capacities.
+						mutable FIFO m_replay;	///< Retained sequential bytes outside page accounting.
+						mutable StormByte::ByteSize m_replay_start {0};	///< Origin offset of retained bytes.
 						StormByte::ByteSize m_read_ahead {0};										///< Prefetch target length.
 						StormByte::ByteSize m_max_memory {0};										///< Approximate cache cap.
 						std::chrono::milliseconds m_max_wait {0};									///< Read wait cap. Zero waits forever.
-
 						StormByte::Buffer::IO::State m_state {StormByte::Buffer::IO::State::Unavailable};	///< Session state.
 						bool m_open {false};														///< Armed from Open until Close.
 						mutable bool m_failed {false};												///< Permanent failure.
@@ -558,10 +579,8 @@ namespace StormByte {
 						mutable StormByte::ByteSize m_origin_pos {0};								///< Device cursor, not updated by Seek.
 						mutable bool m_origin_valid {false};										///< Whether @c m_origin_pos is known.
 						mutable bool m_hold_prefetch {false};										///< Fake seek suspends prefetch until catch-up or OriginSeek.
-
 						mutable StormByte::Safe::Map<StormByte::ByteSize, FIFO> m_spans;			///< Owned spans keyed by origin offset. Not a std::map.
 						mutable StormByte::Safe::Shared<StormByte::Buffer::ReadTelemetry> m_telemetry;	///< Session counters.
-
 						mutable StormByte::ByteSize m_delivered {0};								///< Telemetry.Delivered.
 						mutable StormByte::ByteSize m_hit_ahead {0};								///< Telemetry.HitAhead.
 						mutable StormByte::ByteSize m_hit_back {0};									///< Telemetry.HitBack.
@@ -582,7 +601,6 @@ namespace StormByte {
 						mutable std::chrono::nanoseconds m_wait_max {0};							///< Telemetry.WaitMax.
 						mutable std::chrono::nanoseconds m_wait_total {0};							///< Telemetry.WaitTotal.
 						mutable std::size_t m_wait_samples {0};										///< Telemetry.WaitSamples.
-
 						mutable StormByte::Safe::Atomic<bool> m_stop {false};						///< Worker teardown requested.
 						mutable StormByte::Safe::Atomic<bool> m_cancel_prefetch {false};			///< Flush the in-flight pull.
 						mutable bool m_prefetch_run {false};										///< Worker has an active target.

@@ -249,6 +249,7 @@ namespace StormByte {
 							 * @brief Construct an empty Safe-owned parameter bag.
 							 */
 							Parameters() = default;
+
 							/**
 							 * @brief Store writer knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported writer knobs.
@@ -256,26 +257,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): WriterParameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -512,23 +518,52 @@ namespace StormByte {
 					 * @brief Configured ring unit and drain trigger, not a transfer maximum.
 					 * @return Bytes. 0 disables the ring (with BackPressure 0).
 					 */
-					virtual StormByte::ByteSize WriteChunk() const noexcept;
+					StormByte::ByteSize WriteChunk() const noexcept;
 
-					/** @brief Maximum origin request in every mode. Zero is unlimited. */
+					/**
+					 * @brief Maximum origin request in every mode.
+					 * @return Configured maximum; zero is unlimited.
+					 */
 					StormByte::ByteSize WriteTransfer() const noexcept;
+
+					/**
+					 * @brief Flush the old policy and replace the origin maximum.
+					 * @param bytes Maximum request; zero is unlimited.
+					 * @throws Exception Flush or configuration failed.
+					 */
 					void WriteTransfer(StormByte::ByteSize bytes);
-					/** @brief Page drain high watermark. Zero means memory pressure only. */
+
+					/**
+					 * @brief Page drain high watermark.
+					 * @return Configured watermark; zero means memory pressure only.
+					 */
 					StormByte::ByteSize WriteThreshold() const noexcept;
+
+					/**
+					 * @brief Flush the old policy and replace the page watermark.
+					 * @param bytes High watermark; zero disables threshold draining.
+					 * @throws Exception Flush or configuration failed.
+					 */
 					void WriteThreshold(StormByte::ByteSize bytes);
-					/** @brief Atomic policy snapshot, without I/O. */
+
+					/**
+					 * @brief Read the complete policy without I/O.
+					 * @return Coherent configured policy.
+					 */
 					WriterConfiguration Configuration() const noexcept;
+
 					/**
 					 * @brief Flush old policy and atomically replace it, including ring capacity.
+					 * @param configuration Replacement policy.
 					 * @return Non-Ok leaves policy unchanged; origin progress cannot be rolled back.
 					 * May block on active operations and I/O. Legacy setters throw on failure.
 					 */
 					Result Configure(WriterConfiguration configuration);
-					/** @brief Effective limits and real origin activity, without I/O. */
+
+					/**
+					 * @brief Read effective limits and real origin activity without I/O.
+					 * @return Coherent transfer counters and capacities.
+					 */
 					TransferSnapshot Transfers() const noexcept;
 
 					/**
@@ -539,13 +574,13 @@ namespace StormByte {
 					 * dirty bytes drains the ring through @ref Flush / the worker
 					 * before the setter returns. Not deferred to the next Write.
 					 */
-					virtual void WriteChunk(StormByte::ByteSize bytes);
+					void WriteChunk(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured dirty cap in WriteChunk units.
 					 * @return Chunk count. 0 disables the ring.
 					 */
-					virtual std::size_t BackPressure() const noexcept;
+					std::size_t BackPressure() const noexcept;
 
 					/**
 					 * @brief Set dirty cap in WriteChunk units. Takes effect immediately.
@@ -554,7 +589,7 @@ namespace StormByte {
 					 * May block. Zero, or a cap below @ref Dirty, flushes dirty
 					 * bytes before the setter returns. Not deferred to the next Write.
 					 */
-					virtual void BackPressure(std::size_t chunks);
+					void BackPressure(std::size_t chunks);
 
 					/**
 					 * @brief Byte budget for dirty pages that are not yet on the origin.
@@ -562,7 +597,7 @@ namespace StormByte {
 					 *
 					 * Independent of @ref WriteChunk / @ref BackPressure.
 					 */
-					virtual StormByte::ByteSize MaxMemory() const noexcept;
+					StormByte::ByteSize MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set the dirty-page budget. Takes effect immediately.
@@ -571,13 +606,13 @@ namespace StormByte {
 					 * Flushes using the old configuration, then replaces the policy
 					 * and ring together. May block; failure throws.
 					 */
-					virtual void MaxMemory(StormByte::ByteSize bytes);
+					void MaxMemory(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Wait cap for OriginPush.
 					 * @return @c 0ms waits without limit.
 					 */
-					virtual std::chrono::milliseconds MaxWait() const noexcept;
+					std::chrono::milliseconds MaxWait() const noexcept;
 
 					/**
 					 * @brief Set wait cap for OriginPush. Takes effect on the next push.
@@ -586,7 +621,7 @@ namespace StormByte {
 					 * Waits for active operations and Flushes with the old policy.
 					 * Does not cancel an in-flight origin hook.
 					 */
-					virtual void MaxWait(std::chrono::milliseconds wait);
+					void MaxWait(std::chrono::milliseconds wait);
 
 					/**
 					 * @}
@@ -601,29 +636,24 @@ namespace StormByte {
 					 */
 					STORMBYTE_FORCE_INLINE BufferedWriter(StormByte::Safe::String path, enum Location location,
 							Parameters parameters = {}):
-						BufferedWriter(std::move(path), location,
+						BufferedWriter(std::move(path), location, WriterConfiguration{
 							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
 							parameters.BackPressure().value_or(0),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							parameters.MaxMemory().value_or(StormByte::ByteSize{0})) {
-						WriteTransfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0}));
-						WriteThreshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0}));
-					}
+							parameters.MaxWait().value_or(0),
+							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
+							parameters.WriteTransfer().value_or(StormByte::ByteSize{0}),
+							parameters.WriteThreshold().value_or(StormByte::ByteSize{0})}) {}
 
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
 					 * @param path Locator. Stored once.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
-					 * @param write_chunk Initial @ref WriteChunk in bytes.
-					 * @param back_pressure Initial @ref BackPressure in chunk units.
-					 * @param max_wait Initial @ref MaxWait.
-					 * @param max_memory Initial @ref MaxMemory in bytes.
+					 * @param configuration Complete initial writer policy.
 					 *
 					 * DLL boundary. Children that already resolved knobs call this.
 					 */
 					BufferedWriter(StormByte::Safe::String path, enum Location location,
-						StormByte::ByteSize write_chunk, std::size_t back_pressure,
-						std::chrono::milliseconds max_wait, StormByte::ByteSize max_memory);
+						WriterConfiguration configuration);
 
 					/**
 					 * @brief Publish session state from a leaf hook.

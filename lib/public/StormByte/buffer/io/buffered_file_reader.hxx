@@ -109,6 +109,7 @@ namespace StormByte {
 							 * @note Not noexcept: a bag may allocate while it is being filled.
 							 */
 							Parameters() {}
+
 							/**
 							 * @brief Store reader knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported reader knobs.
@@ -116,26 +117,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): BufferedLocationReader::Parameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -161,12 +167,7 @@ namespace StormByte {
 					STORMBYTE_FORCE_INLINE explicit BufferedFileReader(StormByte::Safe::String path,
 							Parameters parameters = {}):
 						BufferedFileReader(std::move(path),
-							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
-							parameters.MaxMemory().value_or(StormByte::ByteSize{1024ull * 1024ull}),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							!parameters.ReadAhead().has_value()) {
-						ReadChunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}));
-					}
+							Unpacked(parameters, StormByte::ByteSize{1024ull * 1024ull})) {}
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -248,13 +249,9 @@ namespace StormByte {
 					/**
 					 * @brief Construct stream and synchronization state in the provider module.
 					 * @param path Local filesystem path.
-					 * @param read_ahead Resolved prefetch length.
-					 * @param max_memory Resolved cache budget.
-					 * @param max_wait Resolved wait cap.
-					 * @param probe Whether to probe the device read window.
+					 * @param knobs Complete resolved policy and probe flag.
 					 */
-					BufferedFileReader(StormByte::Safe::String path, StormByte::ByteSize read_ahead,
-						StormByte::ByteSize max_memory, std::chrono::milliseconds max_wait, bool probe);
+					BufferedFileReader(StormByte::Safe::String path, Unpacked knobs);
 
 					/**
 					 * @brief Binary input stream owned by the provider module.

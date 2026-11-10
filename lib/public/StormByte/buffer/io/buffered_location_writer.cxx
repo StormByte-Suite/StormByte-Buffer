@@ -55,17 +55,8 @@ namespace {
 
 BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
 		const Unpacked knobs):
-	BufferedWriter(std::move(path), location, knobs.write_chunk, knobs.back_pressure, knobs.max_wait, knobs.max_memory),
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(knobs.probe)) {
-	WriteTransfer(knobs.write_transfer);
-	WriteThreshold(knobs.write_threshold);
-}
-
-BufferedLocationWriter::BufferedLocationWriter(StormByte::Safe::String path, const enum Location location,
-		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory, const bool probe):
-	BufferedWriter(std::move(path), location, write_chunk, back_pressure, max_wait, max_memory),
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(probe)) {}
+	BufferedWriter(std::move(path), location, knobs.m_configuration),
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedLocationWriter>(knobs.m_probe)) {}
 
 BufferedLocationWriter::BufferedLocationWriter(BufferedLocationWriter&& other) noexcept:
 	BufferedWriter(std::move(other)),

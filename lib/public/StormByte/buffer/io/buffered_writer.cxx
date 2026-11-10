@@ -52,9 +52,8 @@ namespace {
 }
 
 BufferedWriter::BufferedWriter(StormByte::Safe::String path, const enum Location location,
-		const StormByte::ByteSize write_chunk, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait, const StormByte::ByteSize max_memory):
-	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedWriter>(*this, std::move(path), location, write_chunk, back_pressure, max_wait, max_memory)) {}
+		const WriterConfiguration configuration):
+	m_io(std::make_unique<StormByte::Buffer::Backend::IO::BufferedWriter>(*this, std::move(path), location, configuration)) {}
 
 BufferedWriter::BufferedWriter(BufferedWriter&& other) noexcept:
 	m_io(std::move(other.m_io)) {

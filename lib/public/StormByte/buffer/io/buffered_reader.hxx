@@ -228,6 +228,7 @@ namespace StormByte {
 							 * @brief Construct an empty Safe-owned parameter bag.
 							 */
 							Parameters() = default;
+
 							/**
 							 * @brief Store reader knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported reader knobs.
@@ -235,26 +236,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): ReaderParameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -530,16 +536,38 @@ namespace StormByte {
 					 * @brief Configured prefetch length in bytes.
 					 * @return Current ReadAhead. 0 disables prefetch.
 					 */
-					virtual StormByte::ByteSize ReadAhead() const noexcept;
+					StormByte::ByteSize ReadAhead() const noexcept;
 
-					/** @brief Maximum origin request; zero selects 64 KiB. Setter waits for active reads. */
+					/**
+					 * @brief Maximum request passed to the origin.
+					 * @return Configured maximum; zero inputs select 64 KiB.
+					 */
 					StormByte::ByteSize ReadChunk() const noexcept;
+
+					/**
+					 * @brief Replace the read maximum after active reads finish.
+					 * @param bytes Maximum request; zero selects 64 KiB.
+					 * @throws Exception Configuration is invalid.
+					 */
 					void ReadChunk(StormByte::ByteSize bytes);
-					/** @brief Atomic policy snapshot, without I/O. */
+
+					/**
+					 * @brief Read the complete policy without I/O.
+					 * @return Coherent configured policy.
+					 */
 					ReaderConfiguration Configuration() const noexcept;
-					/** @brief Cancel prefetch, then apply a complete policy. Invalid values leave it unchanged. */
+
+					/**
+					 * @brief Cancel prefetch and apply a complete policy after active reads finish.
+					 * @param configuration Replacement policy.
+					 * @return Ok, or a failure leaving the policy unchanged.
+					 */
 					Result Configure(ReaderConfiguration configuration);
-					/** @brief Effective limits and real origin activity, without I/O. */
+
+					/**
+					 * @brief Read effective limits and real origin activity without I/O.
+					 * @return Coherent transfer counters and capacities.
+					 */
 					TransferSnapshot Transfers() const noexcept;
 
 					/**
@@ -550,13 +578,13 @@ namespace StormByte {
 					 * returning. Does not pull from the origin. Still waits
 					 * for the worker.
 					 */
-					virtual void ReadAhead(StormByte::ByteSize bytes);
+					void ReadAhead(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured cache memory cap in bytes.
 					 * @return Current cap. 0 means no cache and no prefetch.
 					 */
-					virtual StormByte::ByteSize MaxMemory() const noexcept;
+					StormByte::ByteSize MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set cache memory cap. Takes effect immediately.
@@ -565,22 +593,22 @@ namespace StormByte {
 					 * Cancels prefetch and evicts farthest spans before
 					 * returning. Waits for the worker; not an origin pull.
 					 */
-					virtual void MaxMemory(StormByte::ByteSize bytes);
+					void MaxMemory(StormByte::ByteSize bytes);
 
 					/**
 					 * @brief Configured read wait limit.
 					 * @return Wait cap. @c 0ms waits forever (never @ref IO::Status::TryAgain).
 					 */
-					virtual std::chrono::milliseconds MaxWait() const noexcept;
+					std::chrono::milliseconds MaxWait() const noexcept;
 
 					/**
-					 * @brief Set read wait limit. Takes effect on the next Read / Peek.
+					 * @brief Replace the read wait limit after active operations finish.
 					 * @param wait @c 0ms = unlimited. Positive = timeout then TryAgain.
 					 *
-					 * Overridable so a leaf can clamp. Does not cancel an in-flight
-					 * prefetch. Does not trim the cache.
+					 * Cancels prefetch before publishing the replacement policy.
+					 * Invalid configuration throws Buffer::Exception.
 					 */
-					virtual void MaxWait(std::chrono::milliseconds wait);
+					void MaxWait(std::chrono::milliseconds wait);
 
 					/**
 					 * @}
@@ -595,26 +623,22 @@ namespace StormByte {
 					 */
 					STORMBYTE_FORCE_INLINE BufferedReader(StormByte::Safe::String path, enum Location location,
 							Parameters parameters = {}):
-						BufferedReader(std::move(path), location,
+						BufferedReader(std::move(path), location, ReaderConfiguration{
+							parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}),
 							parameters.ReadAhead().value_or(StormByte::ByteSize{0}),
 							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)}) {
-						ReadChunk(parameters.ReadChunk().value_or(StormByte::ByteSize{64 * 1024}));
-					}
+							parameters.MaxWait().value_or(0)}) {}
 
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
 					 * @param path Locator. Stored once.
 					 * @param location @ref Location::Local or @ref Location::Remote. Stored once.
-					 * @param read_ahead Initial @ref ReadAhead in bytes.
-					 * @param max_memory Initial @ref MaxMemory in bytes.
-					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
+					 * @param configuration Complete initial reader policy.
 					 *
 					 * DLL boundary. Children that already resolved knobs call this.
 					 */
 					BufferedReader(StormByte::Safe::String path, enum Location location,
-						StormByte::ByteSize read_ahead, StormByte::ByteSize max_memory,
-						std::chrono::milliseconds max_wait);
+						ReaderConfiguration configuration);
 
 					/**
 					 * @brief Publish session state from a leaf hook.

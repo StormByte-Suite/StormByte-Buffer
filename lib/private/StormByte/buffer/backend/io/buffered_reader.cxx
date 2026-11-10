@@ -132,15 +132,13 @@ namespace {
 }
 
 BufferedReader::BufferedReader(StormByte::Buffer::IO::BufferedReader& owner, StormByte::Safe::String path,
-		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize read_ahead,
-		const StormByte::ByteSize max_memory, const std::chrono::milliseconds max_wait):
+		const StormByte::Buffer::IO::Location location, const StormByte::Buffer::IO::ReaderConfiguration configuration):
 	m_owner(&owner),
 	m_path(std::move(path)),
 	m_location(location),
-	m_read_ahead(read_ahead),
-	m_max_memory(max_memory),
-	m_max_wait(max_wait),
 	m_state(StormByte::Buffer::IO::State::Unavailable) {
+	if (Configure(configuration).status != Status::Ok)
+		throw StormByte::Buffer::Exception("Invalid reader configuration");
 	StartWorker();
 }
 
@@ -454,7 +452,7 @@ StormByte::ByteSize BufferedReader::ReadAhead() const noexcept {
 void BufferedReader::ReadAhead(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.read_ahead = bytes;
+	configuration.ReadAhead = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
@@ -467,7 +465,7 @@ StormByte::ByteSize BufferedReader::MaxMemory() const noexcept {
 void BufferedReader::MaxMemory(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.max_memory = bytes;
+	configuration.MaxMemory = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
@@ -480,7 +478,7 @@ std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
 void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.max_wait = wait;
+	configuration.MaxWaitMilliseconds = wait.count();
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
@@ -493,31 +491,31 @@ StormByte::ByteSize BufferedReader::ReadChunk() const noexcept {
 void BufferedReader::ReadChunk(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.read_chunk = bytes;
+	configuration.ReadChunk = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Invalid reader configuration");
 }
 
 StormByte::Buffer::IO::ReaderConfiguration BufferedReader::Configuration() const noexcept {
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	return {m_read_chunk, m_read_ahead, m_max_memory, m_max_wait};
+	return {m_read_chunk, m_read_ahead, m_max_memory, m_max_wait.count()};
 }
 
 Result BufferedReader::Configure(StormByte::Buffer::IO::ReaderConfiguration configuration) {
 	std::lock_guard operation(m_operations);
-	if (configuration.read_chunk == StormByte::ByteSize{0})
-		configuration.read_chunk = StormByte::ByteSize{64 * 1024};
-	if (!OffsetFits(configuration.read_chunk) || !OffsetFits(configuration.read_ahead)
-			|| !OffsetFits(configuration.max_memory) || configuration.max_wait.count() < 0
-			|| configuration.max_wait > std::chrono::duration_cast<std::chrono::milliseconds>(
+	if (configuration.ReadChunk == StormByte::ByteSize{0})
+		configuration.ReadChunk = StormByte::ByteSize{64 * 1024};
+	if (!OffsetFits(configuration.ReadChunk) || !OffsetFits(configuration.ReadAhead)
+			|| !OffsetFits(configuration.MaxMemory) || configuration.MaxWaitMilliseconds < 0
+			|| std::chrono::milliseconds{configuration.MaxWaitMilliseconds} > std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::time_point::max() - std::chrono::steady_clock::now()))
 		return {Status::Failed, 0};
 	FlushPrefetch();
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_read_chunk = configuration.read_chunk;
-	m_read_ahead = configuration.read_ahead;
-	m_max_memory = configuration.max_memory;
-	m_max_wait = configuration.max_wait;
+	m_read_chunk = configuration.ReadChunk;
+	m_read_ahead = configuration.ReadAhead;
+	m_max_memory = configuration.MaxMemory;
+	m_max_wait = std::chrono::milliseconds{configuration.MaxWaitMilliseconds};
 	CollectGarbage();
 	NoteResident();
 	return {Status::Ok, 0};
@@ -526,11 +524,11 @@ Result BufferedReader::Configure(StormByte::Buffer::IO::ReaderConfiguration conf
 StormByte::Buffer::IO::TransferSnapshot BufferedReader::Transfers() const noexcept {
 	StormByte::Safe::UniqueLock lock(m_mutex);
 	auto snapshot = m_transfers;
-	snapshot.transfer_limit = m_max_memory > StormByte::ByteSize{0}
+	snapshot.TransferLimit = m_max_memory > StormByte::ByteSize{0}
 		? std::min(m_read_chunk, m_max_memory) : m_read_chunk;
-	snapshot.page_capacity = m_max_memory;
-	snapshot.pending = CachedBytes();
-	snapshot.retained = m_replay.Available();
+	snapshot.PageCapacity = m_max_memory;
+	snapshot.Pending = CachedBytes();
+	snapshot.Retained = m_replay.Available();
 	return snapshot;
 }
 
@@ -913,18 +911,18 @@ Result BufferedReader::PullAt(const StormByte::ByteSize at, const StormByte::Byt
 	FIFO chunk;
 	{
 		StormByte::Safe::UniqueLock lock(m_mutex);
-		++m_transfers.calls;
-		m_transfers.last_request = request;
-		m_transfers.max_request = std::max(m_transfers.max_request, request);
-		m_transfers.in_flight = request;
+		++m_transfers.Calls;
+		m_transfers.LastRequest = request;
+		m_transfers.MaxRequest = std::max(m_transfers.MaxRequest, request);
+		m_transfers.InFlight = request;
 	}
 	const Result pulled = InvokeOrigin([this, request, &chunk] { return m_owner->OriginPull(request, chunk); });
 
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	m_transfers.in_flight = StormByte::ByteSize{0};
+	m_transfers.InFlight = StormByte::ByteSize{0};
 	if (pulled.count > request || pulled.count > chunk.Available())
 		return {Status::Error, 0};
-	m_transfers.bytes = m_transfers.bytes + pulled.count;
+	m_transfers.Bytes = m_transfers.Bytes + pulled.count;
 	if (pulled.status == Status::Failed || pulled.status == Status::Error)
 		return { pulled.status, 0 };
 	if (pulled.count > StormByte::ByteSize{0}) {

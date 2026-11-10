@@ -112,6 +112,7 @@ namespace StormByte {
 							 * @note Not noexcept: a bag may allocate while it is being filled.
 							 */
 							Parameters() {}
+
 							/**
 							 * @brief Store writer knobs in Safe-owned optional values.
 							 * @tparam Knobs Supported writer knobs.
@@ -119,26 +120,31 @@ namespace StormByte {
 							 */
 							template<typename... Knobs>
 							Parameters(Knobs... knobs): BufferedLocationWriter::Parameters(std::move(knobs)...) {}
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 */
 							Parameters(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
 							 */
 							Parameters(Parameters&& other) noexcept = default;
+
 							/**
 							 * @brief Release knobs through provider callbacks.
 							 */
 							~Parameters() noexcept = default;
+
 							/**
 							 * @brief Copy Safe-owned knobs; may allocate and throw.
 							 * @param other Source bag.
 							 * @return This bag.
 							 */
 							Parameters& operator=(const Parameters& other) = default;
+
 							/**
 							 * @brief Transfer Safe-owned knobs.
 							 * @param other Source bag.
@@ -165,19 +171,7 @@ namespace StormByte {
 					 */
 					STORMBYTE_FORCE_INLINE explicit BufferedFileWriter(StormByte::Safe::String path,
 							Parameters parameters = {}):
-						BufferedFileWriter(std::move(path),
-							parameters.WriteChunk().value_or(StormByte::ByteSize{0}),
-							parameters.BackPressure().value_or(0),
-							std::chrono::milliseconds{parameters.MaxWait().value_or(0)},
-							parameters.MaxMemory().value_or(StormByte::ByteSize{0}),
-							!parameters.WriteChunk().has_value()
-								&& !parameters.BackPressure().has_value()
-								&& !parameters.MaxMemory().has_value()
-								&& !parameters.WriteTransfer().has_value()
-								&& !parameters.WriteThreshold().has_value()) {
-						WriteTransfer(parameters.WriteTransfer().value_or(StormByte::ByteSize{0}));
-						WriteThreshold(parameters.WriteThreshold().value_or(StormByte::ByteSize{0}));
-					}
+						BufferedFileWriter(std::move(path), Unpacked(parameters)) {}
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -279,15 +273,9 @@ namespace StormByte {
 					/**
 					 * @brief Construct stream and synchronization state in the provider module.
 					 * @param path Local filesystem path.
-					 * @param write_chunk Resolved push unit.
-					 * @param back_pressure Resolved ring cap in chunks.
-					 * @param max_wait Resolved wait cap.
-					 * @param max_memory Resolved dirty-page budget.
-					 * @param probe Whether to probe the device write window.
+					 * @param knobs Complete resolved policy and probe flag.
 					 */
-					BufferedFileWriter(StormByte::Safe::String path, StormByte::ByteSize write_chunk,
-						std::size_t back_pressure, std::chrono::milliseconds max_wait,
-						StormByte::ByteSize max_memory, bool probe);
+					BufferedFileWriter(StormByte::Safe::String path, Unpacked knobs);
 
 					/**
 					 * @brief Binary output stream owned by the provider module.

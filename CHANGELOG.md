@@ -26,13 +26,49 @@ If you landed here from a release link and have not read the tree:
   `WriteThreshold`, atomic live IO configuration and non-I/O effective-transfer
   snapshots. Instrumented tests verify real origin requests, aggregation,
   bounded page payload, partial transfers and concurrent reconfiguration.
+- `ReadChunk` is independent of prefetch: omitted or zero selects 64 KiB;
+  public reads and peeks can assemble multiple bounded origin transfers.
+- `WriteTransfer` caps every origin push, including direct writes, ring drains,
+  page eviction, Flush and Close; omitted or zero is unlimited. `WriteChunk`
+  retains its separate ring-unit/trigger role.
+- `WriteThreshold` optionally drains contiguous bounded pages in the caller's
+  thread to half the effective high watermark. Memory pressure, Flush, Close
+  and reconfiguration override the watermark and flush residual data.
+
+### Removed
+
+- **Breaking:** removed the protected scalar-policy constructors of
+  `BufferedReader`, `BufferedWriter`, `BufferedLocationReader` and
+  `BufferedLocationWriter`, and the old scalar constructor symbols of the file
+  leaves. Derived coordinators pass `Parameters`, a complete configuration or
+  resolved location knobs instead.
+- **Breaking:** removed virtual dispatch for reader `ReadAhead`, `MaxMemory`
+  and `MaxWait`, and writer `WriteChunk`, `BackPressure`, `MaxMemory` and
+  `MaxWait`. Their getters/setters remain available as nonvirtual operations;
+  configuration always goes through the coordinator's coherent policy.
+- **Breaking:** removed binary compatibility with previous IO parameter-bag
+  and location-knob layouts.
+
+### Changed
+
+- IO live setters serialize with session operations, apply a complete policy,
+  and may block. Writer changes flush using the old policy; failure keeps that
+  policy installed but cannot roll back origin I/O. Void setters throw
+  `Buffer::Exception` on failure; `Configure` returns an explicit result.
+- New IO policy/snapshot fields follow PascalCase. Complete policies transport
+  wait limits as scalar `MaxWaitMilliseconds`, keeping clock types and
+  deadlines provider-local.
+- Page mode no longer allocates a dormant ring. Ring snapshots distinguish
+  logical admission capacity from actual power-of-two storage including a
+  spare slot; transactional replacement temporarily accounts for both rings.
 
 ### Fixed
 
 - Resize writer rings on reconfiguration, propagate flush failures, preserve
   nonseekable Peek/retry bytes, check queue arithmetic, and avoid whole-page
-  block-writing copies. Consumers must rebuild parameter bags and location
-  leaves with matching headers; see README for memory and compatibility limits.
+  block-writing copies. See README for memory accounting and policy semantics.
+- Prevent ring storage growth while its worker borrows a drain span; retain
+  partial-transfer progress on errors and avoid duplicate origin-byte counts.
 
 [Unreleased]: https://github.com/StormByte-Suite/StormByte-Buffer/compare/3.0.0...HEAD
 

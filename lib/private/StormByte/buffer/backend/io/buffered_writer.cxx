@@ -72,18 +72,12 @@ namespace {
 }
 
 BufferedWriter::BufferedWriter(StormByte::Buffer::IO::BufferedWriter& owner, StormByte::Safe::String path,
-		const StormByte::Buffer::IO::Location location, const StormByte::ByteSize write_chunk,
-		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
-		const StormByte::ByteSize max_memory):
+		const StormByte::Buffer::IO::Location location, const StormByte::Buffer::IO::WriterConfiguration configuration):
 	m_owner(&owner),
 	m_path(std::move(path)),
 	m_location(location),
-	m_write_chunk(write_chunk),
-	m_back_pressure(back_pressure),
-	m_max_memory(max_memory),
-	m_max_wait(max_wait),
 	m_state(StormByte::Buffer::IO::State::Unavailable) {
-	if (Configure(Configuration()).status != Status::Ok)
+	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Invalid writer configuration");
 	StartWorker();
 }
@@ -941,7 +935,7 @@ StormByte::ByteSize BufferedWriter::WriteChunk() const noexcept {
 void BufferedWriter::WriteChunk(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.write_chunk = bytes;
+	configuration.WriteChunk = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer chunk");
 }
@@ -954,7 +948,7 @@ std::size_t BufferedWriter::BackPressure() const noexcept {
 void BufferedWriter::BackPressure(const std::size_t chunks) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.back_pressure = chunks;
+	configuration.BackPressure = chunks;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer queue");
 }
@@ -967,7 +961,7 @@ StormByte::ByteSize BufferedWriter::MaxMemory() const noexcept {
 void BufferedWriter::MaxMemory(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.max_memory = bytes;
+	configuration.MaxMemory = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer memory");
 }
@@ -980,7 +974,7 @@ std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {
 void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.max_wait = wait;
+	configuration.MaxWaitMilliseconds = wait.count();
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer wait");
 }
@@ -993,7 +987,7 @@ StormByte::ByteSize BufferedWriter::WriteTransfer() const noexcept {
 void BufferedWriter::WriteTransfer(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.write_transfer = bytes;
+	configuration.WriteTransfer = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer transfer");
 }
@@ -1006,30 +1000,30 @@ StormByte::ByteSize BufferedWriter::WriteThreshold() const noexcept {
 void BufferedWriter::WriteThreshold(const StormByte::ByteSize bytes) {
 	std::lock_guard operation(m_operations);
 	auto configuration = Configuration();
-	configuration.write_threshold = bytes;
+	configuration.WriteThreshold = bytes;
 	if (Configure(configuration).status != Status::Ok)
 		throw StormByte::Buffer::Exception("Unable to reconfigure writer threshold");
 }
 
 StormByte::Buffer::IO::WriterConfiguration BufferedWriter::Configuration() const noexcept {
 	StormByte::Safe::UniqueLock lock(m_mutex);
-	return {m_write_chunk, m_back_pressure, m_max_wait, m_max_memory, m_write_transfer, m_write_threshold};
+	return {m_write_chunk, m_back_pressure, m_max_wait.count(), m_max_memory, m_write_transfer, m_write_threshold};
 }
 
 Result BufferedWriter::Configure(const StormByte::Buffer::IO::WriterConfiguration configuration) {
 	std::lock_guard operation(m_operations);
 	const auto limit = static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max());
-	const auto chunk = static_cast<std::size_t>(configuration.write_chunk);
-	if (chunk > limit || static_cast<std::size_t>(configuration.max_memory) > limit
-			|| static_cast<std::size_t>(configuration.write_transfer) > limit
-			|| static_cast<std::size_t>(configuration.write_threshold) > limit
-			|| configuration.max_wait.count() < 0
-			|| configuration.max_wait > std::chrono::duration_cast<std::chrono::milliseconds>(
+	const auto chunk = static_cast<std::size_t>(configuration.WriteChunk);
+	if (chunk > limit || static_cast<std::size_t>(configuration.MaxMemory) > limit
+			|| static_cast<std::size_t>(configuration.WriteTransfer) > limit
+			|| static_cast<std::size_t>(configuration.WriteThreshold) > limit
+			|| configuration.MaxWaitMilliseconds < 0
+			|| std::chrono::milliseconds{configuration.MaxWaitMilliseconds} > std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::time_point::max() - std::chrono::steady_clock::now())
-			|| (chunk != 0 && configuration.back_pressure > limit / chunk))
+			|| (chunk != 0 && configuration.BackPressure > limit / chunk))
 		return {Status::Failed, 0};
-	const auto cap = configuration.max_memory == StormByte::ByteSize{0}
-		? StormByte::ByteSize{chunk * configuration.back_pressure} : StormByte::ByteSize{0};
+	const auto cap = configuration.MaxMemory == StormByte::ByteSize{0}
+		? StormByte::ByteSize{chunk * configuration.BackPressure} : StormByte::ByteSize{0};
 	if (cap >= StormByte::ByteSize{(limit + 1) / 2})
 		return {Status::Failed, 0};
 	const bool opened = IsOpen();
@@ -1045,7 +1039,7 @@ Result BufferedWriter::Configure(const StormByte::Buffer::IO::WriterConfiguratio
 			reserved *= 2;
 		{
 			StormByte::Safe::UniqueLock lock(m_mutex);
-			m_transfers.reconfiguration = StormByte::ByteSize{reserved};
+			m_transfers.Reconfiguration = StormByte::ByteSize{reserved};
 		}
 		try {
 			// LockFreeRing keeps one spare slot; prevent Grow while the worker borrows storage.
@@ -1053,19 +1047,19 @@ Result BufferedWriter::Configure(const StormByte::Buffer::IO::WriterConfiguratio
 		}
 		catch (const std::bad_alloc&) {
 			StormByte::Safe::UniqueLock lock(m_mutex);
-			m_transfers.reconfiguration = StormByte::ByteSize{0};
+			m_transfers.Reconfiguration = StormByte::ByteSize{0};
 			return {Status::Error, 0};
 		}
 	}
 	StormByte::Safe::UniqueLock lock(m_mutex);
 	m_ring = std::move(replacement);
-	m_transfers.reconfiguration = StormByte::ByteSize{0};
-	m_write_chunk = configuration.write_chunk;
-	m_back_pressure = configuration.back_pressure;
-	m_max_memory = configuration.max_memory;
-	m_max_wait = configuration.max_wait;
-	m_write_transfer = configuration.write_transfer;
-	m_write_threshold = configuration.write_threshold;
+	m_transfers.Reconfiguration = StormByte::ByteSize{0};
+	m_write_chunk = configuration.WriteChunk;
+	m_back_pressure = configuration.BackPressure;
+	m_max_memory = configuration.MaxMemory;
+	m_max_wait = std::chrono::milliseconds{configuration.MaxWaitMilliseconds};
+	m_write_transfer = configuration.WriteTransfer;
+	m_write_threshold = configuration.WriteThreshold;
 	NoteDirty();
 	return {Status::Ok, 0};
 }
@@ -1073,15 +1067,15 @@ Result BufferedWriter::Configure(const StormByte::Buffer::IO::WriterConfiguratio
 StormByte::Buffer::IO::TransferSnapshot BufferedWriter::Transfers() const noexcept {
 	StormByte::Safe::UniqueLock lock(m_mutex);
 	auto snapshot = m_transfers;
-	snapshot.transfer_limit = m_write_transfer;
+	snapshot.TransferLimit = m_write_transfer;
 	if (PageMode())
-		snapshot.transfer_limit = std::min(m_max_memory, m_write_transfer > StormByte::ByteSize{0}
+		snapshot.TransferLimit = std::min(m_max_memory, m_write_transfer > StormByte::ByteSize{0}
 			? m_write_transfer : StormByte::ByteSize{64 * 1024});
-	snapshot.page_capacity = m_max_memory;
-	snapshot.ring_capacity = m_ring ? m_ring->Capacity() : StormByte::ByteSize{0};
-	snapshot.queue_capacity = m_ring ? PendingCap() : StormByte::ByteSize{0};
-	snapshot.threshold = std::min(m_write_threshold, m_max_memory);
-	snapshot.pending = TotalDirty();
+	snapshot.PageCapacity = m_max_memory;
+	snapshot.RingCapacity = m_ring ? m_ring->Capacity() : StormByte::ByteSize{0};
+	snapshot.QueueCapacity = m_ring ? PendingCap() : StormByte::ByteSize{0};
+	snapshot.Threshold = std::min(m_write_threshold, m_max_memory);
+	snapshot.Pending = TotalDirty();
 	return snapshot;
 }
 
@@ -1245,18 +1239,18 @@ Result BufferedWriter::PushAll(const std::span<const std::byte> data) {
 			rest = rest.first(std::min(rest.size(), static_cast<std::size_t>(transfer)));
 		{
 			StormByte::Safe::UniqueLock lock(m_mutex);
-			++m_transfers.calls;
-			m_transfers.last_request = StormByte::ByteSize{rest.size()};
-			m_transfers.max_request = std::max(m_transfers.max_request, m_transfers.last_request);
-			m_transfers.in_flight = StormByte::ByteSize{rest.size()};
+			++m_transfers.Calls;
+			m_transfers.LastRequest = StormByte::ByteSize{rest.size()};
+			m_transfers.MaxRequest = std::max(m_transfers.MaxRequest, m_transfers.LastRequest);
+			m_transfers.InFlight = StormByte::ByteSize{rest.size()};
 		}
 		const Result pushed = InvokeOrigin([this, rest] { return m_owner->OriginPush(rest); });
 		{
 			StormByte::Safe::UniqueLock lock(m_mutex);
-			m_transfers.in_flight = StormByte::ByteSize{0};
+			m_transfers.InFlight = StormByte::ByteSize{0};
 			if (pushed.count > StormByte::ByteSize{rest.size()})
 				return {Status::Error, off};
-			m_transfers.bytes = m_transfers.bytes + pushed.count;
+			m_transfers.Bytes = m_transfers.Bytes + pushed.count;
 			m_origin_bytes = m_origin_bytes + pushed.count;
 			m_origin_pos = m_origin_pos + pushed.count;
 			m_materialized = std::max(m_materialized, m_origin_pos);
