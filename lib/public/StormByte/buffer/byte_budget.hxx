@@ -91,6 +91,35 @@ namespace StormByte {
 		};
 
 		/**
+		 * @brief Cause of a weighted admission wait, selected while admission is locked.
+		 */
+		enum class AdmissionWaitReason {
+			LocalCapacity,	///< Local element or byte bounds deny admission before reservation.
+			SharedBudget	///< Local bounds allow admission but TryReserve reports WouldBlock.
+		};
+
+		/**
+		 * @brief Borrowed, allocation-free observer for one synchronous PushFor call.
+		 *
+		 * Changed runs on the calling thread, outside all Buffer locks, immediately
+		 * before each actual budget wait (entering=true) and after it returns
+		 * (entering=false), with the same reason. LocalCapacity takes precedence
+		 * when both local and shared capacity are unavailable. A wake can cause a
+		 * new attempt and another pair, possibly with a different reason; an event
+		 * already signalled can make the wait return immediately. Fast paths and
+		 * attempts that never reach a wait produce no callbacks.
+		 *
+		 * Context and callback must remain valid until PushFor returns; neither is
+		 * owned or retained. Callbacks must not throw, should be brief, and may
+		 * safely inspect queue/budget snapshots. Shared contexts need caller-owned
+		 * synchronization when used concurrently. A null Changed disables observing.
+		 */
+		struct AdmissionWaitObserver {
+			void* Context = nullptr;	///< Borrowed callback context.
+			void (*Changed)(void*, AdmissionWaitReason, bool entering) noexcept = nullptr;	///< Wait transition.
+		};
+
+		/**
 		 * @brief Independent local bounds; absent means unlimited, engaged zero means zero capacity.
 		 */
 		class QueueLimits {

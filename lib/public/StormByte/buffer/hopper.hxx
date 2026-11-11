@@ -278,18 +278,22 @@ namespace StormByte {
 				 * @param item Moved only on success.
 				 * @param bytes Caller-defined logical weight.
 				 * @param timeout Maximum nonnegative wait.
+				 * @param observer Borrowed observer of actual admission waits only.
 				 * @return Explicit admission result.
 				 */
-				QueueStatus PushFor(T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept;
+				QueueStatus PushFor(T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout,
+					AdmissionWaitObserver observer = {}) noexcept;
 
 				/**
 				 * @brief Admit with a shared charge and bounded wait.
 				 * @param item Moved only on success.
 				 * @param lease Existing charge retained by the caller.
 				 * @param timeout Maximum nonnegative wait.
+				 * @param observer Borrowed observer of actual admission waits only.
 				 * @return Explicit admission result.
 				 */
-				QueueStatus PushFor(T& item, const ByteBudget::Lease& lease, std::chrono::milliseconds timeout) noexcept;
+				QueueStatus PushFor(T& item, const ByteBudget::Lease& lease, std::chrono::milliseconds timeout,
+					AdmissionWaitObserver observer = {}) noexcept;
 
 				/**
 				 * @brief Set independent local limits without discarding existing entries.
@@ -489,10 +493,12 @@ namespace StormByte {
 				 * @param lease Optional shared charge.
 				 * @param timeout Bounded wait.
 				 * @param closed Borrowed Sink closure flag for this synchronous call.
+				 * @param observer Borrowed wait observer.
 				 * @return Explicit admission result.
 				 */
 				QueueStatus Admit(T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
-					std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed) noexcept;
+					std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed,
+					AdmissionWaitObserver observer = {}) noexcept;
 
 				/**
 				 * @brief Registers a borrowed observer for a distinct Sink owner.

@@ -142,16 +142,17 @@ namespace StormByte {
 				 * @param bytes Logical entry weight.
 				 * @param lease Optional shared charge.
 				 * @param timeout Bounded wait.
+				 * @param observer Borrowed wait observer.
 				 * @return Explicit admission result.
 				 */
 				QueueStatus Admit(int key, T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
-						std::chrono::milliseconds timeout) noexcept {
+						std::chrono::milliseconds timeout, AdmissionWaitObserver observer = {}) noexcept {
 					if (m_closed.load(Safe::MemoryOrder::Acquire))
 						return QueueStatus::Closed;
 					const auto hopper = Bucket(key);
 					if (!hopper)
 						return QueueStatus::Missing;
-					return hopper->Admit(item, bytes, lease, timeout, &m_closed);
+					return hopper->Admit(item, bytes, lease, timeout, &m_closed, observer);
 				}
 
 				/**
@@ -767,14 +768,15 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		QueueStatus Sink<T>::PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept {
-			return m_io->Admit(key, item, bytes, nullptr, timeout);
+		QueueStatus Sink<T>::PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout,
+				AdmissionWaitObserver observer) noexcept {
+			return m_io->Admit(key, item, bytes, nullptr, timeout, observer);
 		}
 
 		template<Detail::HopperValue T>
 		QueueStatus Sink<T>::PushFor(int key, T& item, const ByteBudget::Lease& lease,
-				std::chrono::milliseconds timeout) noexcept {
-			return m_io->Admit(key, item, lease.Bytes(), &lease, timeout);
+				std::chrono::milliseconds timeout, AdmissionWaitObserver observer) noexcept {
+			return m_io->Admit(key, item, lease.Bytes(), &lease, timeout, observer);
 		}
 
 		template<Detail::HopperValue T>

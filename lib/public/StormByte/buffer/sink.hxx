@@ -178,9 +178,11 @@ namespace StormByte {
 				 * @param item Moved only on success.
 				 * @param bytes Caller-defined weight.
 				 * @param timeout Nonnegative wait bound; zero is immediate.
+				 * @param observer Borrowed observer of actual admission waits only.
 				 * @return Explicit admission result.
 				 */
-				QueueStatus PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept;
+				QueueStatus PushFor(int key, T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout,
+					AdmissionWaitObserver observer = {}) noexcept;
 
 				/**
 				 * @brief Shared-charge admission with a bounded wait.
@@ -188,10 +190,11 @@ namespace StormByte {
 				 * @param item Moved only on success.
 				 * @param lease Shared payload charge.
 				 * @param timeout Nonnegative wait bound; zero is immediate.
+				 * @param observer Borrowed observer of actual admission waits only.
 				 * @return Explicit admission result.
 				 */
 				QueueStatus PushFor(int key, T& item, const ByteBudget::Lease& lease,
-					std::chrono::milliseconds timeout) noexcept;
+					std::chrono::milliseconds timeout, AdmissionWaitObserver observer = {}) noexcept;
 
 				/**
 				 * @brief Configure independent local limits on an existing shared hopper.

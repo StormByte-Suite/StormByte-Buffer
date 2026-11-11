@@ -314,10 +314,12 @@ namespace StormByte {
 				 * @param lease Optional shared charge.
 				 * @param timeout Nonnegative bounded wait.
 				 * @param closed Optional borrowed Sink closure flag.
+				 * @param observer Borrowed wait observer, invoked without Buffer locks.
 				 * @return Explicit admission result.
 				 */
 				QueueStatus Admit(T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
-						std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed) noexcept {
+						std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed,
+						AdmissionWaitObserver observer) noexcept {
 					if constexpr (Type::NullablePointer<T>) {
 						if (!item)
 							return QueueStatus::Empty;
@@ -344,6 +346,7 @@ namespace StormByte {
 						const auto event = Detail::BudgetAccess::Event(budget);
 						Safe::Shared<Entry> entry;
 						ByteBudget::Lease charge;
+						auto reason = AdmissionWaitReason::LocalCapacity;
 						{
 							Safe::UniqueLock lock(m_mutex);
 							const auto aggregate = budget.Snapshot();
@@ -372,8 +375,11 @@ namespace StormByte {
 									charge = *lease;
 									result = QueueStatus::Ok;
 								}
-								else
+								else {
 									result = budget.TryReserve(bytes, charge);
+									if (result == QueueStatus::WouldBlock)
+										reason = AdmissionWaitReason::SharedBudget;
+								}
 								if (result == QueueStatus::Ok) {
 									try {
 										entry = Safe::Shared<Entry>::template MakePointer<Entry>();
@@ -402,8 +408,12 @@ namespace StormByte {
 							break;
 						}
 						waited = true;
+						if (observer.Changed)
+							observer.Changed(observer.Context, reason, true);
 						Detail::BudgetAccess::Wait(budget, event, std::chrono::duration_cast<std::chrono::nanoseconds>(
 							deadline - std::chrono::steady_clock::now()).count());
+						if (observer.Changed)
+							observer.Changed(observer.Context, reason, false);
 					}
 					{
 						Safe::UniqueLock lock(m_mutex);
@@ -677,19 +687,21 @@ namespace StormByte {
 		}
 
 		template<Detail::HopperValue T>
-		QueueStatus Hopper<T>::PushFor(T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout) noexcept {
-			return Admit(item, bytes, nullptr, timeout, nullptr);
+		QueueStatus Hopper<T>::PushFor(T& item, StormByte::ByteSize bytes, std::chrono::milliseconds timeout,
+				AdmissionWaitObserver observer) noexcept {
+			return Admit(item, bytes, nullptr, timeout, nullptr, observer);
 		}
 
 		template<Detail::HopperValue T>
-		QueueStatus Hopper<T>::PushFor(T& item, const ByteBudget::Lease& lease, std::chrono::milliseconds timeout) noexcept {
-			return Admit(item, lease.Bytes(), &lease, timeout, nullptr);
+		QueueStatus Hopper<T>::PushFor(T& item, const ByteBudget::Lease& lease, std::chrono::milliseconds timeout,
+				AdmissionWaitObserver observer) noexcept {
+			return Admit(item, lease.Bytes(), &lease, timeout, nullptr, observer);
 		}
 
 		template<Detail::HopperValue T>
 		QueueStatus Hopper<T>::Admit(T& item, StormByte::ByteSize bytes, const ByteBudget::Lease* lease,
-				std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed) noexcept {
-			return m_io->Admit(item, bytes, lease, timeout, closed);
+				std::chrono::milliseconds timeout, const Safe::Atomic<bool>* closed, AdmissionWaitObserver observer) noexcept {
+			return m_io->Admit(item, bytes, lease, timeout, closed, observer);
 		}
 
 		template<Detail::HopperValue T>

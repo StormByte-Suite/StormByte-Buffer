@@ -846,6 +846,24 @@ current entries/weighted bytes, lifetime peaks, pressure attempts, waits and
 `Reserved`, limit, peak, pressure and reservation-wait counters. Queue waits
 are reported on the queue; external ReserveFor waits on the budget. A shared
 lease can therefore yield larger summed queue bytes than aggregate Reserved.
+
+Weighted `Hopper::PushFor(item, bytes_or_lease, timeout, observer)` and
+`Sink::PushFor(key, item, bytes_or_lease, timeout, observer)` accept an optional
+`AdmissionWaitObserver{context, callback}` (default `{}`). Its borrowed callback
+has signature `void(void*, AdmissionWaitReason, bool entering) noexcept`.
+It runs synchronously on the calling thread, outside all Buffer locks, immediately
+before each actual budget wait and after it returns, with paired reasons:
+`LocalCapacity` when local element/byte bounds deny admission before reservation,
+or `SharedBudget` when `TryReserve` returns `WouldBlock`. Local bounds take
+precedence if both are exhausted. Retrying after a wake may produce another pair,
+possibly for a different reason; an already-signalled event may return immediately.
+There are no callbacks on fast paths or outcomes that do not reach a wait.
+The observer owns nothing, allocates nothing, and is not retained. Keep its context
+and callback alive until the call returns; callbacks should be brief and must not
+throw. Snapshot inspection is safe; concurrent calls sharing a context require
+caller-provided synchronization. A null callback disables observing. This does not
+change admission policy, reservations, or existing snapshot accounting.
+
 `ByteBudget::SharesIdentity(other)` compares shared state without reserving,
 locking or changing counters, before or after `Close()`. Copies share identity;
 independent budgets (even with equal limits) and moved-from handles do not.

@@ -48,12 +48,17 @@
 #include <chrono>
 #include <limits>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 using namespace StormByte::Buffer;
 using StormByte::ByteSize;
 using StormByte::Safe::Optional;
 using StormByte::Size;
+
+static_assert(std::is_standard_layout_v<AdmissionWaitObserver>);
+static_assert(std::is_trivially_copyable_v<AdmissionWaitObserver>);
+static_assert(std::is_trivially_destructible_v<AdmissionWaitObserver>);
 
 namespace {
 	/**
@@ -83,6 +88,245 @@ namespace {
 		return {StormByte::Safe::Optional<Size>{Size{elements}},
 			StormByte::Safe::Optional<ByteSize>{ByteSize{bytes}}};
 	}
+
+	/**
+	 * @brief Stack-owned callback state; only m_entered is read before joining the caller.
+	 */
+	struct WaitProbe {
+		Hopper<int>* m_hopper = nullptr;	///< Borrowed queue to inspect.
+		Sink<int>* m_sink = nullptr;	///< Borrowed Sink to inspect.
+		ByteBudget* m_budget = nullptr;	///< Borrowed budget to inspect.
+		AdmissionWaitReason m_expected = AdmissionWaitReason::LocalCapacity;	///< Expected cause.
+		std::thread::id m_caller;	///< Thread invoking PushFor.
+		std::atomic<unsigned> m_entered{0};	///< Entry synchronization with the test driver.
+		unsigned m_exited = 0;	///< Completed pairs, read after joining.
+		bool m_active = false;	///< A wait pair is open.
+		bool m_valid = true;	///< All transitions observed so far are valid.
+
+		/**
+		 * @brief Inspect all participating locks and verify paired caller-thread callbacks.
+		 * @param context Borrowed probe.
+		 * @param reason Admission decision for this wait.
+		 * @param entering True before waiting, false after return.
+		 */
+		static void Changed(void* context, AdmissionWaitReason reason, bool entering) noexcept {
+			auto& probe = *static_cast<WaitProbe*>(context);
+			// These calls acquire the queue/registration/budget locks. A callback
+			// under any of those locks deadlocks and fails the bounded CTest.
+			if (probe.m_hopper)
+				(void)probe.m_hopper->Snapshot();
+			if (probe.m_sink)
+				(void)probe.m_sink->Snapshot(1);
+			(void)probe.m_budget->Snapshot();
+			probe.m_valid = probe.m_valid && reason == probe.m_expected
+				&& std::this_thread::get_id() == probe.m_caller && probe.m_active != entering;
+			probe.m_active = entering;
+			if (entering)
+				++probe.m_entered;
+			else
+				++probe.m_exited;
+		}
+	};
+}
+
+// -------------------
+// Admission wait observers
+// -------------------
+
+/**
+ * @brief Exercise both real causes and every terminal wait outcome through both APIs.
+ * @return Test failure count.
+ */
+int test_admission_wait_observer_blocking_paths() {
+	for (const bool use_sink : {false, true}) {
+		// Local element bound, local byte bound, or shared budget only.
+		for (const int cause : {0, 1, 2}) {
+			for (const bool use_lease : {false, true}) {
+				if (use_lease && cause == 2)
+					continue; // An existing lease never reserves the shared budget again.
+				for (const int action : {0, 1, 2, 3}) { // wake, cancel, timeout, close
+					ByteBudget budget(ByteSize{3});
+					Hopper<int> hopper;
+					Sink<int> producer;
+					Sink<int> consumer;
+					producer.To(1) >> consumer;
+					const auto limits = cause == 0 ? Bounds(1, 6) : Bounds(2, 3);
+					if (use_sink)
+						ASSERT_EQUAL(QueueStatus::Ok, producer.Configure(1, limits, budget));
+					else
+						ASSERT_EQUAL(QueueStatus::Ok, hopper.Configure(limits, budget));
+					ByteBudget::Lease held;
+					if (use_lease || cause == 2)
+						ASSERT_EQUAL(QueueStatus::Ok, budget.TryReserve(3, held));
+					if (cause != 2) {
+						int first = 11;
+						const auto filled = use_sink
+							? (use_lease ? producer.TryPush(1, first, held) : producer.TryPush(1, first, 3))
+							: (use_lease ? hopper.TryPush(first, held) : hopper.TryPush(first, 3));
+						ASSERT_EQUAL(QueueStatus::Ok, filled);
+					}
+					WaitProbe probe;
+					probe.m_hopper = use_sink ? nullptr : &hopper;
+					probe.m_sink = use_sink ? &producer : nullptr;
+					probe.m_budget = &budget;
+					probe.m_expected = cause == 2 ? AdmissionWaitReason::SharedBudget : AdmissionWaitReason::LocalCapacity;
+					QueueStatus result = QueueStatus::Error;
+					int next = 22;
+					std::thread caller([&] {
+						probe.m_caller = std::this_thread::get_id();
+						const AdmissionWaitObserver observer{&probe, &WaitProbe::Changed};
+						const auto timeout = action == 2 ? std::chrono::milliseconds(20) : std::chrono::milliseconds(2000);
+						result = use_sink
+							? (use_lease ? producer.PushFor(1, next, held, timeout, observer)
+								: producer.PushFor(1, next, ByteSize{1}, timeout, observer))
+							: (use_lease ? hopper.PushFor(next, held, timeout, observer)
+								: hopper.PushFor(next, ByteSize{1}, timeout, observer));
+					});
+					const bool entered = WaitFor([&] { return probe.m_entered.load() > 0; });
+					int popped = 0;
+					if (action == 0) {
+						if (cause == 2)
+							held.Reset();
+						else
+							popped = use_sink ? consumer.Pop(1) : hopper.Pop();
+					}
+					else if (action == 1) {
+						if (use_sink)
+							producer.CancelPending(1);
+						else
+							hopper.CancelPending();
+					}
+					else if (action == 3) {
+						if (use_sink)
+							producer.Eof();
+						else
+							hopper.Eof();
+					}
+					caller.join();
+					ASSERT_TRUE(entered);
+					ASSERT_TRUE(probe.m_valid);
+					ASSERT_FALSE(probe.m_active);
+					ASSERT_EQUAL(probe.m_entered.load(), probe.m_exited);
+					ASSERT_EQUAL(action == 0 ? QueueStatus::Ok : action == 1 ? QueueStatus::Cancelled
+						: action == 2 ? QueueStatus::Timeout : QueueStatus::Closed, result);
+					if (action == 0) {
+						if (cause != 2)
+							ASSERT_EQUAL(11, popped);
+						ASSERT_EQUAL(use_lease ? ByteSize{3} : ByteSize{1}, budget.Snapshot().Reserved);
+						ASSERT_EQUAL(22, use_sink ? consumer.Pop(1) : hopper.Pop());
+					}
+					else {
+						ASSERT_EQUAL(22, next);
+						ASSERT_EQUAL(ByteSize{3}, budget.Snapshot().Reserved);
+					}
+				}
+			}
+		}
+	}
+	RETURN_TEST(0);
+}
+
+/**
+ * @brief Verify immediate admission and rejection never invoke the observer.
+ * @return Test failure count.
+ */
+int test_admission_wait_observer_fast_paths() {
+	for (const bool use_sink : {false, true}) {
+		ByteBudget budget(ByteSize{3});
+		Hopper<int> hopper;
+		Sink<int> producer;
+		Sink<int> consumer;
+		producer.To(1) >> consumer;
+		if (use_sink)
+			ASSERT_EQUAL(QueueStatus::Ok, producer.Configure(1, Bounds(1, 3), budget));
+		else
+			ASSERT_EQUAL(QueueStatus::Ok, hopper.Configure(Bounds(1, 3), budget));
+		WaitProbe probe;
+		probe.m_budget = &budget;
+		const AdmissionWaitObserver observer{&probe, &WaitProbe::Changed};
+		int item = 7;
+		const auto timeout = std::chrono::milliseconds(20);
+		ASSERT_EQUAL(QueueStatus::Ok, use_sink ? producer.PushFor(1, item, 3, timeout, observer)
+			: hopper.PushFor(item, 3, timeout, observer));
+		ASSERT_EQUAL(QueueStatus::WouldBlock, use_sink ? producer.PushFor(1, item, 1, {}, observer)
+			: hopper.PushFor(item, 1, {}, observer));
+		ASSERT_EQUAL(QueueStatus::TooLarge, use_sink ? producer.PushFor(1, item, 4, timeout, observer)
+			: hopper.PushFor(item, 4, timeout, observer));
+		ASSERT_EQUAL(QueueStatus::Invalid, use_sink ? producer.PushFor(1, item, 1, std::chrono::milliseconds(-1), observer)
+			: hopper.PushFor(item, 1, std::chrono::milliseconds(-1), observer));
+		ASSERT_EQUAL(7, use_sink ? consumer.Pop(1) : hopper.Pop());
+		ByteBudget::Lease lease;
+		ASSERT_EQUAL(QueueStatus::Ok, budget.TryReserve(3, lease));
+		ASSERT_EQUAL(QueueStatus::Ok, use_sink ? producer.PushFor(1, item, lease, timeout, observer)
+			: hopper.PushFor(item, lease, timeout, observer));
+		ASSERT_EQUAL(QueueStatus::WouldBlock, use_sink ? producer.PushFor(1, item, lease, {}, observer)
+			: hopper.PushFor(item, lease, {}, observer));
+		ASSERT_EQUAL(7, use_sink ? consumer.Pop(1) : hopper.Pop());
+		ByteBudget::Lease invalid;
+		ASSERT_EQUAL(QueueStatus::Invalid, use_sink ? producer.PushFor(1, item, invalid, timeout, observer)
+			: hopper.PushFor(item, invalid, timeout, observer));
+		if (use_sink) {
+			ASSERT_EQUAL(QueueStatus::Missing, producer.PushFor(99, item, 1, timeout, observer));
+			producer.Eof();
+		}
+		else
+			hopper.Eof();
+		ASSERT_EQUAL(QueueStatus::Closed, use_sink ? producer.PushFor(1, item, 1, timeout, observer)
+			: hopper.PushFor(item, 1, timeout, observer));
+		ASSERT_EQUAL(0U, probe.m_entered.load());
+		ASSERT_EQUAL(0U, probe.m_exited);
+	}
+	RETURN_TEST(0);
+}
+
+/**
+ * @brief Verify local precedence and cause changes across retries in one call.
+ * @return Test failure count.
+ */
+int test_admission_wait_observer_reason_transitions() {
+	ByteBudget budget(ByteSize{3});
+	Hopper<int> hopper;
+	ASSERT_EQUAL(QueueStatus::Ok, hopper.Configure(Bounds(1, 3), budget));
+	int first = 11;
+	ASSERT_EQUAL(QueueStatus::Ok, hopper.TryPush(first, 0));
+	ByteBudget::Lease held;
+	ASSERT_EQUAL(QueueStatus::Ok, budget.TryReserve(3, held));
+	/**
+	 * @brief Borrowed synchronous callback state for deterministic pre-wait wakeups.
+	 */
+	struct TransitionProbe {
+		Hopper<int>* m_hopper;	///< Local queue.
+		ByteBudget* m_budget;	///< Shared budget.
+		ByteBudget::Lease* m_held;	///< External reservation released on the second wait.
+		unsigned m_calls = 0;	///< Ordered transition count.
+		int m_popped = 0;	///< Item removed on the first wait.
+		bool m_valid = true;	///< Observed sequence matches the expected pairs.
+	};
+	TransitionProbe probe{&hopper, &budget, &held};
+	const AdmissionWaitObserver observer{&probe,
+		[](void* context, AdmissionWaitReason reason, bool entering) noexcept {
+			auto& state = *static_cast<TransitionProbe*>(context);
+			(void)state.m_hopper->Snapshot();
+			(void)state.m_budget->Snapshot();
+			state.m_valid = state.m_valid && state.m_calls < 4
+				&& entering == (state.m_calls % 2 == 0)
+				&& reason == (state.m_calls < 2 ? AdmissionWaitReason::LocalCapacity : AdmissionWaitReason::SharedBudget);
+			if (entering) {
+				if (state.m_calls == 0)
+					state.m_popped = state.m_hopper->Pop();
+				else if (state.m_calls == 2)
+					state.m_held->Reset();
+			}
+			++state.m_calls;
+		}};
+	int next = 22;
+	ASSERT_EQUAL(QueueStatus::Ok, hopper.PushFor(next, 1, std::chrono::seconds(2), observer));
+	ASSERT_TRUE(probe.m_valid);
+	ASSERT_EQUAL(4U, probe.m_calls);
+	ASSERT_EQUAL(11, probe.m_popped);
+	ASSERT_EQUAL(ByteSize{1}, budget.Snapshot().Reserved);
+	ASSERT_EQUAL(22, hopper.Pop());
+	RETURN_TEST(0);
 }
 
 // -------------------
@@ -515,6 +759,13 @@ int test_sink_missing_limits_and_configuration() {
 
 int main() {
 	int result = 0;
+
+	// -------------------
+	// Admission wait observers
+	// -------------------
+	result += test_admission_wait_observer_blocking_paths();
+	result += test_admission_wait_observer_fast_paths();
+	result += test_admission_wait_observer_reason_transitions();
 
 	// -------------------
 	// Budget

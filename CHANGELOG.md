@@ -25,6 +25,11 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
+- Optional allocation-free `AdmissionWaitObserver` on weighted Hopper/Sink
+  `PushFor` calls reports paired transitions around actual admission waits,
+  distinguishing local capacity from shared budget pressure without changing
+  admission policy or accounting. Callbacks run on the caller thread outside
+  Buffer locks; local bounds take precedence over shared-budget pressure.
 - `ByteBudget::SharesIdentity` compares shared budget state without
   reserving, locking or changing counters, including after `Close()`; moved-from
   handles share no identity. Tests cover copies, independent, closed,
