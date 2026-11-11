@@ -846,6 +846,12 @@ current entries/weighted bytes, lifetime peaks, pressure attempts, waits and
 `Reserved`, limit, peak, pressure and reservation-wait counters. Queue waits
 are reported on the queue; external ReserveFor waits on the budget. A shared
 lease can therefore yield larger summed queue bytes than aggregate Reserved.
+`ByteBudget::SharesIdentity(other)` compares shared state without reserving,
+locking or changing counters, before or after `Close()`. Copies share identity;
+independent budgets (even with equal limits) and moved-from handles do not.
+No pointer or global ID is exposed. Comparing handles concurrently is safe if
+none is moved or assigned meanwhile.
+
 Queries perform no I/O, callbacks or capacity waits, but take short mutexes:
 they are **not lock-free** and do not promise zero scheduling latency.
 

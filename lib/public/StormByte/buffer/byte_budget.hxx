@@ -380,6 +380,17 @@ namespace StormByte {
 				void CancelPending() const noexcept;
 
 				/**
+				 * @brief Compare shared provider state without reserving or locking.
+				 *
+				 * Works before and after Close. Independent budgets differ even with equal
+				 * limits and counters; moved-from handles share nothing, even together.
+				 * Concurrent comparison is safe unless a handle is moved or assigned.
+				 * @param other Candidate handle.
+				 * @return True when both valid handles share one internal state.
+				 */
+				bool SharesIdentity(const ByteBudget& other) const noexcept;
+
+				/**
 				 * @brief Read counters under a short state lock, without capacity waits or I/O.
 				 * @return Coherent aggregate accounting.
 				 */

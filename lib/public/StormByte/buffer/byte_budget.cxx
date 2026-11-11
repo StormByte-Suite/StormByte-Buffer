@@ -208,6 +208,10 @@ QueueStatus ByteBudget::ReserveMilliseconds(ByteSize bytes, Lease& output, std::
 	return result;
 }
 
+bool ByteBudget::SharesIdentity(const ByteBudget& other) const noexcept {
+	return m_state && other.m_state && m_state == other.m_state;
+}
+
 void ByteBudget::Close() const noexcept {
 	if (!m_state)
 		return;

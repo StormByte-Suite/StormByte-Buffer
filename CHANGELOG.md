@@ -25,6 +25,10 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
+- `ByteBudget::SharesIdentity` compares shared budget state without
+  reserving, locking or changing counters, including after `Close()`; moved-from
+  handles share no identity. Tests cover copies, independent, closed,
+  zero-limit, unlimited, moved and concurrent comparison.
 - Configurable `ReadChunk`, universal `WriteTransfer`, optional page
   `WriteThreshold`, atomic live IO configuration and non-I/O effective-transfer
   snapshots. Instrumented tests verify real origin requests, aggregation,

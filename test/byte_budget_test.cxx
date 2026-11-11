@@ -152,6 +152,64 @@ int test_budget_lease_identity_and_lifetime() {
 	RETURN_TEST(0);
 }
 
+int test_budget_shares_identity() {
+	ByteBudget budget(ByteSize{100});
+	ByteBudget copy = budget;
+	ByteBudget independent(ByteSize{100});
+	ByteBudget zero(ByteSize{0});
+	ByteBudget zero_copy = zero;
+	ByteBudget unlimited;
+	ByteBudget unlimited_copy = unlimited;
+	ByteBudget other_unlimited;
+	ASSERT_TRUE(budget.SharesIdentity(budget));
+	ASSERT_TRUE(budget.SharesIdentity(copy));
+	ASSERT_TRUE(copy.SharesIdentity(budget));
+	ASSERT_FALSE(budget.SharesIdentity(independent));
+	ASSERT_FALSE(independent.SharesIdentity(budget));
+	ASSERT_TRUE(zero.SharesIdentity(zero_copy));
+	ASSERT_FALSE(zero.SharesIdentity(budget));
+	ASSERT_TRUE(unlimited.SharesIdentity(unlimited_copy));
+	ASSERT_FALSE(unlimited.SharesIdentity(other_unlimited));
+
+	ByteBudget::Lease lease;
+	ASSERT_EQUAL(QueueStatus::Ok, budget.TryReserve(40, lease));
+	const auto before = budget.Snapshot();
+	const auto other_before = independent.Snapshot();
+	ASSERT_TRUE(budget.SharesIdentity(copy));
+	ASSERT_FALSE(budget.SharesIdentity(independent));
+	const auto after = budget.Snapshot();
+	const auto other_after = independent.Snapshot();
+	ASSERT_EQUAL(before.Reserved, after.Reserved);
+	ASSERT_EQUAL(before.Peak, after.Peak);
+	ASSERT_EQUAL(before.Pressure, after.Pressure);
+	ASSERT_EQUAL(before.Waits, after.Waits);
+	ASSERT_EQUAL(before.WaitNanoseconds, after.WaitNanoseconds);
+	ASSERT_EQUAL(before.Closed, after.Closed);
+	ASSERT_EQUAL(other_before.Reserved, other_after.Reserved);
+	ASSERT_EQUAL(other_before.Peak, other_after.Peak);
+	ASSERT_EQUAL(other_before.Closed, other_after.Closed);
+
+	budget.Close();
+	ASSERT_TRUE(budget.SharesIdentity(copy));
+	ASSERT_FALSE(budget.SharesIdentity(independent));
+	ASSERT_EQUAL(ByteSize{40}, copy.Snapshot().Reserved);
+	ASSERT_FALSE(independent.Snapshot().Closed);
+
+	ByteBudget moved(std::move(copy));
+	ByteBudget zero_owner = std::move(zero);
+	ByteBudget unlimited_owner = std::move(unlimited);
+	ASSERT_TRUE(zero_owner.SharesIdentity(zero_copy));
+	ASSERT_TRUE(unlimited_owner.SharesIdentity(unlimited_copy));
+	ASSERT_TRUE(moved.SharesIdentity(budget));
+	ASSERT_FALSE(copy.SharesIdentity(budget));
+	ASSERT_FALSE(budget.SharesIdentity(copy));
+	ASSERT_FALSE(copy.SharesIdentity(copy));
+	ASSERT_FALSE(zero.SharesIdentity(unlimited));
+	ASSERT_FALSE(zero.SharesIdentity(zero));
+	ASSERT_FALSE(zero.SharesIdentity(zero_owner));
+	RETURN_TEST(0);
+}
+
 // -------------------
 // Concurrent
 // -------------------
@@ -215,6 +273,34 @@ int test_concurrent_shared_budget_and_writers() {
 		ASSERT_TRUE(snapshot.PeakElements <= (key == 1 ? Size{5} : Size{7}));
 		ASSERT_TRUE(snapshot.PeakBytes <= (key == 1 ? ByteSize{23} : ByteSize{29}));
 	}
+	RETURN_TEST(0);
+}
+
+int test_concurrent_identity_comparison() {
+	ByteBudget budget(ByteSize{100});
+	ByteBudget copy = budget;
+	ByteBudget independent(ByteSize{100});
+	ByteBudget::Lease lease;
+	ASSERT_EQUAL(QueueStatus::Ok, budget.TryReserve(10, lease));
+	const auto before = budget.Snapshot();
+	std::atomic<int> failures {0};
+	std::vector<std::thread> threads;
+	for (int i = 0; i < 8; ++i)
+		threads.emplace_back([&] {
+			for (int n = 0; n < 10000; ++n)
+				if (!budget.SharesIdentity(copy) || !copy.SharesIdentity(budget) ||
+					budget.SharesIdentity(independent) || independent.SharesIdentity(copy))
+					++failures;
+		});
+	for (auto& thread : threads)
+		thread.join();
+	const auto after = budget.Snapshot();
+	ASSERT_EQUAL(0, failures.load());
+	ASSERT_EQUAL(before.Reserved, after.Reserved);
+	ASSERT_EQUAL(before.Peak, after.Peak);
+	ASSERT_EQUAL(before.Pressure, after.Pressure);
+	ASSERT_EQUAL(before.Waits, after.Waits);
+	ASSERT_EQUAL(before.Closed, after.Closed);
 	RETURN_TEST(0);
 }
 
@@ -435,12 +521,14 @@ int main() {
 	// -------------------
 	result += test_budget_cancel_close_and_timeout();
 	result += test_budget_lease_identity_and_lifetime();
+	result += test_budget_shares_identity();
 
 	// -------------------
 	// Concurrent
 	// -------------------
 	result += test_concurrent_shared_budget_and_writers();
 	result += test_concurrent_work_and_queue();
+	result += test_concurrent_identity_comparison();
 
 	// -------------------
 	// Hopper
